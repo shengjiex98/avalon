@@ -35,6 +35,8 @@ export const GAMES = {
     addPlayer: onuw.addPlayer,
     removePlayer: onuw.removePlayer,
     viewFor: onuw.viewFor,
+    nextDeadline: onuw.nextDeadline,
+    tick: onuw.tick,
     actions: {
       options: (g, id, body) => onuw.setOptions(g, id, body.options ?? {}),
       start: (g, id) => onuw.startGame(g, id),

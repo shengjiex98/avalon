@@ -5,6 +5,10 @@ import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
 import * as w from '../src/games/onuw/game.js';
+import { NIGHT_SCRIPT } from '../src/games/onuw/rules.js';
+
+let clock = 1_700_000_000_000;
+const now = () => clock;
 
 const dom = installDom();
 const client = await import('../public/app.js');
@@ -22,18 +26,30 @@ function home({ lang = 'en' } = {}) {
 /** A dealt werewolf game, exactly as the deck says. */
 function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee']) {
   const count = deck.length - 3;
-  const game = w.createGame('WXYZ');
+  const game = w.createGame('WXYZ', { now });
   names.slice(0, count).forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
-  game.phase = 'night';
+  w.startGame(game, 'p0', { shuffle: (l) => l, now });
   game.startRoles = Object.fromEntries(game.players.map((p, i) => [p.id, deck[i]]));
   game.centreStart = deck.slice(count);
+  game.finalRoles = { ...game.startRoles };
+  game.centre = game.centreStart.slice();
   return game;
 }
 
-function settle(game) {
-  for (const p of game.players) {
-    if (p.id in game.actions) continue;
-    if (w.actionFor(game, p.id)) w.submitNight(game, p.id, { skip: true });
+/** Wind the shared clock forward to a named step. */
+function stepTo(game, key) {
+  for (let guard = 0; guard < 50; guard++) {
+    if (w.currentStep(game)?.key === key) return;
+    clock = game.stepEndsAt;
+    w.tick(game, clock);
+  }
+  throw new Error(`never reached ${key}`);
+}
+
+function finishNight(game) {
+  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
+    clock = game.stepEndsAt;
+    w.tick(game, clock);
   }
 }
 
@@ -41,7 +57,7 @@ function settle(game) {
 function show(game, playerId, lang = 'en') {
   app.lang = lang; app.code = game.code; app.playerId = playerId; app.serverOk = true;
   app.selection = []; app.centres = []; app.seerMode = 'player'; app.showRole = true;
-  app.view = w.viewFor(game, playerId);
+  app.view = w.viewFor(game, playerId, clock);
   render();
   return dom.fixtures.view;
 }
@@ -108,6 +124,7 @@ test('in a lobby the host switches the room, and nobody else can', () => {
 
 test('a running game cannot be switched out from under the table', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   show(game, 'p0');
   assert.equal(dom.fixtures.gameSwitch.byId('game-avalon').disabled, true);
 });
@@ -137,24 +154,65 @@ test('the lobby refuses a deck that does not fit and says so', () => {
 
 // ---------------------------------------------------------------- the night
 
-test('a villager is told to go back to sleep', () => {
-  const game = dealt(['villager', 'werewolf', 'werewolf', 'seer', 'robber', 'troublemaker']);
-  const view = show(game, 'p0');
-  assert.match(view.text, /Villager/);
-  assert.match(view.text, /You sleep through the night/);
-  assert.equal(labelled(view, /Confirm/).length, 0);
-  assertNoRawKeys(view, 'villager night');
+test('everyone sees the same announcement and the same countdown', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+
+  const screens = game.players.map((p) => show(game, p.id).text);
+  for (const text of screens) {
+    assert.match(text, /Seer, wake up/, 'the whole table hears the same call');
+    assert.match(text, /Step 5 of 9/);
+  }
+  assert.match(dom.fixtures.view.byId('nightClock').text, /^\d+$/, 'a countdown is on screen');
 });
 
-test('the werewolves see each other without being offered a peek', () => {
+test('the night screen never says who is awake or acting', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  for (const p of game.players) {
+    const view = show(game, p.id);
+    assert.ok(!/Still acting|Waiting for|✓/.test(view.text), `${p.name}'s screen names someone`);
+  }
+});
+
+test('a player whose step it is not gets no controls at all', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  const bystander = show(game, 'p1');
+  assert.match(bystander.text, /Eyes closed/);
+  assert.equal(labelled(bystander, /^Confirm$/).length, 0);
+  assert.equal(bystander.byClass('player').filter((n) => n.tagName === 'BUTTON').length, 0);
+});
+
+test('every role is called even when the deck does not contain it', () => {
+  // Three players; Mason, Drunk and Insomniac are nowhere in this game.
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  const heard = [];
+  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
+    heard.push(show(game, 'p1').text);
+    clock = game.stepEndsAt;
+    w.tick(game, clock);
+  }
+  const all = heard.join('\n');
+  for (const call of [/Masons, wake up/, /Drunk, wake up/, /Insomniac, wake up/, /Minion, wake up/]) {
+    assert.match(all, call, 'a silent role would give the deck away');
+  }
+  assert.equal(heard.length, NIGHT_SCRIPT.length);
+});
+
+test('a paired werewolf is awake and sees their partner', () => {
   const game = dealt(['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker']);
+  stepTo(game, 'werewolf');
   const view = show(game, 'p0');
+
+  assert.match(view.text, /Your turn/, 'a paired wolf is not told they are asleep');
   assert.match(view.text, /Your fellow werewolf: 张三/);
-  assert.equal(labelled(view, /Confirm/).length, 0, 'a pair has nothing to decide');
+  assert.equal(labelled(view, /^Confirm$/).length, 0, 'a pair has no centre card to look at');
 });
 
 test('a lone werewolf may look at one centre card, or decline', () => {
   const game = dealt(['werewolf', 'villager', 'seer', 'werewolf', 'robber', 'troublemaker']);
+  stepTo(game, 'werewolf');
   const view = show(game, 'p0');
   assert.match(view.text, /You are the only werewolf/);
 
@@ -162,8 +220,7 @@ test('a lone werewolf may look at one centre card, or decline', () => {
   assert.equal(cards.length, 3);
   assert.ok(cards.every((c) => c.text.includes('?')), 'the centre stays face down');
 
-  const confirm = labelled(view, /^Confirm$/)[0];
-  assert.equal(confirm.disabled, true);
+  assert.equal(labelled(view, /^Confirm$/)[0].disabled, true);
   cards[1].dispatch('click');
   assert.deepEqual(app.centres, [1]);
   assert.equal(labelled(dom.fixtures.view, /^Confirm$/)[0].disabled, false);
@@ -175,11 +232,11 @@ test('a lone werewolf may look at one centre card, or decline', () => {
 
 test('the seer chooses between one player and two centre cards', () => {
   const game = dealt(['seer', 'werewolf', 'villager', 'robber', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   let view = show(game, 'p0');
   assert.equal(labelled(view, /One player/).length, 1);
   assert.equal(labelled(view, /Two centre cards/).length, 1);
 
-  // Player mode: the seer cannot pick themselves.
   const rows = view.byClass('player').filter((n) => n.tagName === 'BUTTON');
   assert.equal(rows.find((r) => r.text.includes('Ann')).disabled, true);
   rows.find((r) => r.text.includes('张三')).dispatch('click');
@@ -188,7 +245,6 @@ test('the seer chooses between one player and two centre cards', () => {
   assert.deepEqual(dom.calls.find((c) => c.path.endsWith('/action')).body.action,
     { mode: 'player', target: 'p1' });
 
-  // Centre mode: exactly two, no more.
   view = show(game, 'p0');
   labelled(view, /Two centre cards/)[0].dispatch('click');
   const cards = dom.fixtures.view.byClass('centre-card');
@@ -201,6 +257,7 @@ test('the seer chooses between one player and two centre cards', () => {
 
 test('the troublemaker must pick two players, neither of them themselves', () => {
   const game = dealt(['troublemaker', 'werewolf', 'villager', 'seer', 'robber', 'tanner']);
+  stepTo(game, 'troublemaker');
   const view = show(game, 'p0');
   const rows = view.byClass('player').filter((n) => n.tagName === 'BUTTON');
   assert.equal(rows.find((r) => r.text.includes('Ann')).disabled, true);
@@ -214,18 +271,48 @@ test('the troublemaker must pick two players, neither of them themselves', () =>
 
 test('the drunk is not offered a way out', () => {
   const game = dealt(['drunk', 'werewolf', 'villager', 'seer', 'robber', 'tanner']);
+  stepTo(game, 'drunk');
   const view = show(game, 'p0');
   assert.match(view.text, /You will not see it/);
   assert.equal(labelled(view, /Do nothing/).length, 0, 'the Drunk must swap');
+});
+
+test('the voice can be muted, and the choice sticks', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  const view = show(game, 'p0');
+  const toggle = view.byId('voiceToggle');
+  assert.match(toggle.text, /🔊/);
+  toggle.dispatch('click');
+  assert.equal(app.muted, true);
+  assert.equal(dom.localStorage.getItem('avalon.muted'), '1');
+  assert.match(dom.fixtures.view.byId('voiceToggle').text, /✕/);
+  dom.fixtures.view.byId('voiceToggle').dispatch('click');
+  assert.equal(app.muted, false);
+});
+
+test('the lobby lets the host set the night pace', () => {
+  const game = w.createGame('WXYZ', { now });
+  ['Ann', '张三', 'Cai'].forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
+  const view = show(game, 'p0');
+  assert.match(view.text, /Night pace/);
+  assert.match(view.text, /The night takes about \d+ seconds/);
+  assert.match(view.byId('pace-normal').className, /primary/);
+
+  dom.calls.length = 0;
+  view.byId('pace-brisk').dispatch('click');
+  assert.equal(dom.calls.find((c) => c.path.endsWith('/action')).body.options.pace, 'brisk');
 });
 
 // ---------------------------------------------------------------- day, vote, end
 
 test('the morning tells each player only what they learned', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   w.submitNight(game, 'p0', { mode: 'player', target: 'p1' });
+  stepTo(game, 'robber');
   w.submitNight(game, 'p2', { target: 'p1' });
-  settle(game);
+  finishNight(game);
 
   const seer = show(game, 'p0');
   assert.match(seer.text, /张三 had Werewolf/);
@@ -240,9 +327,11 @@ test('the morning tells each player only what they learned', () => {
 
 test('voting points at one player and never at yourself', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   w.submitNight(game, 'p0', { mode: 'player', target: 'p1' });
+  stepTo(game, 'robber');
   w.submitNight(game, 'p2', { target: 'p1' });
-  settle(game);
+  finishNight(game);
   w.startVote(game, 'p0');
 
   const view = show(game, 'p0');
@@ -258,9 +347,11 @@ test('voting points at one player and never at yourself', () => {
 
 test('the end screen explains the night and the verdict', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   w.submitNight(game, 'p0', { mode: 'player', target: 'p1' });
+  stepTo(game, 'robber');
   w.submitNight(game, 'p2', { target: 'p1' });
-  settle(game);
+  finishNight(game);
   w.startVote(game, 'p0');
   for (const [voter, target] of [['p0', 'p2'], ['p1', 'p2'], ['p2', 'p0']]) w.castVote(game, voter, target);
 
@@ -281,14 +372,17 @@ test('the end screen explains the night and the verdict', () => {
 
 test('the whole werewolf game reads in Chinese', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
   const night = show(game, 'p0', 'zh');
-  assert.match(night.text, /预言家/);
+  assert.match(night.text, /预言家请睁眼/, 'the announcement is spoken in the reader\u2019s language');
   assert.match(night.text, /查看一名玩家/);
   assertNoRawKeys(night, 'Chinese night');
 
+  stepTo(game, 'seer');
   w.submitNight(game, 'p0', { mode: 'player', target: 'p1' });
+  stepTo(game, 'robber');
   w.submitNight(game, 'p2', { target: 'p1' });
-  settle(game);
+  finishNight(game);
   const day = show(game, 'p0', 'zh');
   assert.match(day.text, /张三 的牌是狼人。/);
   assertNoRawKeys(day, 'Chinese day');

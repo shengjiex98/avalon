@@ -17,6 +17,8 @@ const app = {
   selection: [],     // players the current prompt is collecting
   centres: [],       // centre cards the current prompt is collecting
   seerMode: 'player',
+  muted: Boolean(localStorage.getItem('avalon.muted')),
+  stepEndsAt: 0,
   showRole: true,
   source: null,      // EventSource
   retry: 0,
@@ -108,6 +110,7 @@ function connect() {
     }
     app.view = next;
     render();
+    gameFor(next.gameId).onView?.();
   };
   source.onerror = () => {
     app.connected = false;

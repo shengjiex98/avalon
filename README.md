@@ -33,13 +33,23 @@ spare three sit face down in the middle, so some roles are in nobody's hands.
 Roles: Werewolf ×2, Minion, Mason ×2, Seer, Robber, Troublemaker, Drunk,
 Insomniac, Hunter, Tanner, Villager.
 
-Online, waking one role at a time means eight people watching one person think,
-so **every night action is submitted at once and resolved in the canonical wake
-order**. That is not a house rule: no role's *choice* depends on anything
-learned during the night, only its *result* does, and results are computed in
-order. The lone werewolf is the one case that needs care — they must know they
-are alone before deciding whether to peek at a centre card, and that follows
-from the deal, so their screen says so up front.
+The night runs on a **shared clock**, the way the physical game's companion app
+does: a fixed script of role steps, each a fixed length, announced on screen
+and read aloud, identical on every player's phone.
+
+Two properties follow from that being *fixed*, and both matter:
+
+- **Every waking role is called, in play or not.** Skipping the absent ones
+  would let the table read the deck off the announcements.
+- **A step never ends early**, even once the acting player has chosen. Ending
+  early would broadcast that the role was in play and had finished.
+
+So no screen ever says who is awake, who has acted, or who is being waited on
+— the earlier version leaked exactly that, and the countdown is what replaces
+it. Only the player whose card matches the current step gets controls; everyone
+else sees the same clock and the words "eyes closed". The host sets the pace
+(brisk / normal / relaxed, roughly 55 / 90 / 145 seconds) in the lobby, and
+voice can be muted per device.
 
 Then you argue, then everyone points at once. Most fingers dies; if every
 player collects exactly one vote, nobody does. You belong to the team of the
@@ -118,10 +128,14 @@ client shows it in the reader's language.
 - **rules** — setup tables, role fitting, and each role's knowledge.
 - **game** — deterministic full Avalon games: rejections, the hammer, two-fail
   quests, both assassination outcomes, and an assertion that no view leaks a role.
-- **onuw** — deterministic werewolf nights: that the order of *resolution* is
-  the wake order and not the order people pressed the button, that the Drunk
-  and Troublemaker learn nothing, every win condition, and that no view shows
+- **onuw** — deterministic werewolf nights on an owned clock: that every role
+  is called whether or not it is dealt, that a step does not end early when the
+  actor is done, that no night view names who is awake or has acted, that a
+  timed-out Drunk still swaps, every win condition, and that no view shows
   another player's card before the vote is in.
+- **rooms** — that the night advances on the room's own timer with nobody
+  pressing anything, that the new step is broadcast, and that a swept room
+  takes its timer with it.
 - **server** — real HTTP against an ephemeral port, including a five-player
   game played end to end over SSE.
 - **i18n-coverage** — every key `app.js` and `index.html` ask for, plus every

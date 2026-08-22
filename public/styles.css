@@ -185,3 +185,12 @@ button.centre-card:hover:not(:disabled) { border-color: var(--gold); }
   .topbar h1 { font-size: 15px; }
   .seg-btn { padding: 6px 9px; font-size: 12px; }
 }
+
+/* The night's shared clock and announcement. */
+.night .announce { font-size: 20px; font-weight: 700; line-height: 1.4; margin: 4px 0; }
+.clock { display: flex; justify-content: center; }
+.clock-num { font-size: 46px; font-weight: 800; font-variant-numeric: tabular-nums;
+  color: var(--gold); line-height: 1; }
+.bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
+.bar-fill { height: 100%; background: var(--gold); transition: width .2s linear; }
+.yourturn { color: var(--good); font-weight: 700; }

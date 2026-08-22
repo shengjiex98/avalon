@@ -1,21 +1,27 @@
 // One Night Ultimate Werewolf.
 //
-// The night is the whole game, and online it is the awkward part: waking one
-// role at a time means eight people watching one person think. So every night
-// action is submitted at once and then resolved in the canonical wake order.
-// That is not a simplification — no role's *choice* depends on anything
-// learned during the night, only its *result* does, and results are computed
-// in order. The one exception is the lone werewolf, who must know they are
-// alone before deciding whether to peek at a centre card; that follows from
-// the starting deal, so their view can say so up front.
+// The night runs on a clock, exactly as the physical game's app does: a fixed
+// script of role steps, each with a fixed duration, the same for everybody.
+//
+// Two properties matter and both come from that being *fixed*:
+//
+//  - Every waking role is called whether or not it is in the deck. Skipping
+//    the absent ones would let the table read the deck off the announcements.
+//  - A step never ends early, even once the acting player has chosen. Ending
+//    early would broadcast that the role was in play and had finished.
+//
+// So no view ever says who is awake, who has acted, or who is being waited
+// on. Everyone sees the same countdown and hears the same announcement; only
+// the player whose card matches the current step gets any controls.
 //
 // The Doppelgänger is deliberately absent: it copies a role and then acts as
 // it, a choice that genuinely depends on night information, and it is the one
 // role this model cannot represent honestly.
 
 import {
-  MAX_PLAYERS, MIN_PLAYERS, NIGHT_ORDER, OPTIONAL_ROLES, ROLES,
-  buildDeck, decideWinners, defaultOptions, roomForOptions, tallyVotes, teamOf,
+  DEFAULT_PACE, MAX_PLAYERS, MIN_PLAYERS, NIGHT_SCRIPT, OPTIONAL_ROLES, PACES, ROLES,
+  buildDeck, decideWinners, defaultOptions, nightLength, roomForOptions, stepMillis,
+  tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
@@ -27,6 +33,9 @@ export function createGame(code, { now = Date.now } = {}) {
     ...lobby.baseState(code, 'onuw', { now }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
+    pace: DEFAULT_PACE,
+    step: -1,                // index into NIGHT_SCRIPT
+    stepEndsAt: 0,           // ms timestamp; the same deadline for everyone
     startRoles: {},          // playerId -> the card dealt to them
     centreStart: [],         // the three cards nobody was dealt
     finalRoles: {},          // after the night's swaps
@@ -50,6 +59,10 @@ const liveOptions = (g) => (g.optionsTouched ? g.options : defaultOptions(g.play
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
+  if (options.pace !== undefined) {
+    require_(options.pace in PACES, 'badPace');
+    g.pace = options.pace;
+  }
   const next = { ...liveOptions(g) };
   for (const role of OPTIONAL_ROLES) if (role in options) next[role] = Boolean(options[role]);
   buildDeck(g.players.length, next);   // throws before anything is committed
@@ -57,7 +70,7 @@ export function setOptions(g, playerId, options) {
   g.optionsTouched = true;
 }
 
-export function startGame(g, playerId, { shuffle = defaultShuffle } = {}) {
+export function startGame(g, playerId, { shuffle = defaultShuffle, now = Date.now } = {}) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
@@ -67,19 +80,24 @@ export function startGame(g, playerId, { shuffle = defaultShuffle } = {}) {
   g.players = shuffle(g.players.slice());
   g.startRoles = Object.fromEntries(g.players.map((p, i) => [p.id, deck[i]]));
   g.centreStart = deck.slice(g.players.length);
-  g.phase = 'night';
-  logEvent(g, 'log.gameStarted', { count: g.players.length });
 
-  // Every actor's card can be in the centre, in which case the night is over
-  // before it starts.
-  if (pendingActors(g).length === 0) resolveNight(g);
+  // The night mutates these as each step closes.
+  g.finalRoles = { ...g.startRoles };
+  g.centre = g.centreStart.slice();
+
+  g.phase = 'night';
+  g.step = 0;
+  g.stepEndsAt = now() + stepMillis(NIGHT_SCRIPT[0], g.pace);
+  logEvent(g, 'log.gameStarted', { count: g.players.length });
 }
 
 // ---------------------------------------------------------------- the night
 
 const wolvesAmongPlayers = (g) => g.players.filter((p) => g.startRoles[p.id] === 'werewolf');
 
-/** What this player must decide tonight, if anything. */
+export const currentStep = (g) => (g.phase === 'night' ? NIGHT_SCRIPT[g.step] ?? null : null);
+
+/** What this player must decide during their role's step, if anything. */
 export function actionFor(g, playerId) {
   const role = g.startRoles[playerId];
   const kind = ROLES[role]?.acts;
@@ -88,12 +106,16 @@ export function actionFor(g, playerId) {
   return kind;
 }
 
-export const pendingActors = (g) =>
-  g.players.filter((p) => actionFor(g, p.id) && !(p.id in g.actions));
+/** Is it this player's turn to be awake right now? */
+export function isAwake(g, playerId) {
+  const step = currentStep(g);
+  return Boolean(step?.role && g.startRoles[playerId] === step.role);
+}
 
 /**
- * What a player knows the moment the cards are dealt — who their packmates
- * are, and so on. Available during the night, and repeated in the morning.
+ * What a player learns simply by being woken — their packmates, the other
+ * Mason, who the werewolves are. Shown during their own step, and repeated in
+ * the morning.
  */
 export function staticKnowledge(g, playerId) {
   const role = g.startRoles[playerId];
@@ -122,6 +144,7 @@ export function staticKnowledge(g, playerId) {
 export function submitNight(g, playerId, action = {}) {
   require_(g.phase === 'night', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
+  require_(isAwake(g, playerId), 'notYourTurn');
   const kind = actionFor(g, playerId);
   require_(kind, 'noNightAction');
   require_(!(playerId in g.actions), 'alreadyActed');
@@ -156,64 +179,85 @@ export function submitNight(g, playerId, action = {}) {
     require_(centreIndex(action.centre), 'badCentreCard');
     g.actions[playerId] = { centre: action.centre };
   }
-
-  if (pendingActors(g).length === 0) resolveNight(g);
+  // Deliberately no early advance: the clock is the same for everyone.
 }
 
-/** Apply the night in wake order. The order is the whole point. */
-function resolveNight(g) {
-  const roles = { ...g.startRoles };
-  const centre = g.centreStart.slice();
-  const info = {};
-  const add = (id, key, params = {}) => { (info[id] ??= []).push({ key, params }); };
+/** When the room layer should look in on this game again. */
+export const nextDeadline = (g) => (g.phase === 'night' ? g.stepEndsAt : null);
 
-  for (const p of g.players) for (const k of staticKnowledge(g, p.id)) add(p.id, k.key, k.params);
+/**
+ * Advance the night if its clock has run out. Loops, so a server that was
+ * busy for a while catches up rather than drifting.
+ */
+export function tick(g, now = Date.now()) {
+  if (g.phase !== 'night') return false;
+  let moved = false;
+  while (g.phase === 'night' && now >= g.stepEndsAt) {
+    closeStep(g);
+    g.step += 1;
+    moved = true;
+    if (g.step >= NIGHT_SCRIPT.length) { dawn(g); break; }
+    g.stepEndsAt += stepMillis(NIGHT_SCRIPT[g.step], g.pace);
+  }
+  return moved;
+}
 
-  for (const role of NIGHT_ORDER) {
-    for (const p of g.players.filter((q) => g.startRoles[q.id] === role)) {
-      const a = g.actions[p.id] ?? {};
-      if (role === 'werewolf') {
-        if (Number.isInteger(a.centre)) {
-          add(p.id, 'onuw.info.sawCentre', { index: a.centre + 1, role: centre[a.centre] });
-        }
-      } else if (role === 'seer') {
-        if (a.mode === 'player') add(p.id, 'onuw.info.sawPlayer', { name: nameOf(g, a.target), role: roles[a.target] });
-        else if (a.mode === 'centre') {
-          add(p.id, 'onuw.info.sawTwoCentre', {
-            a: a.centres[0] + 1, roleA: centre[a.centres[0]],
-            b: a.centres[1] + 1, roleB: centre[a.centres[1]],
-          });
-        } else add(p.id, 'onuw.info.lookedAtNothing');
-      } else if (role === 'robber') {
-        if (a.target) {
-          const taken = roles[a.target];
-          roles[a.target] = roles[p.id];
-          roles[p.id] = taken;
-          add(p.id, 'onuw.info.robbed', { name: nameOf(g, a.target), role: taken });
-          g.swaps.push({ key: 'onuw.swap.robber', params: { a: p.name, b: nameOf(g, a.target) } });
-        } else add(p.id, 'onuw.info.robbedNobody');
-      } else if (role === 'troublemaker') {
-        if (a.targets) {
-          const [x, y] = a.targets;
-          [roles[x], roles[y]] = [roles[y], roles[x]];
-          add(p.id, 'onuw.info.swapped', { a: nameOf(g, x), b: nameOf(g, y) });
-          g.swaps.push({ key: 'onuw.swap.troublemaker', params: { a: nameOf(g, x), b: nameOf(g, y) } });
-        } else add(p.id, 'onuw.info.swappedNobody');
-      } else if (role === 'drunk') {
-        const i = a.centre;
-        [roles[p.id], centre[i]] = [centre[i], roles[p.id]];
-        add(p.id, 'onuw.info.drunk', { index: i + 1 });
-        g.swaps.push({ key: 'onuw.swap.drunk', params: { a: p.name, index: i + 1 } });
-      } else if (role === 'insomniac') {
-        add(p.id, 'onuw.info.insomniac', { role: roles[p.id] });
+const addInfo = (g, id, key, params = {}) => { (g.info[id] ??= []).push({ key, params }); };
+
+/** Resolve whatever the step that just ended was for. */
+function closeStep(g) {
+  const step = NIGHT_SCRIPT[g.step];
+  if (!step?.role) return;
+  const roles = g.finalRoles;
+  const centre = g.centre;
+
+  for (const p of g.players.filter((q) => g.startRoles[q.id] === step.role)) {
+    for (const k of staticKnowledge(g, p.id)) addInfo(g, p.id, k.key, k.params);
+    const a = g.actions[p.id] ?? {};
+
+    if (step.role === 'werewolf') {
+      if (Number.isInteger(a.centre)) {
+        addInfo(g, p.id, 'onuw.info.sawCentre', { index: a.centre + 1, role: centre[a.centre] });
       }
+    } else if (step.role === 'seer') {
+      if (a.mode === 'player') addInfo(g, p.id, 'onuw.info.sawPlayer', { name: nameOf(g, a.target), role: roles[a.target] });
+      else if (a.mode === 'centre') {
+        addInfo(g, p.id, 'onuw.info.sawTwoCentre', {
+          a: a.centres[0] + 1, roleA: centre[a.centres[0]],
+          b: a.centres[1] + 1, roleB: centre[a.centres[1]],
+        });
+      } else addInfo(g, p.id, 'onuw.info.lookedAtNothing');
+    } else if (step.role === 'robber') {
+      if (a.target) {
+        const taken = roles[a.target];
+        roles[a.target] = roles[p.id];
+        roles[p.id] = taken;
+        addInfo(g, p.id, 'onuw.info.robbed', { name: nameOf(g, a.target), role: taken });
+        g.swaps.push({ key: 'onuw.swap.robber', params: { a: p.name, b: nameOf(g, a.target) } });
+      } else addInfo(g, p.id, 'onuw.info.robbedNobody');
+    } else if (step.role === 'troublemaker') {
+      if (a.targets) {
+        const [x, y] = a.targets;
+        [roles[x], roles[y]] = [roles[y], roles[x]];
+        addInfo(g, p.id, 'onuw.info.swapped', { a: nameOf(g, x), b: nameOf(g, y) });
+        g.swaps.push({ key: 'onuw.swap.troublemaker', params: { a: nameOf(g, x), b: nameOf(g, y) } });
+      } else addInfo(g, p.id, 'onuw.info.swappedNobody');
+    } else if (step.role === 'drunk') {
+      // The Drunk always swaps. Someone who ran out of time still swaps, with
+      // a card nobody can predict.
+      const i = Number.isInteger(a.centre) ? a.centre : Math.floor(Math.random() * centre.length);
+      [roles[p.id], centre[i]] = [centre[i], roles[p.id]];
+      addInfo(g, p.id, 'onuw.info.drunk', { index: i + 1 });
+      g.swaps.push({ key: 'onuw.swap.drunk', params: { a: p.name, index: i + 1 } });
+    } else if (step.role === 'insomniac') {
+      addInfo(g, p.id, 'onuw.info.insomniac', { role: roles[p.id] });
     }
   }
+}
 
-  g.finalRoles = roles;
-  g.centre = centre;
-  g.info = info;
+function dawn(g) {
   g.phase = 'day';
+  g.step = NIGHT_SCRIPT.length;
   logEvent(g, 'log.dawn', {});
 }
 
@@ -272,13 +316,15 @@ export function resetToLobby(g, playerId) {
 
 // ---------------------------------------------------------------- views
 
-export function viewFor(g, viewerId) {
+export function viewFor(g, viewerId, now = Date.now()) {
   const me = playerById(g, viewerId);
   const over = g.phase === 'over';
+  const night = g.phase === 'night';
   const startRole = g.startRoles[viewerId] ?? null;
-  const waiting = g.phase === 'night' ? pendingActors(g)
-    : g.phase === 'vote' ? g.players.filter((p) => !(p.id in g.votes))
-    : [];
+  const step = currentStep(g);
+  const awake = night && isAwake(g, viewerId);
+  // Nobody is waited on at night — see the note at the top of this file.
+  const waiting = g.phase === 'vote' ? g.players.filter((p) => !(p.id in g.votes)) : [];
 
   return {
     ...lobby.baseView(g, viewerId),
@@ -287,7 +333,8 @@ export function viewFor(g, viewerId) {
       role: startRole,
       team: startRole ? teamOf(startRole) : null,
       finalRole: over ? g.finalRoles[viewerId] : undefined,
-      action: g.phase === 'night' ? actionFor(g, viewerId) : null,
+      awake,
+      action: awake ? actionFor(g, viewerId) : null,
       acted: viewerId in g.actions,
       voted: viewerId in g.votes,
     } : null,
@@ -295,7 +342,8 @@ export function viewFor(g, viewerId) {
       id: p.id,
       name: p.name,
       seat: i,
-      acted: g.phase === 'night' ? p.id in g.actions || !actionFor(g, p.id) : undefined,
+      // No `acted` at night: it would be false only for players holding an
+      // action role, which is the deck read straight off the screen.
       voted: g.phase === 'vote' ? p.id in g.votes : undefined,
       votedFor: over ? g.votes[p.id] ?? null : undefined,
       dead: over ? g.dead.includes(p.id) : undefined,
@@ -311,8 +359,20 @@ export function viewFor(g, viewerId) {
     // Never the contents — only how many face-down cards are on the table.
     centre: over ? g.centre : null,
     centreStart: over ? g.centreStart : null,
-    knowledge: g.phase === 'night' && startRole ? staticKnowledge(g, viewerId) : [],
-    info: g.phase === 'night' ? [] : (g.info[viewerId] ?? []),
+    // The same clock for every player, so the countdown can never be read as
+    // a signal about who is doing what.
+    night: night && step ? {
+      index: g.step,
+      total: NIGHT_SCRIPT.length,
+      key: step.key,
+      msLeft: Math.max(0, g.stepEndsAt - now),
+      msTotal: stepMillis(step, g.pace),
+    } : null,
+    pace: g.pace,
+    nightScript: NIGHT_SCRIPT.map((entry) => entry.key),
+    nightSeconds: nightLength(g.pace) / 1000,
+    knowledge: awake ? staticKnowledge(g, viewerId) : [],
+    info: night ? [] : (g.info[viewerId] ?? []),
     swaps: over ? g.swaps : [],
     votes: over ? { ...g.votes } : {},
     dead: over ? g.dead : [],

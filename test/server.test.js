@@ -4,9 +4,11 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 import { createApp } from '../src/server.js';
+import { Rooms } from '../src/rooms.js';
+import * as onuw from '../src/games/onuw/game.js';
 
-async function withServer(fn) {
-  const server = createServer(createApp());
+async function withServer(fn, options = {}) {
+  const server = createServer(createApp(options));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -200,6 +202,11 @@ test('the host switches the room between games, and nobody else can', async () =
 });
 
 test('a three player werewolf game plays through over the wire', async () => {
+  // The night runs on a real clock, so the test owns the room registry and
+  // winds it forward rather than sitting through ninety seconds.
+  const rooms = new Rooms();
+  const skipNight = (code) => rooms.apply(code, (g) => onuw.tick(g, Date.now() + 10 * 60_000));
+
   await withServer(async (base) => {
     const { code } = await (await post(base, '/api/rooms', { game: 'onuw' })).json();
     const ids = [];
@@ -219,16 +226,20 @@ test('a three player werewolf game plays through over the wire', async () => {
     assert.equal(view.phase, 'night');
     assert.ok(view.you.role, 'each player is dealt a card');
     assert.equal(view.centre, null, 'the centre is face down');
+    assert.equal(view.night.key, 'nightfall', 'the night opens with everyone closing their eyes');
+    assert.ok(view.night.msLeft > 0, 'and a clock the whole room shares');
 
-    // Everyone with something to do passes, which is enough to reach dawn.
+    // Nobody can be identified by what the night is waiting on.
     for (const id of ids) {
       const mine = await viewOf(id);
-      if (mine.you.action && mine.you.action !== 'drunk') await act(id, { type: 'night', action: { skip: true } });
-      else if (mine.you.action === 'drunk') await act(id, { type: 'night', action: { centre: 0 } });
+      assert.deepEqual(mine.waitingFor, []);
+      assert.ok(mine.players.every((p) => p.acted === undefined));
     }
 
+    skipNight(code);
     view = await viewOf(ids[0]);
     assert.equal(view.phase, 'day');
+    assert.equal(view.night, null);
 
     await act(ids[0], { type: 'startVote' });
     await act(ids[0], { type: 'vote', target: ids[1] });
@@ -240,5 +251,5 @@ test('a three player werewolf game plays through over the wire', async () => {
     assert.deepEqual(view.dead, [ids[1]]);
     assert.equal(view.centre.length, 3, 'everything is revealed');
     assert.ok(view.players.every((p) => p.startRole && p.finalRole));
-  });
+  }, { rooms });
 });

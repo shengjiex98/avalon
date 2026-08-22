@@ -8,6 +8,70 @@ export function bind(ctx) {
   ({ T, send, app, joinNames, render } = ctx);
 }
 
+// ---------------------------------------------------------------- the clock
+
+/**
+ * The server sends how long is left at the moment it broadcasts; we count down
+ * locally from there and re-sync on the next message. That keeps everyone on
+ * the same clock without trusting any two devices to agree on the time.
+ */
+let clockTimer = null;
+let spokenStep = null;
+
+function syncClock() {
+  const night = app.view?.night;
+  clearInterval(clockTimer);
+  clockTimer = null;
+  if (!night) { spokenStep = null; return; }
+
+  app.stepEndsAt = Date.now() + night.msLeft;
+  clockTimer = setInterval(() => {
+    const el = document.getElementById('nightClock');
+    if (!el) { clearInterval(clockTimer); clockTimer = null; return; }
+    el.textContent = clockText();
+    const bar = document.getElementById('nightBar');
+    if (bar) bar.setAttribute('style', `width:${clockFraction() * 100}%`);
+  }, 200);
+}
+
+const msLeft = () => Math.max(0, (app.stepEndsAt ?? 0) - Date.now());
+const clockText = () => String(Math.ceil(msLeft() / 1000));
+const clockFraction = () => {
+  const total = app.view?.night?.msTotal ?? 1;
+  return Math.max(0, Math.min(1, msLeft() / total));
+};
+
+/**
+ * Read the announcement aloud. Every player hears the same line, including the
+ * roles nobody was dealt — that is what stops the table reading the deck off
+ * what does and does not get called.
+ */
+function announce(night) {
+  if (spokenStep === night.index) return;
+  const previous = spokenStep;
+  spokenStep = night.index;
+  if (app.muted || typeof speechSynthesis === 'undefined') return;
+
+  const lines = [];
+  const script = app.view.nightScript ?? [];
+  const prevKey = previous !== null ? script[previous] : null;
+  if (prevKey && prevKey !== 'nightfall') lines.push(T(`onuw.sleep.${prevKey}`));
+  lines.push(T(`onuw.wake.${night.key}`));
+
+  for (const text of lines) {
+    const said = new SpeechSynthesisUtterance(text);
+    said.lang = app.lang === 'zh' ? 'zh-CN' : 'en-US';
+    said.rate = 0.95;
+    speechSynthesis.speak(said);
+  }
+}
+
+export function onView() {
+  syncClock();
+  if (app.view?.night) announce(app.view.night);
+  else spokenStep = null;
+}
+
 export const id = 'onuw';
 export const minPlayers = 3;
 export const rulesKey = 'onuw.rules.body';
@@ -46,6 +110,12 @@ export function lobbyOptions() {
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
     h('p', { class: 'muted', text: T('onuw.optionRoom', { n: v.optionRoom }) }),
     ...OPTIONS.map(toggle),
+    h('h3', { text: T('onuw.pace') }),
+    h('div', { class: 'row' }, ['brisk', 'normal', 'relaxed'].map((pace) => h('button', {
+      class: `btn grow ${v.pace === pace ? 'primary' : ''}`, id: `pace-${pace}`, disabled: !isHost,
+      onclick: () => send('options', { options: { pace } }),
+    }, T(`onuw.pace.${pace}`)))),
+    h('p', { class: 'muted', text: T('onuw.pace.length', { n: Math.round((v.nightSeconds ?? 0)) }) }),
     h('h3', { text: T('onuw.deck') }),
     v.deck
       ? h('div', { class: 'deck' }, Object.entries(v.deck).map(([role, n]) =>
@@ -138,34 +208,47 @@ export function panes() {
 
 function paneNight() {
   const v = app.view;
-  const kind = v.you.action;
+  const night = v.night;
+  const awake = v.you.awake;
 
-  if (v.you.acted) {
-    return [h('div', { class: 'card stack' },
-      h('h2', { text: T('onuw.phase.night') }),
-      h('p', { class: 'muted', text: T('onuw.night.done', { names: waitingNames() }) }),
-      pickList({ tags: (p) => (p.acted ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
-    )];
-  }
+  return [h('div', { class: 'card stack night' },
+    h('div', { class: 'row' },
+      h('span', { class: 'muted grow', text: T('onuw.night.step', { n: night.index + 1, total: night.total }) }),
+      h('button', {
+        class: 'btn ghost', id: 'voiceToggle',
+        onclick: () => {
+          app.muted = !app.muted;
+          localStorage.setItem('avalon.muted', app.muted ? '1' : '');
+          if (app.muted && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+          render();
+        },
+      }, `${T('onuw.voice')}: ${app.muted ? '✕' : '🔊'}`),
+    ),
 
-  if (!kind) {
-    return [h('div', { class: 'card stack' },
-      h('h2', { text: T('onuw.phase.night') }),
-      h('p', { text: T('onuw.night.nothingToDo') }),
-      h('p', { class: 'muted', text: T('onuw.night.waiting', { names: waitingNames() }) }),
-      pickList({ tags: (p) => (p.acted ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
-    )];
-  }
+    // The announcement and the clock are identical on every screen in the room.
+    h('p', { class: 'announce', text: T(`onuw.wake.${night.key}`) }),
+    h('div', { class: 'clock' },
+      h('span', { class: 'clock-num', id: 'nightClock', text: String(Math.ceil(night.msLeft / 1000)) }),
+    ),
+    h('div', { class: 'bar' }, h('div', { class: 'bar-fill', id: 'nightBar', style: 'width:100%' })),
 
-  const body = { loneWolf: actLoneWolf, seer: actSeer, robber: actRobber,
-                 troublemaker: actTroublemaker, drunk: actDrunk }[kind]();
+    awake
+      ? h('div', { class: 'stack' },
+          h('p', { class: 'yourturn', text: T('onuw.night.yourTurn') }),
+          ...v.knowledge.map((k) => h('p', { text: line(k) })),
+          ...(v.you.action ? actionBody(v.you.action) : []),
+        )
+      : h('p', { class: 'muted', text: T('onuw.night.keepEyesShut') }),
 
-  return [h('div', { class: 'card stack' },
-    h('h2', { text: T('onuw.phase.night') }),
-    h('p', { text: T(`onuw.act.${kind}`) }),
-    ...body,
-    h('p', { class: 'muted', text: T('onuw.night.hint') }),
+    h('p', { class: 'muted', text: T('onuw.night.everyoneSameClock') }),
   )];
+}
+
+function actionBody(kind) {
+  if (app.view.you.acted) return [h('p', { class: 'muted', text: T('onuw.night.hint') })];
+  const body = { loneWolf: actLoneWolf, seer: actSeer, robber: actRobber,
+                 troublemaker: actTroublemaker, drunk: actDrunk }[kind];
+  return [h('p', { text: T(`onuw.act.${kind}`) }), ...body(), h('p', { class: 'muted', text: T('onuw.night.hint') })];
 }
 
 const submit = (action) => send('night', { action });

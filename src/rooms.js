@@ -17,7 +17,7 @@ export class Rooms {
     let code;
     do { code = randomCode(); } while (this.rooms.has(code));
     const game = gameFor(gameId).create(code, { now: this.now });
-    this.rooms.set(code, { game, subscribers: new Set(), touchedAt: this.now() });
+    this.rooms.set(code, { game, subscribers: new Set(), touchedAt: this.now(), timer: null });
     return code;
   }
 
@@ -64,7 +64,34 @@ export class Rooms {
     const result = fn(room.game);
     room.game.version += 1;
     this.broadcast(room);
+    this.scheduleTick(code);
     return result;
+  }
+
+  /**
+   * Some games run on a clock — One Night Werewolf's night advances whether or
+   * not anyone touches anything. Wake up exactly when the game says to.
+   */
+  scheduleTick(code) {
+    const room = this.rooms.get(code);
+    if (!room) return;
+    clearTimeout(room.timer);
+    room.timer = null;
+
+    const at = gameFor(room.game.gameId).nextDeadline?.(room.game);
+    if (!at) return;
+
+    room.timer = setTimeout(() => {
+      room.timer = null;
+      if (!this.rooms.has(code)) return;
+      const moved = gameFor(room.game.gameId).tick(room.game, this.now());
+      if (moved) {
+        room.game.version += 1;
+        this.broadcast(room);
+      }
+      this.scheduleTick(code);
+    }, Math.max(0, at - this.now()));
+    room.timer.unref?.();   // a pending night must not hold the process open
   }
 
   broadcast(room) {
@@ -81,7 +108,10 @@ export class Rooms {
   sweep() {
     const cutoff = this.now() - IDLE_MS;
     for (const [code, room] of this.rooms) {
-      if (room.touchedAt < cutoff && room.subscribers.size === 0) this.rooms.delete(code);
+      if (room.touchedAt < cutoff && room.subscribers.size === 0) {
+        clearTimeout(room.timer);
+        this.rooms.delete(code);
+      }
     }
   }
 }

@@ -29,6 +29,36 @@ export const NIGHT_ORDER = Object.keys(ROLES)
   .filter((r) => ROLES[r].wake)
   .sort((a, b) => ROLES[a].wake - ROLES[b].wake);
 
+/** Seconds each waking role gets. Tuned so a table can act without dawdling. */
+const STEP_SECONDS = {
+  werewolf: 10, minion: 8, mason: 8, seer: 15,
+  robber: 12, troublemaker: 14, drunk: 10, insomniac: 8,
+};
+
+/**
+ * The night, as the table hears it. Every waking role gets called in order and
+ * gets the same number of seconds *whether or not it is in the deck* — that is
+ * the point, not an oversight. If the announcer skipped the roles nobody was
+ * dealt, everyone could deduce the deck from the silence, and if a step ended
+ * early everyone would know that role was present and had finished. So the
+ * clock is fixed and public, and it is the same clock for all players.
+ */
+export const NIGHT_SCRIPT = [
+  { key: 'nightfall', seconds: 6 },
+  ...NIGHT_ORDER.map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] })),
+];
+
+export const PACES = { brisk: 0.6, normal: 1, relaxed: 1.6 };
+export const DEFAULT_PACE = 'normal';
+
+/** How long a step lasts at this table's pace, in milliseconds. */
+export function stepMillis(step, pace = DEFAULT_PACE) {
+  return Math.round(step.seconds * (PACES[pace] ?? 1)) * 1000;
+}
+
+export const nightLength = (pace) =>
+  NIGHT_SCRIPT.reduce((ms, step) => ms + stepMillis(step, pace), 0);
+
 export const teamOf = (role) => ROLES[role].team;
 export const copiesOf = (role) => ROLES[role].copies ?? 1;
 
