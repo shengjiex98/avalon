@@ -44,7 +44,7 @@ src/rooms.js    Room registry, subscriber fan-out, idle expiry.
 src/server.js   HTTP: static files, JSON actions, one SSE stream per player.
 public/i18n.js  Every user-visible string, en + zh.
 public/app.js   The client: no framework, no bundler.
-test/           Rules, engine, HTTP, and translation coverage.
+test/           Rules, engine, HTTP, translations, and the rendered UI.
 ```
 
 The engine never touches the network and the server never reasons about the
@@ -79,6 +79,12 @@ client shows it in the reader's language.
   error, win reason and log event the server can emit, exists in *both*
   languages. This is what catches a half-finished translation, since there is
   no browser in the loop.
+- **ui** — renders the real client into a tiny DOM shim (`test/dom-shim.js`)
+  and drives it: the home screen's structure, an invite link, the language
+  toggle, and clicking through to a join request.
+- **ui-game** — renders every phase from views the actual engine produced, in
+  both languages, asserting among other things that no untranslated key ever
+  reaches the screen. There is no browser here, so this is the substitute.
 - **deploy** — the Pages split: CORS on the allowlisted origin (and not on
   others), preflight, the health probe, and the two things that silently break
   a project Pages site — an absolute asset path, or a hardcoded `/api` fetch

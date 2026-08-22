@@ -149,3 +149,11 @@ button.player:disabled { cursor: default; }
   .quest .size { font-size: 16px; }
   .code-pill { font-size: 24px; }
 }
+
+/* "or" rule between the two ways into a game. */
+.divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
+.divider::before, .divider::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line); }
+
+/* Code field and its button share a baseline. */
+.row.bottom { align-items: flex-end; }
+.row.bottom .btn { white-space: nowrap; }

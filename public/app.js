@@ -206,23 +206,49 @@ function screenHome() {
   if (app.serverOk === null) return [h('div', { class: 'card' }, h('p', { class: 'muted', text: T('server.checking') }))];
   if (app.serverOk === false) return [paneServer()];
 
-  const hashCode = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1] ?? '';
+  // A shared link carries the room code, so someone arriving that way should
+  // only have to give a name.
+  const invited = ((location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1] ?? '').toUpperCase();
+
+  const doCreate = () => createRoom().catch((e) => toast(T(`err.${e.key ?? 'network'}`, e.params)));
+  const doJoin = () => {
+    const name = readName();
+    const code = el('codeInput').value.trim().toUpperCase();
+    if (!name) return;
+    if (!code) { toast(T('err.noSuchRoom')); return; }
+    joinRoom(code, name);
+  };
+
+  // One name field, above both actions and belonging to neither. It used to
+  // sit inside the "create a room" card, which made joining look like it
+  // needed no name at all.
   return [
     h('div', { class: 'card stack' },
-      h('p', { class: 'muted', text: T('app.tagline') }),
+      h('p', { class: 'muted', text: invited ? T('home.invited', { code: invited }) : T('app.tagline') }),
       h('label', {}, T('home.name'),
-        h('input', { type: 'text', id: 'nameInput', maxlength: '24', value: store.name,
-                     placeholder: T('home.namePlaceholder'), autocomplete: 'nickname' })),
-      h('button', { class: 'btn primary wide', onclick: () => createRoom().catch((e) => toast(T(`err.${e.key ?? 'network'}`, e.params))) },
+        h('input', {
+          type: 'text', id: 'nameInput', maxlength: '24', value: store.name,
+          placeholder: T('home.namePlaceholder'), autocomplete: 'nickname',
+          autofocus: store.name ? null : 'autofocus',
+          onkeydown: (e) => { if (e.key === 'Enter') (invited ? doJoin() : doCreate()); },
+        })),
+      h('p', { class: 'muted', text: T('home.nameHint') }),
+
+      h('button', { class: `btn wide ${invited ? '' : 'primary'}`, id: 'createBtn', onclick: doCreate },
         T('home.create')),
-    ),
-    h('div', { class: 'card stack' },
-      h('h2', { text: T('home.join') }),
-      h('label', {}, T('home.code'),
-        h('input', { type: 'text', id: 'codeInput', maxlength: '8', value: hashCode.toUpperCase(),
-                     placeholder: T('home.codePlaceholder'), autocapitalize: 'characters', autocomplete: 'off',
-                     onkeydown: (e) => { if (e.key === 'Enter') doJoin(); } })),
-      h('button', { class: 'btn wide', onclick: doJoin }, T('home.go')),
+
+      h('div', { class: 'divider' }, h('span', { text: T('home.or') })),
+
+      h('div', { class: 'row bottom' },
+        h('label', { class: 'grow' }, T('home.code'),
+          h('input', {
+            type: 'text', id: 'codeInput', maxlength: '8', value: invited,
+            placeholder: T('home.codePlaceholder'), autocapitalize: 'characters', autocomplete: 'off',
+            onkeydown: (e) => { if (e.key === 'Enter') doJoin(); },
+          })),
+        h('button', { class: `btn ${invited ? 'primary' : ''}`, id: 'joinBtn', onclick: doJoin },
+          invited ? T('home.joinRoom', { code: invited }) : T('home.go')),
+      ),
     ),
     h('div', { class: 'row' },
       h('button', { class: 'btn ghost grow', onclick: () => el('rules').showModal() }, T('home.rulesLink')),
@@ -230,14 +256,6 @@ function screenHome() {
     ),
     h('p', { class: 'muted', text: T('server.connected', { server: app.server || T('server.sameOrigin') }) }),
   ];
-
-  function doJoin() {
-    const name = readName();
-    const code = el('codeInput').value.trim().toUpperCase();
-    if (!name) return;
-    if (!code) { toast(T('err.noSuchRoom')); return; }
-    joinRoom(code, name);
-  }
 }
 
 /** Shown when no backend answers: this page alone is not a game. */
@@ -337,9 +355,9 @@ function copyLink() {
   url.search = app.server ? `?server=${encodeURIComponent(app.server)}` : '';
   url.hash = `#/${app.code}`;
   const link = url.toString();
-  navigator.clipboard?.writeText(link)
-    .then(() => toast(T('lobby.copied'), 'info'))
-    .catch(() => toast(link, 'info'));
+  const copied = navigator.clipboard?.writeText(link);
+  if (copied) copied.then(() => toast(T('lobby.copied'), 'info')).catch(() => toast(link, 'info'));
+  else toast(link, 'info');   // no clipboard API on a plain-http origin
 }
 
 // ---- role + board (shown in every in-game phase)
@@ -578,18 +596,21 @@ function formatParams(params) {
 
 // ---------------------------------------------------------------- boot
 
-el('langToggle').addEventListener('click', () => {
-  app.lang = app.lang === 'en' ? 'zh' : 'en';
-  localStorage.setItem('avalon.lang', app.lang);
-  render();
-});
+/**
+ * Wire up the shell and reconnect if we still hold a seat. Exported and
+ * awaited by the tests, which render into a DOM shim rather than a browser.
+ */
+export async function main() {
+  el('langToggle').addEventListener('click', () => {
+    app.lang = app.lang === 'en' ? 'zh' : 'en';
+    localStorage.setItem('avalon.lang', app.lang);
+    render();
+  });
 
-window.addEventListener('hashchange', () => {
-  if (!app.code) render();
-});
+  window.addEventListener('hashchange', () => {
+    if (!app.code) render();
+  });
 
-// A refresh inside a room reconnects silently if we still hold that seat.
-(async function boot() {
   app.server = resolveServer();
   render();                      // paint "looking for the server" straight away
   await probeServer();
@@ -609,4 +630,8 @@ window.addEventListener('hashchange', () => {
     }
   }
   render();
-})();
+}
+
+export { app, render };
+
+export const ready = main();
