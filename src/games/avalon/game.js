@@ -2,19 +2,17 @@
 // clock (beyond timestamps) or randomness it was not handed.
 
 import {
-  GameError, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
+  MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
   buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize,
 } from './rules.js';
+import * as lobby from '../../lobby.js';
+import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
 
 export const PHASES = ['lobby', 'reveal', 'team', 'vote', 'quest', 'assassin', 'over'];
 
 export function createGame(code, { now = Date.now } = {}) {
   return {
-    code,
-    createdAt: now(),
-    phase: 'lobby',
-    players: [],            // [{ id, name }] in seating order
-    hostId: null,
+    ...lobby.baseState(code, 'avalon', { now }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     roles: {},              // playerId -> role key
     round: 0,               // 0-based quest index
@@ -28,52 +26,16 @@ export function createGame(code, { now = Date.now } = {}) {
     assassinTarget: null,
     winner: null,           // 'good' | 'evil'
     winReason: null,
-    log: [],
-    version: 0,
   };
 }
 
-const playerById = (g, id) => g.players.find((p) => p.id === id);
 const leader = (g) => g.players[g.leaderIndex];
 const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'evil');
 
-function require_(cond, key, params) {
-  if (!cond) throw new GameError(key, params);
-}
-
-function logEvent(g, key, params = {}) {
-  g.log.push({ key, params, at: g.log.length });
-}
-
 // ---------------------------------------------------------------- lobby
 
-export function addPlayer(g, { id, name }) {
-  const existing = playerById(g, id);
-  if (existing) {                       // reconnect keeps the seat and the role
-    if (name && name !== existing.name) existing.name = name;
-    return existing;
-  }
-  require_(g.phase === 'lobby', 'gameAlreadyStarted');
-  require_(g.players.length < MAX_PLAYERS, 'roomFull', { max: MAX_PLAYERS });
-  const clean = String(name ?? '').trim().slice(0, 24);
-  require_(clean.length > 0, 'nameRequired');
-  require_(!g.players.some((p) => p.name.toLowerCase() === clean.toLowerCase()), 'nameTaken');
-
-  const player = { id, name: clean };
-  g.players.push(player);
-  if (!g.hostId) g.hostId = id;
-  logEvent(g, 'log.joined', { name: clean });
-  return player;
-}
-
-export function removePlayer(g, id) {
-  require_(g.phase === 'lobby', 'cannotLeaveMidGame');
-  const player = playerById(g, id);
-  if (!player) return;
-  g.players = g.players.filter((p) => p.id !== id);
-  logEvent(g, 'log.left', { name: player.name });
-  if (g.hostId === id) g.hostId = g.players[0]?.id ?? null;
-}
+export const addPlayer = (g, player) => lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
+export const removePlayer = lobby.removePlayer;
 
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
@@ -258,10 +220,7 @@ export function viewFor(g, viewerId) {
   const revealAll = g.phase === 'over';
 
   return {
-    code: g.code,
-    phase: g.phase,
-    version: g.version,
-    hostId: g.hostId,
+    ...lobby.baseView(g, viewerId),
     you: me ? { id: me.id, name: me.name, role: myRole, side: myRole ? sideOf(myRole) : null } : null,
     players: g.players.map((p, i) => ({
       id: p.id,
@@ -293,7 +252,6 @@ export function viewFor(g, viewerId) {
     assassinTarget: g.assassinTarget,
     winner: g.winner,
     winReason: g.winReason,
-    log: g.log.slice(-40),
     // Everything below is "what am I waiting on" for the UI.
     waitingFor: waitingFor(g).map((p) => p.id),
     evilCount: g.phase === 'lobby' ? null : evilPlayers(g).length,
@@ -311,11 +269,3 @@ function waitingFor(g) {
   }
 }
 
-export function defaultShuffle(list) {
-  const a = list.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}

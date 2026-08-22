@@ -1,8 +1,9 @@
 # Avalon
 
-A self-hosted, multiplayer web version of *The Resistance: Avalon* for 5–10
-players, with a one-tap **English / 中文** toggle. No build step, no
-dependencies, no database — one `node` process and a browser each.
+Two self-hosted hidden-role party games in one page — ***The Resistance:
+Avalon*** (5–10 players) and ***One Night Ultimate Werewolf*** (3–10) — with a
+switcher in the top bar and a one-tap **English / 中文** toggle. No build step,
+no dependencies, no database — one `node` process and a browser each.
 
 ```bash
 node src/server.js          # http://localhost:8420
@@ -11,6 +12,42 @@ npm test                    # 43 tests, no network needed
 
 Open the page, create a room, and share the four-letter code. Everyone else
 enters the code on their own phone.
+
+## Two games, one room
+
+The switcher in the top bar picks the game. On the home screen it decides what
+**Create** makes; in a lobby the host uses it to change what the room is
+playing, keeping everyone at the table. Once a game starts it locks.
+
+They share a room layer and nothing else. Rooms, joining, reconnection, SSE
+fan-out, the bilingual protocol and the deployment are identical and live in
+`src/lobby.js`, `src/rooms.js` and `src/server.js`; each game keeps its own
+state machine under `src/games/<id>/`. Avalon is five rounds of proposal and
+voting; Werewolf is one night and one vote. Trying to unify *those* would have
+produced a worse version of both.
+
+### One Night Ultimate Werewolf
+
+3–10 players. The deck is always three cards larger than the table, and the
+spare three sit face down in the middle, so some roles are in nobody's hands.
+Roles: Werewolf ×2, Minion, Mason ×2, Seer, Robber, Troublemaker, Drunk,
+Insomniac, Hunter, Tanner, Villager.
+
+Online, waking one role at a time means eight people watching one person think,
+so **every night action is submitted at once and resolved in the canonical wake
+order**. That is not a house rule: no role's *choice* depends on anything
+learned during the night, only its *result* does, and results are computed in
+order. The lone werewolf is the one case that needs care — they must know they
+are alone before deciding whether to peek at a centre card, and that follows
+from the deal, so their screen says so up front.
+
+Then you argue, then everyone points at once. Most fingers dies; if every
+player collects exactly one vote, nobody does. You belong to the team of the
+card you are **holding at the end**, not the one you were dealt.
+
+**The Doppelgänger is deliberately absent.** It copies a role and then acts as
+it — a choice that genuinely depends on night information, and the one role
+this model cannot represent honestly.
 
 ## What it does
 
@@ -35,20 +72,26 @@ enters the code on their own phone.
 ## Layout
 
 ```
-.github/        Tests on every push; Pages deploy on main.
-deploy/         systemd user unit for the game server.
-public/config.js  Which backend the client talks to (empty = same origin).
-src/rules.js    Setup tables, role definitions, who-sees-whom. Pure data.
-src/game.js     The state machine, and the per-player view filter.
-src/rooms.js    Room registry, subscriber fan-out, idle expiry.
-src/server.js   HTTP: static files, JSON actions, one SSE stream per player.
-public/i18n.js  Every user-visible string, en + zh.
-public/app.js   The client: no framework, no bundler.
-test/           Rules, engine, HTTP, translations, and the rendered UI.
+.github/           Tests on every push; Pages deploy on main.
+deploy/            systemd user unit for the game server.
+src/lobby.js       Joining, hosting, logging — what both games do identically.
+src/rooms.js       Room registry, subscriber fan-out, idle expiry.
+src/server.js      HTTP: static files, JSON actions, one SSE stream per player.
+src/games/index.js The registry the room layer dispatches through.
+src/games/avalon/  Avalon's rules and state machine.
+src/games/onuw/    One Night Werewolf's rules and state machine.
+public/app.js      The shell: transport, home, lobby, the switcher.
+public/ui.js       DOM helpers shared by every screen.
+public/games/      One module of screens per game.
+public/i18n.js     Every user-visible string, en + zh.
+public/config.js   Which backend the client talks to (empty = same origin).
+test/              Rules, engines, HTTP, translations, and the rendered UI.
 ```
 
-The engine never touches the network and the server never reasons about the
-game, so the rules are testable without a browser or a socket.
+No engine touches the network and the server never reasons about a game, so
+every rule is testable without a browser or a socket. Adding a third game means
+a directory under `src/games/`, a module under `public/games/`, and two
+registry lines — the room layer does not change.
 
 ## Talking to it
 
@@ -61,8 +104,10 @@ game, so the rules are testable without a browser or a socket.
 | `GET` | `/api/rooms/:code/events?playerId=` | SSE, one filtered view per update |
 | `POST` | `/api/rooms/:code/action` | `{type, playerId, …}` |
 
-Actions: `options`, `start`, `confirm`, `propose`, `vote`, `card`,
-`assassinate`, `leave`, `again`. Errors come back as
+`POST /api/rooms` takes `{game}`; `setGame` switches a lobby between them.
+Common actions: `leave`, `setGame`. Avalon adds `options`, `start`, `confirm`,
+`propose`, `vote`, `card`, `assassinate`, `again`; Werewolf adds `options`,
+`start`, `night`, `startVote`, `vote`, `again`. Errors come back as
 `{error: "<key>", params: {…}}` — a translation key, not a sentence, so the
 client shows it in the reader's language.
 
@@ -71,8 +116,12 @@ client shows it in the reader's language.
 `npm test` runs four suites with Node's built-in runner:
 
 - **rules** — setup tables, role fitting, and each role's knowledge.
-- **game** — deterministic full games: rejections, the hammer, two-fail quests,
-  both assassination outcomes, and an assertion that no view leaks a role.
+- **game** — deterministic full Avalon games: rejections, the hammer, two-fail
+  quests, both assassination outcomes, and an assertion that no view leaks a role.
+- **onuw** — deterministic werewolf nights: that the order of *resolution* is
+  the wake order and not the order people pressed the button, that the Drunk
+  and Troublemaker learn nothing, every win condition, and that no view shows
+  another player's card before the vote is in.
 - **server** — real HTTP against an ephemeral port, including a five-player
   game played end to end over SSE.
 - **i18n-coverage** — every key `app.js` and `index.html` ask for, plus every
@@ -82,9 +131,10 @@ client shows it in the reader's language.
 - **ui** — renders the real client into a tiny DOM shim (`test/dom-shim.js`)
   and drives it: the home screen's structure, an invite link, the language
   toggle, and clicking through to a join request.
-- **ui-game** — renders every phase from views the actual engine produced, in
-  both languages, asserting among other things that no untranslated key ever
-  reaches the screen. There is no browser here, so this is the substitute.
+- **ui-game** / **ui-onuw** — render every phase of both games from views the
+  actual engines produced, in both languages, asserting among other things that
+  no untranslated key ever reaches the screen. There is no browser here, so
+  this is the substitute.
 - **deploy** — the Pages split: CORS on the allowlisted origin (and not on
   others), preflight, the health probe, and the two things that silently break
   a project Pages site — an absolute asset path, or a hardcoded `/api` fetch

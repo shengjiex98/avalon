@@ -1,7 +1,7 @@
 // Room registry: owns the games, the subscriber lists and expiry.
 
-import { GameError } from './rules.js';
-import { createGame, viewFor } from './game.js';
+import { GameError, logEvent, require_ } from './lobby.js';
+import { DEFAULT_GAME, GAMES, gameFor } from './games/index.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 const IDLE_MS = 6 * 60 * 60 * 1000; // rooms vanish six hours after the last touch
@@ -12,11 +12,31 @@ export class Rooms {
     this.rooms = new Map(); // code -> { game, subscribers:Set, touchedAt }
   }
 
-  create() {
+  create(gameId = DEFAULT_GAME) {
+    if (!(gameId in GAMES)) throw new GameError('noSuchGame', { game: gameId });
     let code;
     do { code = randomCode(); } while (this.rooms.has(code));
-    this.rooms.set(code, { game: createGame(code, { now: this.now }), subscribers: new Set(), touchedAt: this.now() });
+    const game = gameFor(gameId).create(code, { now: this.now });
+    this.rooms.set(code, { game, subscribers: new Set(), touchedAt: this.now() });
     return code;
+  }
+
+  /**
+   * Swap which game a room is playing. The people stay; everything about the
+   * previous game is discarded, which is why it is a lobby-only move.
+   */
+  setGame(code, playerId, gameId) {
+    if (!(gameId in GAMES)) throw new GameError('noSuchGame', { game: gameId });
+    return this.apply(code, (g) => {
+      require_(g.phase === 'lobby', 'gameAlreadyStarted');
+      require_(playerId === g.hostId, 'hostOnly');
+      if (g.gameId === gameId) return;
+      const fresh = gameFor(gameId).create(g.code, { now: this.now });
+      const { players, hostId, log, version } = g;
+      for (const key of Object.keys(g)) delete g[key];
+      Object.assign(g, fresh, { players, hostId, log, version });
+      logEvent(g, 'log.gameSwitched', { game: gameId });
+    });
   }
 
   get(code) {
@@ -34,7 +54,7 @@ export class Rooms {
     const room = this.get(code);
     const sub = { playerId, send };
     room.subscribers.add(sub);
-    send(viewFor(room.game, playerId));
+    send(gameFor(room.game.gameId).viewFor(room.game, playerId));
     return () => room.subscribers.delete(sub);
   }
 
@@ -48,9 +68,10 @@ export class Rooms {
   }
 
   broadcast(room) {
+    const view = gameFor(room.game.gameId).viewFor;
     for (const sub of room.subscribers) {
       try {
-        sub.send(viewFor(room.game, sub.playerId));
+        sub.send(view(room.game, sub.playerId));
       } catch {
         room.subscribers.delete(sub); // a dead socket is not an error worth raising
       }

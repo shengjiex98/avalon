@@ -157,3 +157,88 @@ test('a five player game plays through over the wire', async () => {
     assert.equal(view.phase, 'team');
   });
 });
+
+test('a room can be created for either game', async () => {
+  await withServer(async (base) => {
+    const { code } = await (await post(base, '/api/rooms', { game: 'onuw' })).json();
+    const playerId = (await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json()).playerId;
+
+    const abort = new AbortController();
+    const view = (await views(base, code, playerId, abort.signal).next()).value;
+    abort.abort();
+    assert.equal(view.gameId, 'onuw');
+    assert.equal(view.phase, 'lobby');
+
+    const bogus = await post(base, '/api/rooms', { game: 'chess' });
+    assert.equal((await bogus.json()).error, 'noSuchGame');
+  });
+});
+
+test('the host switches the room between games, and nobody else can', async () => {
+  await withServer(async (base) => {
+    const { code } = await (await post(base, '/api/rooms')).json();
+    const ann = (await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json()).playerId;
+    const bob = (await (await post(base, `/api/rooms/${code}/join`, { name: 'Bob' })).json()).playerId;
+
+    const act = (playerId, body) => post(base, `/api/rooms/${code}/action`, { playerId, ...body });
+    const viewOf = async (playerId) => {
+      const abort = new AbortController();
+      const v = (await views(base, code, playerId, abort.signal).next()).value;
+      abort.abort();
+      return v;
+    };
+
+    const refused = await act(bob, { type: 'setGame', game: 'onuw' });
+    assert.equal((await refused.json()).error, 'hostOnly');
+
+    assert.equal((await act(ann, { type: 'setGame', game: 'onuw' })).status, 200);
+    const after = await viewOf(bob);
+    assert.equal(after.gameId, 'onuw', 'everyone sees the switch');
+    assert.deepEqual(after.players.map((p) => p.name), ['Ann', 'Bob'], 'the table is kept');
+    assert.equal(after.hostId, ann);
+  });
+});
+
+test('a three player werewolf game plays through over the wire', async () => {
+  await withServer(async (base) => {
+    const { code } = await (await post(base, '/api/rooms', { game: 'onuw' })).json();
+    const ids = [];
+    for (const name of ['Ann', 'Bob', 'Cai']) {
+      ids.push((await (await post(base, `/api/rooms/${code}/join`, { name })).json()).playerId);
+    }
+    const act = (playerId, body) => post(base, `/api/rooms/${code}/action`, { playerId, ...body });
+    const viewOf = async (playerId) => {
+      const abort = new AbortController();
+      const v = (await views(base, code, playerId, abort.signal).next()).value;
+      abort.abort();
+      return v;
+    };
+
+    assert.equal((await act(ids[0], { type: 'start' })).status, 200);
+    let view = await viewOf(ids[0]);
+    assert.equal(view.phase, 'night');
+    assert.ok(view.you.role, 'each player is dealt a card');
+    assert.equal(view.centre, null, 'the centre is face down');
+
+    // Everyone with something to do passes, which is enough to reach dawn.
+    for (const id of ids) {
+      const mine = await viewOf(id);
+      if (mine.you.action && mine.you.action !== 'drunk') await act(id, { type: 'night', action: { skip: true } });
+      else if (mine.you.action === 'drunk') await act(id, { type: 'night', action: { centre: 0 } });
+    }
+
+    view = await viewOf(ids[0]);
+    assert.equal(view.phase, 'day');
+
+    await act(ids[0], { type: 'startVote' });
+    await act(ids[0], { type: 'vote', target: ids[1] });
+    await act(ids[1], { type: 'vote', target: ids[2] });
+    await act(ids[2], { type: 'vote', target: ids[1] });
+
+    view = await viewOf(ids[0]);
+    assert.equal(view.phase, 'over');
+    assert.deepEqual(view.dead, [ids[1]]);
+    assert.equal(view.centre.length, 3, 'everything is revealed');
+    assert.ok(view.players.every((p) => p.startRole && p.finalRole));
+  });
+});

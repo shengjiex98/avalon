@@ -98,6 +98,7 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
     langToggle: make('button', 'langToggle'),
     conn: make('span', 'conn'),
     view: make('main', 'view'),
+    gameSwitch: make('div', 'gameSwitch'),
     rules: make('dialog', 'rules'),
     rulesBody: make('p', 'rulesBody'),
     toast: make('div', 'toast'),

@@ -2,15 +2,33 @@
 // "team.submit" because someone renamed a string in one language only.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 import { STRINGS } from '../public/i18n.js';
-import { ROLES } from '../src/rules.js';
+import { ROLES } from '../src/games/avalon/rules.js';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
+/** Every server source file, so a newly added game cannot skip these checks. */
+async function serverSources() {
+  const dir = new URL('../src/', import.meta.url);
+  const files = await readdir(dir, { recursive: true });
+  const js = files.filter((f) => f.endsWith('.js')).sort();
+  assert.ok(js.length >= 5, `expected to find the server sources, found ${js.length}`);
+  return Promise.all(js.map((f) => readFile(new URL(f, dir), 'utf8')));
+}
+
+/** Every client source, so a game's panels cannot skip the check either. */
+async function clientSources() {
+  const dir = new URL('../public/', import.meta.url);
+  const files = await readdir(dir, { recursive: true });
+  const js = files.filter((f) => f.endsWith('.js') && !f.endsWith('config.js')).sort();
+  assert.ok(js.length >= 4, `expected to find the client sources, found ${js.length}`);
+  return Promise.all(js.map((f) => readFile(new URL(f, dir), 'utf8')));
+}
+
 test('every literal key the client renders exists in both languages', async () => {
-  const source = await read('../public/app.js');
+  const source = (await clientSources()).join('\n');
   const keys = new Set();
   for (const m of source.matchAll(/\bT\(\s*'([\w.]+)'/g)) keys.add(m[1]);
   for (const m of source.matchAll(/data-i18n="([\w.]+)"/g)) keys.add(m[1]);
@@ -42,7 +60,7 @@ test('every role has a name and a description in both languages', () => {
 });
 
 test('every error the server can throw has a message in both languages', async () => {
-  const sources = await Promise.all(['../src/game.js', '../src/rules.js', '../src/rooms.js', '../src/server.js'].map(read));
+  const sources = await serverSources();
   const thrown = new Set();
   for (const src of sources) {
     for (const m of src.matchAll(/new GameError\('([\w.]+)'/g)) thrown.add(m[1]);
@@ -60,7 +78,7 @@ test('every error the server can throw has a message in both languages', async (
 });
 
 test('every win reason the engine sets has a message in both languages', async () => {
-  const src = await read('../src/game.js');
+  const src = (await serverSources()).join('\n');
   const reasons = [...src.matchAll(/'(win\.\w+)'/g)].map((m) => m[1]);
   assert.ok(reasons.length >= 4);
   for (const key of reasons) {
@@ -69,7 +87,7 @@ test('every win reason the engine sets has a message in both languages', async (
 });
 
 test('every log event the engine emits has a message in both languages', async () => {
-  const src = await read('../src/game.js');
+  const src = (await serverSources()).join('\n');
   const keys = [...src.matchAll(/logEvent\(g,\s*'(log\.\w+)'/g)].map((m) => m[1]);
   const conditional = [...src.matchAll(/logEvent\(g,\s*\w+\s*\?\s*'(log\.\w+)'\s*:\s*'(log\.\w+)'/g)].flatMap((m) => [m[1], m[2]]);
   const all = new Set([...keys, ...conditional]);

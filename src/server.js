@@ -7,9 +7,9 @@ import { readFile, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GameError } from './rules.js';
+import { GameError } from './lobby.js';
 import { Rooms } from './rooms.js';
-import * as game from './game.js';
+import { GAMES, GAME_IDS, gameFor } from './games/index.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 
@@ -32,17 +32,9 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
-/** Every action a client may send, and what it does to the game. */
-const ACTIONS = {
-  options:   (g, id, body) => game.setOptions(g, id, body.options ?? {}),
-  start:     (g, id) => game.startGame(g, id),
-  confirm:   (g, id) => game.confirmRole(g, id),
-  propose:   (g, id, body) => game.proposeTeam(g, id, body.team ?? []),
-  vote:      (g, id, body) => game.castVote(g, id, body.approve === true),
-  card:      (g, id, body) => game.playCard(g, id, body.success !== false),
-  assassinate: (g, id, body) => game.assassinate(g, id, body.target),
-  leave:     (g, id) => game.removePlayer(g, id),
-  again:     (g, id) => game.resetToLobby(g, id),
+/** Actions that mean the same thing whatever is being played. */
+const COMMON_ACTIONS = {
+  leave: (g, id) => gameFor(g.gameId).removePlayer(g, id),
 };
 
 export function createApp({ rooms = new Rooms(), allowedOrigins = ALLOW_ORIGIN } = {}) {
@@ -89,11 +81,12 @@ async function api(rooms, req, res, url) {
   // A front end hosted elsewhere probes this before showing the lobby, so it
   // can say "that server is unreachable" instead of failing on the first join.
   if (req.method === 'GET' && url.pathname === '/api/health') {
-    return json(res, 200, { ok: true, service: 'avalon', rooms: rooms.rooms.size });
+    return json(res, 200, { ok: true, service: 'avalon', games: GAME_IDS, rooms: rooms.rooms.size });
   }
 
   if (req.method === 'POST' && url.pathname === '/api/rooms') {
-    return json(res, 200, { code: rooms.create() });
+    const body = await readJson(req);
+    return json(res, 200, { code: rooms.create(body.game) });
   }
 
   if (parts[0] !== 'api' || parts[1] !== 'rooms' || !parts[2]) {
@@ -116,17 +109,24 @@ async function api(rooms, req, res, url) {
     const room = rooms.get(code);
     const known = playerId && room.game.players.some((p) => p.id === playerId);
     if (!known) playerId = randomUUID();
-    rooms.apply(code, (g) => game.addPlayer(g, { id: playerId, name: body.name }));
+    rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: playerId, name: body.name }));
     return json(res, 200, { playerId, code });
   }
 
   if (req.method === 'POST' && tail === 'action') {
     const body = await readJson(req);
-    const action = ACTIONS[body.type];
-    if (!action) return json(res, 400, { error: 'unknownAction', params: { type: body.type } });
     if (typeof body.playerId !== 'string') return json(res, 400, { error: 'notInGame' });
+
+    // Changing game replaces the room state, so it cannot run inside apply().
+    if (body.type === 'setGame') {
+      rooms.setGame(code, body.playerId, body.game);
+      return json(res, 200, { ok: true });
+    }
+
     rooms.apply(code, (g) => {
       if (!g.players.some((p) => p.id === body.playerId)) throw new GameError('notInGame');
+      const action = COMMON_ACTIONS[body.type] ?? gameFor(g.gameId).actions[body.type];
+      if (!action) throw new GameError('unknownAction', { type: body.type });
       return action(g, body.playerId, body);
     });
     return json(res, 200, { ok: true });

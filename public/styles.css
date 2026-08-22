@@ -157,3 +157,31 @@ button.player:disabled { cursor: default; }
 /* Code field and its button share a baseline. */
 .row.bottom { align-items: flex-end; }
 .row.bottom .btn { white-space: nowrap; }
+
+/* Game switcher in the top bar. */
+.seg { display: flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px; }
+.seg-btn { background: transparent; color: var(--muted); border: 0; border-radius: 999px;
+  padding: 6px 12px; font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.seg-btn:hover:not(:disabled):not(.on) { color: var(--text); }
+.seg-btn.on { background: var(--gold); color: #1a1508; font-weight: 700; }
+.seg-btn:disabled { cursor: not-allowed; opacity: .55; }
+
+/* One Night Werewolf. */
+.deck { display: flex; flex-wrap: wrap; gap: 6px; }
+.centre { display: flex; gap: 10px; justify-content: center; }
+.centre-card { flex: 1 1 0; max-width: 120px; aspect-ratio: 3/4; border-radius: 12px;
+  border: 2px dashed var(--line); background: var(--panel-2); color: var(--text);
+  display: grid; place-content: center; gap: 4px; font: inherit; padding: 6px; }
+button.centre-card { cursor: pointer; }
+button.centre-card:hover:not(:disabled) { border-color: var(--gold); }
+.centre-card.selected { border-style: solid; border-color: var(--good); background: #1b2740; }
+.centre-n { font-size: 12px; color: var(--muted); text-align: center; }
+.centre-face { font-size: 15px; font-weight: 700; text-align: center; }
+.player.dead { opacity: .6; text-decoration: line-through; }
+
+@media (max-width: 480px) {
+  .topbar { flex-wrap: wrap; gap: 8px; }
+  .topbar h1 { font-size: 15px; }
+  .seg-btn { padding: 6px 9px; font-size: 12px; }
+}

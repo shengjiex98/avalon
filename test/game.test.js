@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import * as g from '../src/game.js';
-import { sideOf } from '../src/rules.js';
+import * as g from '../src/games/avalon/game.js';
+import { sideOf } from '../src/games/avalon/rules.js';
 
 /** A deterministic game: `shuffle` is identity, so roles land in a known order. */
 function setup(count = 5, options = {}) {

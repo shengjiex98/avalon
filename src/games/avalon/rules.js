@@ -1,3 +1,5 @@
+import { GameError } from '../../lobby.js';
+
 // Static rules of The Resistance: Avalon. No state, no I/O.
 
 /**
@@ -97,10 +99,4 @@ export function buildRoleList(playerCount, options = {}) {
   return [...good, ...evil];
 }
 
-export class GameError extends Error {
-  constructor(key, params = {}) {
-    super(key);
-    this.key = key;
-    this.params = params;
-  }
-}
+export { GameError };

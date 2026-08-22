@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SETUPS, buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize } from '../src/rules.js';
+import { SETUPS, buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize } from '../src/games/avalon/rules.js';
 import { missingKeys, t, STRINGS } from '../public/i18n.js';
 
 test('every player count has five quests and a sane evil count', () => {
