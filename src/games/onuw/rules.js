@@ -29,24 +29,33 @@ export const NIGHT_ORDER = Object.keys(ROLES)
   .filter((r) => ROLES[r].wake)
   .sort((a, b) => ROLES[a].wake - ROLES[b].wake);
 
-/** Seconds each waking role gets. Tuned so a table can act without dawdling. */
+/** Seconds each waking role gets: long enough to read the table and decide. */
 const STEP_SECONDS = {
-  werewolf: 10, minion: 8, mason: 8, seer: 15,
-  robber: 12, troublemaker: 14, drunk: 10, insomniac: 8,
+  werewolf: 15, minion: 12, mason: 12, seer: 22,
+  robber: 20, troublemaker: 22, drunk: 15, insomniac: 12,
 };
+const NIGHTFALL_SECONDS = 8;
 
 /**
- * The night, as the table hears it. Every waking role gets called in order and
- * gets the same number of seconds *whether or not it is in the deck* — that is
- * the point, not an oversight. If the announcer skipped the roles nobody was
- * dealt, everyone could deduce the deck from the silence, and if a step ended
- * early everyone would know that role was present and had finished. So the
- * clock is fixed and public, and it is the same clock for all players.
+ * The night, as the table hears it.
+ *
+ * A step is included when its role is **in the deck** — which is public, since
+ * the lobby shows it. Calling a role nobody agreed to play hides nothing and
+ * only costs everyone time.
+ *
+ * A role in the deck is always called even if its card happens to be in the
+ * centre, because *that* is secret. And no step ever ends early, since ending
+ * early would announce that the role was in play and had finished. Between
+ * them those two rules mean the clock reveals nothing the lobby did not.
  */
-export const NIGHT_SCRIPT = [
-  { key: 'nightfall', seconds: 6 },
-  ...NIGHT_ORDER.map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] })),
-];
+export function nightScript(deck) {
+  const present = new Set(deck);
+  return [
+    { key: 'nightfall', seconds: NIGHTFALL_SECONDS },
+    ...NIGHT_ORDER.filter((role) => present.has(role))
+      .map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] })),
+  ];
+}
 
 export const PACES = { brisk: 0.6, normal: 1, relaxed: 1.6 };
 export const DEFAULT_PACE = 'normal';
@@ -56,8 +65,8 @@ export function stepMillis(step, pace = DEFAULT_PACE) {
   return Math.round(step.seconds * (PACES[pace] ?? 1)) * 1000;
 }
 
-export const nightLength = (pace) =>
-  NIGHT_SCRIPT.reduce((ms, step) => ms + stepMillis(step, pace), 0);
+export const nightLength = (deck, pace) =>
+  nightScript(deck).reduce((ms, step) => ms + stepMillis(step, pace), 0);
 
 export const teamOf = (role) => ROLES[role].team;
 export const copiesOf = (role) => ROLES[role].copies ?? 1;

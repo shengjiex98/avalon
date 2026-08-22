@@ -37,19 +37,26 @@ The night runs on a **shared clock**, the way the physical game's companion app
 does: a fixed script of role steps, each a fixed length, announced on screen
 and read aloud, identical on every player's phone.
 
-Two properties follow from that being *fixed*, and both matter:
+The script is built from the deck, and two rules keep it from telling anyone
+anything:
 
-- **Every waking role is called, in play or not.** Skipping the absent ones
-  would let the table read the deck off the announcements.
-- **A step never ends early**, even once the acting player has chosen. Ending
-  early would broadcast that the role was in play and had finished.
+- **A role is called when its card is in the deck** — which the lobby already
+  showed everyone. Calling roles nobody agreed to play would hide nothing and
+  only burn the table's time.
+- **A role in the deck is called even if its card is in the centre**, and a
+  step **never ends early** once the acting player has chosen. Both of those
+  *are* secret, so the clock must not reflect them.
 
 So no screen ever says who is awake, who has acted, or who is being waited on
-— the earlier version leaked exactly that, and the countdown is what replaces
-it. Only the player whose card matches the current step gets controls; everyone
-else sees the same clock and the words "eyes closed". The host sets the pace
-(brisk / normal / relaxed, roughly 55 / 90 / 145 seconds) in the lobby, and
-voice can be muted per device.
+— an earlier version leaked exactly that, and the shared countdown is what
+replaces it. Only the player whose card matches the current step gets controls;
+everyone else sees the same clock and the words "eyes closed".
+
+Whatever you look at, you see **while you are still awake** — the Seer's
+reading, the card the Robber took, the lone wolf's peek at the centre. A
+foldaway pane lists the deck, what each role does, and the night order, with
+the current step marked. The host sets the pace (brisk / normal / relaxed) in
+the lobby, and voice can be muted per device.
 
 Then you argue, then everyone points at once. Most fingers dies; if every
 player collects exactly one vote, nobody does. You belong to the team of the
@@ -128,11 +135,11 @@ client shows it in the reader's language.
 - **rules** — setup tables, role fitting, and each role's knowledge.
 - **game** — deterministic full Avalon games: rejections, the hammer, two-fail
   quests, both assassination outcomes, and an assertion that no view leaks a role.
-- **onuw** — deterministic werewolf nights on an owned clock: that every role
-  is called whether or not it is dealt, that a step does not end early when the
-  actor is done, that no night view names who is awake or has acted, that a
-  timed-out Drunk still swaps, every win condition, and that no view shows
-  another player's card before the vote is in.
+- **onuw** — deterministic werewolf nights on an owned clock: that the script
+  follows the deck, that a role whose card sits in the centre is called anyway,
+  that a step does not end early when the actor is done, that no night view
+  names who is awake or has acted, that a timed-out Drunk still swaps, every
+  win condition, and that no view shows another player's card before the vote.
 - **rooms** — that the night advances on the room's own timer with nobody
   pressing anything, that the new step is broadcast, and that a swept room
   takes its timer with it.
@@ -148,7 +155,8 @@ client shows it in the reader's language.
 - **ui-game** / **ui-onuw** — render every phase of both games from views the
   actual engines produced, in both languages, asserting among other things that
   no untranslated key ever reaches the screen. There is no browser here, so
-  this is the substitute.
+  this is the substitute. Includes a regression test that a redraw mid-step
+  paints the time actually left rather than the step's full length.
 - **deploy** — the Pages split: CORS on the allowlisted origin (and not on
   others), preflight, the health probe, and the two things that silently break
   a project Pages site — an absolute asset path, or a hardcoded `/api` fetch

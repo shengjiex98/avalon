@@ -109,8 +109,8 @@ function connect() {
       app.centres = [];
     }
     app.view = next;
+    gameFor(next.gameId).onView?.();   // re-anchor the clock before painting
     render();
-    gameFor(next.gameId).onView?.();
   };
   source.onerror = () => {
     app.connected = false;

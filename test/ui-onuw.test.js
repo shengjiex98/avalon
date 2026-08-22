@@ -5,12 +5,13 @@ import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
 import * as w from '../src/games/onuw/game.js';
-import { NIGHT_SCRIPT } from '../src/games/onuw/rules.js';
+import { nightScript, stepMillis } from '../src/games/onuw/rules.js';
 
 let clock = 1_700_000_000_000;
 const now = () => clock;
 
 const dom = installDom();
+const onuwUi = await import('../public/games/onuw.js');
 const client = await import('../public/app.js');
 await client.ready;
 const { app, render } = client;
@@ -33,6 +34,13 @@ function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee']) {
   game.centreStart = deck.slice(count);
   game.finalRoles = { ...game.startRoles };
   game.centre = game.centreStart.slice();
+  game.script = nightScript(deck);
+  game.info = {};
+  game.swaps = [];
+  game.actions = {};
+  game.step = 0;
+  game.stepEndsAt = clock + stepMillis(game.script[0], game.pace);
+  w.openStepForTests(game);
   return game;
 }
 
@@ -161,7 +169,7 @@ test('everyone sees the same announcement and the same countdown', () => {
   const screens = game.players.map((p) => show(game, p.id).text);
   for (const text of screens) {
     assert.match(text, /Seer, wake up/, 'the whole table hears the same call');
-    assert.match(text, /Step 5 of 9/);
+    assert.match(text, /Step 3 of 5/);
   }
   assert.match(dom.fixtures.view.byId('nightClock').text, /^\d+$/, 'a countdown is on screen');
 });
@@ -184,8 +192,8 @@ test('a player whose step it is not gets no controls at all', () => {
   assert.equal(bystander.byClass('player').filter((n) => n.tagName === 'BUTTON').length, 0);
 });
 
-test('every role is called even when the deck does not contain it', () => {
-  // Three players; Mason, Drunk and Insomniac are nowhere in this game.
+test('the night calls the deck\'s roles and no others', () => {
+  // Three players; Mason, Drunk, Insomniac and Minion are not in this deck.
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   const heard = [];
   for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
@@ -194,10 +202,37 @@ test('every role is called even when the deck does not contain it', () => {
     w.tick(game, clock);
   }
   const all = heard.join('\n');
-  for (const call of [/Masons, wake up/, /Drunk, wake up/, /Insomniac, wake up/, /Minion, wake up/]) {
-    assert.match(all, call, 'a silent role would give the deck away');
+  for (const absent of [/Masons, wake up/, /Drunk, wake up/, /Insomniac, wake up/, /Minion, wake up/]) {
+    assert.doesNotMatch(all, absent, 'the lobby already showed the deck; calling absent roles just wastes time');
   }
-  assert.equal(heard.length, NIGHT_SCRIPT.length);
+  // The Seer, Robber and Troublemaker cards are all in the centre here, and
+  // are called anyway — that part really is secret.
+  for (const called of [/Seer, wake up/, /Robber, wake up/, /Troublemaker, wake up/]) {
+    assert.match(all, called);
+  }
+  assert.equal(heard.length, game.script.length);
+});
+
+test('the reference pane lists the deck, the abilities and the order', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  const view = show(game, 'p1');
+
+  assert.match(view.text, /Roles and night order/);
+  assert.ok(!/Night order/.test(view.text), 'collapsed by default');
+
+  view.byId('refToggle').dispatch('click');
+  const open = dom.fixtures.view;
+  assert.match(open.text, /In this game \(6 cards\)/);
+  assert.match(open.text, /Werewolf/);
+  assert.match(open.text, /Swap your card with another player/, 'abilities are spelled out');
+  assert.match(open.text, /Night order/);
+  const order = open.byClass('order')[0].childNodes.map((li) => li.textContent);
+  assert.deepEqual(order, ['Everyone closes their eyes', 'Werewolf', 'Seer', 'Robber', 'Troublemaker']);
+  assert.equal(order.filter((_, i) => open.byClass('order')[0].childNodes[i].className === 'now').length, 1);
+
+  open.byId('refToggle').dispatch('click');
+  assert.ok(!/Night order/.test(dom.fixtures.view.text), 'and folds away again');
 });
 
 test('a paired werewolf is awake and sees their partner', () => {
@@ -206,7 +241,7 @@ test('a paired werewolf is awake and sees their partner', () => {
   const view = show(game, 'p0');
 
   assert.match(view.text, /Your turn/, 'a paired wolf is not told they are asleep');
-  assert.match(view.text, /Your fellow werewolf: 张三/);
+  assert.match(view.text, /Your fellow werewolf: 张三/, 'and sees who that is, during their own step');
   assert.equal(labelled(view, /^Confirm$/).length, 0, 'a pair has no centre card to look at');
 });
 
@@ -215,6 +250,7 @@ test('a lone werewolf may look at one centre card, or decline', () => {
   stepTo(game, 'werewolf');
   const view = show(game, 'p0');
   assert.match(view.text, /You are the only werewolf/);
+  assert.match(view.text, /Werewolf/, 'the wolf can see what they are on screen');
 
   const cards = view.byClass('centre-card');
   assert.equal(cards.length, 3);
@@ -275,6 +311,37 @@ test('the drunk is not offered a way out', () => {
   const view = show(game, 'p0');
   assert.match(view.text, /You will not see it/);
   assert.equal(labelled(view, /Do nothing/).length, 0, 'the Drunk must swap');
+});
+
+test('a redraw paints the time actually left, not the step\'s full length', () => {
+  // Tapping mute redraws the pane. It used to reinstate the countdown from the
+  // last server frame, so the clock jumped back to full for a moment.
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+
+  const realNow = Date.now;
+  let fake = 5_000_000;
+  Date.now = () => fake;
+  try {
+    show(game, 'p0');
+    onuwUi.onView();                       // the frame that anchors the clock
+    const full = Math.ceil(app.view.night.msLeft / 1000);
+    assert.ok(full >= 10, 'the seer gets a decent while');
+
+    fake += 9000;                          // nine seconds go by
+    dom.fixtures.view.byId('voiceToggle').dispatch('click');   // redraw
+
+    const shown = Number(dom.fixtures.view.byId('nightClock').text);
+    assert.ok(shown <= full - 8, `the clock jumped back to ${shown} of ${full}`);
+    const bar = dom.fixtures.view.byId('nightBar').getAttribute('style');
+    assert.doesNotMatch(bar, /width:100%/, 'the bar refilled too');
+
+    app.muted = false;
+  } finally {
+    Date.now = realNow;
+    app.view = { ...app.view, night: null };
+    onuwUi.onView();                       // stop the interval
+  }
 });
 
 test('the voice can be muted, and the choice sticks', () => {

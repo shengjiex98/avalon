@@ -19,9 +19,9 @@
 // role this model cannot represent honestly.
 
 import {
-  DEFAULT_PACE, MAX_PLAYERS, MIN_PLAYERS, NIGHT_SCRIPT, OPTIONAL_ROLES, PACES, ROLES,
-  buildDeck, decideWinners, defaultOptions, nightLength, roomForOptions, stepMillis,
-  tallyVotes, teamOf,
+  DEFAULT_PACE, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
+  buildDeck, decideWinners, defaultOptions, nightLength, nightScript, roomForOptions,
+  stepMillis, tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
@@ -34,7 +34,8 @@ export function createGame(code, { now = Date.now } = {}) {
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
     pace: DEFAULT_PACE,
-    step: -1,                // index into NIGHT_SCRIPT
+    script: [],              // this deck's night, decided when the cards are dealt
+    step: -1,                // index into script
     stepEndsAt: 0,           // ms timestamp; the same deadline for everyone
     startRoles: {},          // playerId -> the card dealt to them
     centreStart: [],         // the three cards nobody was dealt
@@ -85,9 +86,11 @@ export function startGame(g, playerId, { shuffle = defaultShuffle, now = Date.no
   g.finalRoles = { ...g.startRoles };
   g.centre = g.centreStart.slice();
 
+  g.script = nightScript(deck);
   g.phase = 'night';
   g.step = 0;
-  g.stepEndsAt = now() + stepMillis(NIGHT_SCRIPT[0], g.pace);
+  g.stepEndsAt = now() + stepMillis(g.script[0], g.pace);
+  openStep(g);
   logEvent(g, 'log.gameStarted', { count: g.players.length });
 }
 
@@ -95,7 +98,7 @@ export function startGame(g, playerId, { shuffle = defaultShuffle, now = Date.no
 
 const wolvesAmongPlayers = (g) => g.players.filter((p) => g.startRoles[p.id] === 'werewolf');
 
-export const currentStep = (g) => (g.phase === 'night' ? NIGHT_SCRIPT[g.step] ?? null : null);
+export const currentStep = (g) => (g.phase === 'night' ? g.script[g.step] ?? null : null);
 
 /** What this player must decide during their role's step, if anything. */
 export function actionFor(g, playerId) {
@@ -179,6 +182,10 @@ export function submitNight(g, playerId, action = {}) {
     require_(centreIndex(action.centre), 'badCentreCard');
     g.actions[playerId] = { centre: action.centre };
   }
+
+  // Resolve now, so the player sees what they looked at or took while they are
+  // still awake. Order is safe: only this role acts during this step.
+  resolve(g, playerId, g.actions[playerId]);
   // Deliberately no early advance: the clock is the same for everyone.
 }
 
@@ -196,68 +203,95 @@ export function tick(g, now = Date.now()) {
     closeStep(g);
     g.step += 1;
     moved = true;
-    if (g.step >= NIGHT_SCRIPT.length) { dawn(g); break; }
-    g.stepEndsAt += stepMillis(NIGHT_SCRIPT[g.step], g.pace);
+    if (g.step >= g.script.length) { dawn(g); break; }
+    g.stepEndsAt += stepMillis(g.script[g.step], g.pace);
+    openStep(g);
   }
   return moved;
 }
 
 const addInfo = (g, id, key, params = {}) => { (g.info[id] ??= []).push({ key, params }); };
 
-/** Resolve whatever the step that just ended was for. */
-function closeStep(g) {
-  const step = NIGHT_SCRIPT[g.step];
+const actorsFor = (g, role) => g.players.filter((p) => g.startRoles[p.id] === role);
+
+/**
+ * Entering a step. Everything that needs no decision happens the moment the
+ * role opens its eyes: who your packmates are, what the Insomniac is holding.
+ */
+function openStep(g) {
+  const step = currentStep(g);
   if (!step?.role) return;
+  for (const p of actorsFor(g, step.role)) {
+    for (const k of staticKnowledge(g, p.id)) addInfo(g, p.id, k.key, k.params);
+    if (step.role === 'insomniac') addInfo(g, p.id, 'onuw.info.insomniac', { role: g.finalRoles[p.id] });
+  }
+}
+
+/** Tests deal their own cards, then re-open the opening step. */
+export const openStepForTests = openStep;
+
+/** Apply one player's choice. Called as soon as they make it. */
+function resolve(g, playerId, a) {
   const roles = g.finalRoles;
   const centre = g.centre;
+  const role = g.startRoles[playerId];
+  const me = playerById(g, playerId);
 
-  for (const p of g.players.filter((q) => g.startRoles[q.id] === step.role)) {
-    for (const k of staticKnowledge(g, p.id)) addInfo(g, p.id, k.key, k.params);
-    const a = g.actions[p.id] ?? {};
-
-    if (step.role === 'werewolf') {
-      if (Number.isInteger(a.centre)) {
-        addInfo(g, p.id, 'onuw.info.sawCentre', { index: a.centre + 1, role: centre[a.centre] });
-      }
-    } else if (step.role === 'seer') {
-      if (a.mode === 'player') addInfo(g, p.id, 'onuw.info.sawPlayer', { name: nameOf(g, a.target), role: roles[a.target] });
-      else if (a.mode === 'centre') {
-        addInfo(g, p.id, 'onuw.info.sawTwoCentre', {
-          a: a.centres[0] + 1, roleA: centre[a.centres[0]],
-          b: a.centres[1] + 1, roleB: centre[a.centres[1]],
-        });
-      } else addInfo(g, p.id, 'onuw.info.lookedAtNothing');
-    } else if (step.role === 'robber') {
-      if (a.target) {
-        const taken = roles[a.target];
-        roles[a.target] = roles[p.id];
-        roles[p.id] = taken;
-        addInfo(g, p.id, 'onuw.info.robbed', { name: nameOf(g, a.target), role: taken });
-        g.swaps.push({ key: 'onuw.swap.robber', params: { a: p.name, b: nameOf(g, a.target) } });
-      } else addInfo(g, p.id, 'onuw.info.robbedNobody');
-    } else if (step.role === 'troublemaker') {
-      if (a.targets) {
-        const [x, y] = a.targets;
-        [roles[x], roles[y]] = [roles[y], roles[x]];
-        addInfo(g, p.id, 'onuw.info.swapped', { a: nameOf(g, x), b: nameOf(g, y) });
-        g.swaps.push({ key: 'onuw.swap.troublemaker', params: { a: nameOf(g, x), b: nameOf(g, y) } });
-      } else addInfo(g, p.id, 'onuw.info.swappedNobody');
-    } else if (step.role === 'drunk') {
-      // The Drunk always swaps. Someone who ran out of time still swaps, with
-      // a card nobody can predict.
-      const i = Number.isInteger(a.centre) ? a.centre : Math.floor(Math.random() * centre.length);
-      [roles[p.id], centre[i]] = [centre[i], roles[p.id]];
-      addInfo(g, p.id, 'onuw.info.drunk', { index: i + 1 });
-      g.swaps.push({ key: 'onuw.swap.drunk', params: { a: p.name, index: i + 1 } });
-    } else if (step.role === 'insomniac') {
-      addInfo(g, p.id, 'onuw.info.insomniac', { role: roles[p.id] });
+  if (role === 'werewolf') {
+    if (Number.isInteger(a.centre)) {
+      addInfo(g, playerId, 'onuw.info.sawCentre', { index: a.centre + 1, role: centre[a.centre] });
     }
+  } else if (role === 'seer') {
+    if (a.mode === 'player') addInfo(g, playerId, 'onuw.info.sawPlayer', { name: nameOf(g, a.target), role: roles[a.target] });
+    else if (a.mode === 'centre') {
+      addInfo(g, playerId, 'onuw.info.sawTwoCentre', {
+        a: a.centres[0] + 1, roleA: centre[a.centres[0]],
+        b: a.centres[1] + 1, roleB: centre[a.centres[1]],
+      });
+    } else addInfo(g, playerId, 'onuw.info.lookedAtNothing');
+  } else if (role === 'robber') {
+    if (a.target) {
+      const taken = roles[a.target];
+      roles[a.target] = roles[playerId];
+      roles[playerId] = taken;
+      addInfo(g, playerId, 'onuw.info.robbed', { name: nameOf(g, a.target), role: taken });
+      g.swaps.push({ key: 'onuw.swap.robber', params: { a: me.name, b: nameOf(g, a.target) } });
+    } else addInfo(g, playerId, 'onuw.info.robbedNobody');
+  } else if (role === 'troublemaker') {
+    if (a.targets) {
+      const [x, y] = a.targets;
+      [roles[x], roles[y]] = [roles[y], roles[x]];
+      addInfo(g, playerId, 'onuw.info.swapped', { a: nameOf(g, x), b: nameOf(g, y) });
+      g.swaps.push({ key: 'onuw.swap.troublemaker', params: { a: nameOf(g, x), b: nameOf(g, y) } });
+    } else addInfo(g, playerId, 'onuw.info.swappedNobody');
+  } else if (role === 'drunk') {
+    const i = a.centre;
+    [roles[playerId], centre[i]] = [centre[i], roles[playerId]];
+    addInfo(g, playerId, 'onuw.info.drunk', { index: i + 1 });
+    g.swaps.push({ key: 'onuw.swap.drunk', params: { a: me.name, index: i + 1 } });
+  }
+}
+
+/** Leaving a step: whoever let the clock run out gets the default outcome. */
+function closeStep(g) {
+  const step = currentStep(g);
+  if (!step?.role) return;
+  for (const p of actorsFor(g, step.role)) {
+    if (p.id in g.actions) continue;
+    if (!actionFor(g, p.id)) continue;
+    // The Drunk always swaps, even asleep at the wheel — with a card nobody
+    // could have predicted.
+    const fallback = step.role === 'drunk'
+      ? { centre: Math.floor(Math.random() * g.centre.length) }
+      : { skip: true };
+    g.actions[p.id] = fallback;
+    resolve(g, p.id, fallback);
   }
 }
 
 function dawn(g) {
   g.phase = 'day';
-  g.step = NIGHT_SCRIPT.length;
+  g.step = g.script.length;
   logEvent(g, 'log.dawn', {});
 }
 
@@ -363,16 +397,16 @@ export function viewFor(g, viewerId, now = Date.now()) {
     // a signal about who is doing what.
     night: night && step ? {
       index: g.step,
-      total: NIGHT_SCRIPT.length,
+      total: g.script.length,
       key: step.key,
       msLeft: Math.max(0, g.stepEndsAt - now),
       msTotal: stepMillis(step, g.pace),
     } : null,
     pace: g.pace,
-    nightScript: NIGHT_SCRIPT.map((entry) => entry.key),
-    nightSeconds: nightLength(g.pace) / 1000,
-    knowledge: awake ? staticKnowledge(g, viewerId) : [],
-    info: night ? [] : (g.info[viewerId] ?? []),
+    nightScript: (g.script.length ? g.script : lobbyScript(g)).map((entry) => entry.key),
+    nightSeconds: nightLength(g.script.length ? scriptDeck(g) : lobbyDeck(g), g.pace) / 1000,
+    // Only ever this player's own findings, and only once they have them.
+    info: g.info[viewerId] ?? [],
     swaps: over ? g.swaps : [],
     votes: over ? { ...g.votes } : {},
     dead: over ? g.dead : [],
@@ -382,13 +416,23 @@ export function viewFor(g, viewerId, now = Date.now()) {
   };
 }
 
-/** The lobby shows the deck; an impossible choice shows as no deck at all. */
-function safeDeck(g) {
+/** The deck this game was dealt from, for describing its night. */
+const scriptDeck = (g) => [...Object.values(g.startRoles), ...g.centreStart];
+const lobbyDeck = (g) => safeDeckList(g) ?? [];
+const lobbyScript = (g) => nightScript(lobbyDeck(g));
+
+function safeDeckList(g) {
   try {
-    return countRoles(buildDeck(g.players.length, liveOptions(g)));
+    return buildDeck(g.players.length, liveOptions(g));
   } catch {
     return null;
   }
+}
+
+/** The lobby shows the deck; an impossible choice shows as no deck at all. */
+function safeDeck(g) {
+  const deck = safeDeckList(g);
+  return deck ? countRoles(deck) : null;
 }
 
 function countRoles(list) {

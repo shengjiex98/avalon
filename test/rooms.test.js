@@ -4,7 +4,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Rooms } from '../src/rooms.js';
-import { NIGHT_SCRIPT } from '../src/games/onuw/rules.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -47,7 +46,7 @@ test('subscribers are pushed the new step without asking', async () => {
   rooms.apply(code, (g) => { g.stepEndsAt = Date.now() + 40; });
   await sleep(160);
   assert.ok(seen.length > 1, 'the step change was broadcast');
-  assert.equal(seen.at(-1), NIGHT_SCRIPT[1].key);
+  assert.equal(seen.at(-1), room.game.script[1].key);
 });
 
 test('a swept room takes its timer with it', async () => {

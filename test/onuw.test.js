@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import * as w from '../src/games/onuw/game.js';
 import {
-  NIGHT_ORDER, NIGHT_SCRIPT, buildDeck, decideWinners, defaultOptions,
-  nightLength, roomForOptions, stepMillis, tallyVotes,
+  NIGHT_ORDER, buildDeck, decideWinners, defaultOptions,
+  nightLength, nightScript, roomForOptions, stepMillis, tallyVotes,
 } from '../src/games/onuw/rules.js';
 
 // A clock the tests own outright, so a 90-second night takes no time at all.
@@ -18,10 +18,18 @@ function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus']) {
   names.slice(0, count).forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
   w.startGame(game, 'p0', { shuffle: (l) => l, now });
   // Override the deal; startGame shuffled seats and cards through identity.
+  // Replace the shuffled deal with the exact one under test.
   game.startRoles = Object.fromEntries(game.players.map((p, i) => [p.id, deck[i]]));
   game.centreStart = deck.slice(count);
   game.finalRoles = { ...game.startRoles };
   game.centre = game.centreStart.slice();
+  game.script = nightScript(deck);
+  game.info = {};
+  game.swaps = [];
+  game.actions = {};
+  game.step = 0;
+  game.stepEndsAt = clock + stepMillis(game.script[0], game.pace);
+  w.openStepForTests(game);
   return game;
 }
 
@@ -61,13 +69,26 @@ test('a deck that cannot fit is refused rather than silently trimmed', () => {
 
 // ---------------------------------------------------------------- the script
 
-test('every waking role gets a step, in the canonical order', () => {
-  assert.deepEqual(NIGHT_SCRIPT.map((s) => s.key), ['nightfall', ...NIGHT_ORDER]);
-  assert.ok(NIGHT_SCRIPT.every((s) => s.seconds > 0));
+test('the script holds the deck\'s waking roles, in the canonical order', () => {
+  const full = buildDeck(10, defaultOptions(10));
+  assert.deepEqual(nightScript(full).map((s) => s.key), ['nightfall', ...NIGHT_ORDER]);
+  assert.ok(nightScript(full).every((s) => s.seconds > 0));
 });
 
-test('roles that are not in the deck are still called', () => {
-  // Three players, so most of the deck is absent — the script does not shrink.
+test('a role nobody agreed to play is never called', () => {
+  // The lobby shows the deck, so calling absent roles hides nothing and only
+  // costs the table time.
+  const deck = ['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker'];
+  const called = nightScript(deck).map((s) => s.key);
+  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker']);
+  for (const absent of ['minion', 'mason', 'drunk', 'insomniac']) {
+    assert.ok(!called.includes(absent), `${absent} is not in this deck`);
+  }
+});
+
+test('a role whose card sits in the centre is still called', () => {
+  // Three players; the Seer, Robber and Troublemaker cards are all in the
+  // middle. Nobody knows that, so the night must not give it away.
   const game = dealt(['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker']);
   const called = [];
   for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
@@ -75,16 +96,14 @@ test('roles that are not in the deck are still called', () => {
     clock = game.stepEndsAt;
     w.tick(game, clock);
   }
-  assert.deepEqual(called, NIGHT_SCRIPT.map((s) => s.key),
-    'skipping absent roles would let the table read the deck off the announcements');
+  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker']);
 });
 
 test('the pace changes how long the night takes, not what happens in it', () => {
-  assert.ok(nightLength('brisk') < nightLength('normal'));
-  assert.ok(nightLength('relaxed') > nightLength('normal'));
-  const game = dealt(['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker']);
-  game.pace = 'brisk';
-  assert.equal(stepMillis(NIGHT_SCRIPT[1], 'brisk'), 6000);
+  const deck = buildDeck(5, defaultOptions(5));
+  assert.ok(nightLength(deck, 'brisk') < nightLength(deck, 'normal'));
+  assert.ok(nightLength(deck, 'relaxed') > nightLength(deck, 'normal'));
+  assert.deepEqual(nightScript(deck).map((s) => s.key), nightScript(deck).map((s) => s.key));
 });
 
 test('a step never ends early, even once the only actor has chosen', () => {
@@ -143,11 +162,14 @@ test('only the player whose step it is gets controls or knowledge', () => {
   assert.equal(seer.you.awake, true);
   assert.equal(seer.you.action, 'seer');
 
+  // A sleeping player keeps their own earlier findings and gains nothing new.
   for (const other of ['p1', 'p2']) {
     const view = w.viewFor(game, other, clock);
     assert.equal(view.you.awake, false);
     assert.equal(view.you.action, null);
-    assert.deepEqual(view.knowledge, []);
+    const learned = JSON.stringify(view.info);
+    assert.ok(!learned.includes('sawPlayer'), `${other} saw the seer's reading`);
+    assert.ok(!learned.includes('Ann'), `${other} was told something about the seer`);
   }
 });
 
@@ -160,8 +182,8 @@ test('a pair of werewolves gets its own step and sees each other', () => {
 
   assert.equal(view.you.awake, true, 'a paired wolf is awake, not asleep');
   assert.equal(view.you.action, null, 'but has no centre card to look at');
-  assert.deepEqual(view.knowledge.map((k) => k.key), ['onuw.info.packmates']);
-  assert.deepEqual(view.knowledge[0].params.names, ['Bo']);
+  assert.deepEqual(view.info.map((k) => k.key), ['onuw.info.packmates']);
+  assert.deepEqual(view.info[0].params.names, ['Bo']);
 });
 
 test('a lone werewolf may look at one centre card', () => {
@@ -169,17 +191,18 @@ test('a lone werewolf may look at one centre card', () => {
   stepTo(game, 'werewolf');
   const view = w.viewFor(game, 'p0', clock);
   assert.equal(view.you.action, 'loneWolf');
-  assert.deepEqual(view.knowledge.map((k) => k.key), ['onuw.info.loneWolf']);
+  assert.deepEqual(view.info.map((k) => k.key), ['onuw.info.loneWolf']);
 
   w.submitNight(game, 'p0', { centre: 1 });
-  finishNight(game);
-  assert.equal(infoFor(game, 'p0', 'onuw.info.sawCentre').params.role, 'robber');
+  // The card is readable straight away, while the wolf is still awake.
+  const seen = w.viewFor(game, 'p0', clock).info.find((e) => e.key === 'onuw.info.sawCentre');
+  assert.equal(seen.params.role, 'robber');
 });
 
 test('the minion sees the werewolves and they do not see the minion', () => {
   const game = dealt(['minion', 'werewolf', 'seer', 'robber', 'troublemaker', 'villager']);
   stepTo(game, 'minion');
-  const seen = w.viewFor(game, 'p0', clock).knowledge;
+  const seen = w.viewFor(game, 'p0', clock).info;
   assert.equal(seen[0].key, 'onuw.info.minionSees');
   assert.deepEqual(seen[0].params.names, ['Bo']);
 
@@ -359,5 +382,6 @@ test('play again reshuffles the same table', () => {
   assert.equal(game.players.length, 3);
   assert.deepEqual(game.dead, []);
   assert.equal(game.step, -1);
+  assert.deepEqual(game.script, []);
   assert.deepEqual(w.viewFor(game, 'p0', clock).players[0].startRole, undefined);
 });

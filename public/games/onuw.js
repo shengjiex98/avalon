@@ -18,20 +18,17 @@ export function bind(ctx) {
 let clockTimer = null;
 let spokenStep = null;
 
-function syncClock() {
-  const night = app.view?.night;
+function stopClock() {
   clearInterval(clockTimer);
   clockTimer = null;
-  if (!night) { spokenStep = null; return; }
+}
 
-  app.stepEndsAt = Date.now() + night.msLeft;
-  clockTimer = setInterval(() => {
-    const el = document.getElementById('nightClock');
-    if (!el) { clearInterval(clockTimer); clockTimer = null; return; }
-    el.textContent = clockText();
-    const bar = document.getElementById('nightBar');
-    if (bar) bar.setAttribute('style', `width:${clockFraction() * 100}%`);
-  }, 200);
+function paintClock() {
+  if (!app.view?.night) return stopClock();
+  const num = document.getElementById('nightClock');
+  if (num) num.textContent = clockText();
+  const bar = document.getElementById('nightBar');
+  if (bar) bar.setAttribute('style', `width:${clockFraction() * 100}%`);
 }
 
 const msLeft = () => Math.max(0, (app.stepEndsAt ?? 0) - Date.now());
@@ -66,10 +63,17 @@ function announce(night) {
   }
 }
 
+/**
+ * A new frame from the server. Re-anchor the countdown before anything is
+ * drawn, so a redraw for an unrelated reason — tapping the mute button, say —
+ * paints the time that is actually left rather than the step's full length.
+ */
 export function onView() {
-  syncClock();
-  if (app.view?.night) announce(app.view.night);
-  else spokenStep = null;
+  const night = app.view?.night;
+  if (!night) { stopClock(); spokenStep = null; return; }
+  app.stepEndsAt = Date.now() + night.msLeft;
+  if (!clockTimer) clockTimer = setInterval(paintClock, 200);
+  announce(night);
 }
 
 export const id = 'onuw';
@@ -122,6 +126,10 @@ export function lobbyOptions() {
           h('span', { class: 'tag', text: n > 1 ? `${roleName(role)} ×${n}` : roleName(role) })))
       : h('p', { class: 'muted', text: T('onuw.deckTooBig', { n: v.players.length }) }),
     h('p', { class: 'muted', text: T('onuw.deckHint') }),
+    h('h3', { text: T('onuw.ref.order') }),
+    h('ol', { class: 'order' }, (v.nightScript ?? []).map((key) => h('li', {
+      text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
+    }))),
   );
 }
 
@@ -144,7 +152,7 @@ function paneCard() {
         h('span', { class: `side ${evil ? 'side-evil' : 'side-good'}`, text: T(`onuw.team.${v.you.team}`) }),
       ),
       h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
-      ...v.knowledge.map((k) => h('p', { text: line(k) })),
+      ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
     ) : null,
   );
 }
@@ -198,7 +206,41 @@ const waitingNames = () => joinNames(app.view.waitingFor.map(
 // ---------------------------------------------------------------- phases
 
 export function header_() {
-  return app.view.phase === 'over' ? [] : [paneCard()];
+  return app.view.phase === 'over' ? [paneReference()] : [paneCard(), paneReference()];
+}
+
+/**
+ * Which roles are in this game, what each of them does, and the order the
+ * night runs in. All of it is public — the lobby agreed the deck — so having
+ * it on hand just saves asking.
+ */
+function paneReference() {
+  const v = app.view;
+  const deck = v.deck ?? {};
+  const script = v.nightScript ?? [];
+
+  return h('div', { class: 'card stack' },
+    h('div', { class: 'row' },
+      h('h2', { class: 'grow', text: T('onuw.ref.title') }),
+      h('button', {
+        class: 'btn ghost', id: 'refToggle',
+        onclick: () => { app.showRef = !app.showRef; render(); },
+      }, app.showRef ? T('reveal.hide') : T('onuw.ref.show')),
+    ),
+    app.showRef ? h('div', { class: 'stack' },
+      h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
+      h('div', { class: 'stack tight' }, Object.keys(deck).map((role) => h('div', { class: 'ref-role' },
+        h('span', { class: 'tag', text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
+        h('span', { class: 'muted', text: T(`onuw.roleDesc.${role}`) }),
+      ))),
+      h('h3', { text: T('onuw.ref.order') }),
+      h('ol', { class: 'order' }, script.map((key, i) => h('li', {
+        class: v.night?.index === i ? 'now' : '',
+        text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
+      }))),
+      h('p', { class: 'muted', text: T('onuw.ref.note') }),
+    ) : null,
+  );
 }
 
 export function panes() {
@@ -228,14 +270,15 @@ function paneNight() {
     // The announcement and the clock are identical on every screen in the room.
     h('p', { class: 'announce', text: T(`onuw.wake.${night.key}`) }),
     h('div', { class: 'clock' },
-      h('span', { class: 'clock-num', id: 'nightClock', text: String(Math.ceil(night.msLeft / 1000)) }),
+      h('span', { class: 'clock-num', id: 'nightClock', text: clockText() }),
     ),
-    h('div', { class: 'bar' }, h('div', { class: 'bar-fill', id: 'nightBar', style: 'width:100%' })),
+    h('div', { class: 'bar' },
+      h('div', { class: 'bar-fill', id: 'nightBar', style: `width:${clockFraction() * 100}%` })),
 
     awake
       ? h('div', { class: 'stack' },
           h('p', { class: 'yourturn', text: T('onuw.night.yourTurn') }),
-          ...v.knowledge.map((k) => h('p', { text: line(k) })),
+          ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
           ...(v.you.action ? actionBody(v.you.action) : []),
         )
       : h('p', { class: 'muted', text: T('onuw.night.keepEyesShut') }),

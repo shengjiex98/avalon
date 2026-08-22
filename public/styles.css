@@ -194,3 +194,12 @@ button.centre-card:hover:not(:disabled) { border-color: var(--gold); }
 .bar { height: 6px; border-radius: 3px; background: var(--panel-2); overflow: hidden; }
 .bar-fill { height: 100%; background: var(--gold); transition: width .2s linear; }
 .yourturn { color: var(--good); font-weight: 700; }
+
+/* Role reference. */
+.stack.tight { gap: 6px; }
+.ref-role { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 14px; }
+.ref-role .tag { flex: 0 0 auto; }
+.order { margin: 0; padding-left: 1.4em; display: grid; gap: 4px; color: var(--muted); font-size: 14px; }
+.order li.now { color: var(--gold); font-weight: 700; }
+.finding { background: var(--panel-2); border-left: 3px solid var(--gold);
+  border-radius: 6px; padding: 8px 10px; margin: 0; }
