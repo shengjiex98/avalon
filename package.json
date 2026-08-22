@@ -1,0 +1,12 @@
+{
+  "name": "avalon",
+  "version": "1.0.0",
+  "description": "Self-hosted online Avalon (The Resistance) with English and Chinese UI",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test \"test/**/*.test.js\""
+  }
+}
