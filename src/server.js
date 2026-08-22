@@ -12,6 +12,17 @@ import { Rooms } from './rooms.js';
 import * as game from './game.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
+
+/**
+ * Origins allowed to call the API from another host. Empty means same-origin
+ * only, which is right when one process serves both the page and the API.
+ * A GitHub Pages front end needs its origin listed here, e.g.
+ *   ALLOW_ORIGIN=https://you.github.io
+ */
+const parseOrigins = (raw) =>
+  String(raw ?? '').split(',').map((o) => o.trim().replace(/\/$/, '')).filter(Boolean);
+
+const ALLOW_ORIGIN = parseOrigins(process.env.ALLOW_ORIGIN);
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -34,11 +45,20 @@ const ACTIONS = {
   again:     (g, id) => game.resetToLobby(g, id),
 };
 
-export function createApp({ rooms = new Rooms() } = {}) {
+export function createApp({ rooms = new Rooms(), allowedOrigins = ALLOW_ORIGIN } = {}) {
   return async function handle(req, res) {
     try {
       const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
-      if (url.pathname.startsWith('/api/')) return await api(rooms, req, res, url);
+      if (url.pathname.startsWith('/api/')) {
+        allowOrigin(req, res, allowedOrigins);
+        if (req.method === 'OPTIONS') {           // CORS preflight
+          res.writeHead(204, { 'access-control-allow-methods': 'GET, POST, OPTIONS',
+                               'access-control-allow-headers': 'content-type',
+                               'access-control-max-age': '86400' });
+          return res.end();
+        }
+        return await api(rooms, req, res, url);
+      }
       return await serveStatic(req, res, url);
     } catch (err) {
       if (err instanceof GameError) return json(res, 400, { error: err.key, params: err.params });
@@ -49,8 +69,28 @@ export function createApp({ rooms = new Rooms() } = {}) {
   };
 }
 
+/**
+ * Echo back the caller's origin when it is on the allowlist. Echoing rather
+ * than sending `*` keeps the door open to credentialed requests later, and
+ * `vary` stops a proxy serving one origin's response to another.
+ */
+function allowOrigin(req, res, allowed) {
+  const origin = (req.headers.origin ?? '').replace(/\/$/, '');
+  res.setHeader('vary', 'origin');
+  if (!origin) return;
+  if (allowed.includes('*') || allowed.includes(origin)) {
+    res.setHeader('access-control-allow-origin', origin);
+  }
+}
+
 async function api(rooms, req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','rooms',CODE,...]
+
+  // A front end hosted elsewhere probes this before showing the lobby, so it
+  // can say "that server is unreachable" instead of failing on the first join.
+  if (req.method === 'GET' && url.pathname === '/api/health') {
+    return json(res, 200, { ok: true, service: 'avalon', rooms: rooms.rooms.size });
+  }
 
   if (req.method === 'POST' && url.pathname === '/api/rooms') {
     return json(res, 200, { code: rooms.create() });
@@ -160,11 +200,12 @@ async function readJson(req) {
 
 export function start({ port = Number(process.env.PORT ?? 8420), host = process.env.HOST ?? '0.0.0.0' } = {}) {
   const rooms = new Rooms();
-  const server = createServer(createApp({ rooms }));
+  const server = createServer(createApp({ rooms, allowedOrigins: ALLOW_ORIGIN }));
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
   sweeper.unref();
   server.listen(port, host, () => {
     console.log(`Avalon listening on http://${host}:${port}`);
+    if (ALLOW_ORIGIN.length) console.log(`Cross-origin front ends allowed: ${ALLOW_ORIGIN.join(', ')}`);
   });
   return server;
 }

@@ -35,6 +35,8 @@ enters the code on their own phone.
 ## Layout
 
 ```
+.github/        Tests on every push; Pages deploy on main.
+public/config.js  Which backend the client talks to (empty = same origin).
 src/rules.js    Setup tables, role definitions, who-sees-whom. Pure data.
 src/game.js     The state machine, and the per-player view filter.
 src/rooms.js    Room registry, subscriber fan-out, idle expiry.
@@ -51,6 +53,7 @@ game, so the rules are testable without a browser or a socket.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/health` | `{ok, service}` — a remote front end probes this first |
 | `POST` | `/api/rooms` | create a room, returns `{code}` |
 | `GET` | `/api/rooms/:code` | `{exists}` |
 | `POST` | `/api/rooms/:code/join` | `{name, playerId?}` → `{playerId}` |
@@ -75,6 +78,10 @@ client shows it in the reader's language.
   error, win reason and log event the server can emit, exists in *both*
   languages. This is what catches a half-finished translation, since there is
   no browser in the loop.
+- **deploy** — the Pages split: CORS on the allowlisted origin (and not on
+  others), preflight, the health probe, and the two things that silently break
+  a project Pages site — an absolute asset path, or a hardcoded `/api` fetch
+  that ignores the configured backend.
 
 ## Deploying
 
@@ -82,8 +89,8 @@ State is in memory: restarting drops in-progress games, and rooms idle for six
 hours are swept. That is deliberate for a party game — nothing to back up.
 
 Behind a reverse proxy, disable response buffering on `/api/rooms/*/events` or
-the SSE stream will stall (nginx: `proxy_buffering off;`). `PORT` and `HOST`
-are read from the environment.
+the SSE stream will stall (nginx: `proxy_buffering off;`). `PORT`, `HOST` and
+`ALLOW_ORIGIN` are read from the environment.
 
 As a user service:
 
@@ -101,6 +108,50 @@ Restart=on-failure
 [Install]
 WantedBy=default.target
 ```
+
+### Front end on GitHub Pages
+
+Pages is static hosting, so it can serve the page but **not** the game. The
+split is: Pages hosts `public/`, and a server you run somewhere holds the
+rooms. `.github/workflows/pages.yml` publishes on every push to `main`, gated
+on the tests.
+
+1. **Enable it** — Settings → Pages → Source: **GitHub Actions**.
+2. **Point the client at your server** — Settings → Secrets and variables →
+   Actions → Variables → new variable `API_BASE`, e.g.
+   `https://avalon.example.ts.net`. The workflow writes it into
+   `public/config.js` at build time. Leave it unset and the page still
+   deploys; it just asks each player to type a server address once.
+3. **Let your server accept that origin** — start it with
+   `ALLOW_ORIGIN=https://<you>.github.io`. Without this the browser blocks
+   every call, and the page will report the server as unreachable.
+
+Two constraints worth knowing before you wire it up:
+
+- **The backend must be HTTPS.** Pages is served over HTTPS, and a browser
+  refuses to let an HTTPS page call an `http://` address. A plain
+  `http://192.168.1.x:8420` will not work, however reachable it is.
+- **Pages serves a project site from `/<repo>/`.** All asset paths are
+  relative for that reason; a test fails the build if an absolute one creeps
+  back in.
+
+Getting HTTPS onto a home server, easiest first:
+
+| Route | Who can play | Notes |
+| --- | --- | --- |
+| `tailscale funnel 8420` | anyone with the link | Public HTTPS on your `*.ts.net` name, real certificate, nothing to configure. |
+| `tailscale serve 8420` | tailnet members only | Same valid certificate, but reachable only from your tailnet. |
+| Cloudflare Tunnel / nginx + Let's Encrypt | anyone | The usual reverse-proxy setup; remember `proxy_buffering off`. |
+
+Players can also override the address themselves: `?server=https://…` on the
+URL, or the **Change server** button on the home screen. Copying a room link
+carries the server along, so sharing one link is enough.
+
+### No Pages at all
+
+`node src/server.js` already serves the page and the API together on one
+origin. Pages only buys you a stable public URL for the front end; the game
+does not need it.
 
 ## Trust model
 

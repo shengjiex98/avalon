@@ -1,9 +1,12 @@
 import { LANGS, detectLang, t } from './i18n.js';
+import { API_BASE } from './config.js';
 
 // ---------------------------------------------------------------- state
 
 const app = {
   lang: detectLang(),
+  server: null,      // resolved backend origin; '' means same origin
+  serverOk: null,    // null = not probed yet, false = unreachable
   code: null,
   playerId: null,
   view: null,        // latest server view, or null before the first event
@@ -20,10 +23,41 @@ const T = (key, params) => t(app.lang, key, params);
 const store = {
   get name() { return localStorage.getItem('avalon.name') ?? ''; },
   set name(v) { localStorage.setItem('avalon.name', v); },
+  get server() { return localStorage.getItem('avalon.server'); },
+  set server(v) { v ? localStorage.setItem('avalon.server', v) : localStorage.removeItem('avalon.server'); },
   playerFor: (code) => localStorage.getItem(`avalon.player.${code}`),
   setPlayer: (code, id) => localStorage.setItem(`avalon.player.${code}`, id),
   clearPlayer: (code) => localStorage.removeItem(`avalon.player.${code}`),
 };
+
+/**
+ * The page and the API are the same origin when you self-host, and different
+ * origins when the front end is on GitHub Pages. Precedence, most specific
+ * first: a ?server= link, a previously saved choice, the value baked in at
+ * deploy time, then same origin.
+ */
+function resolveServer() {
+  const fromUrl = new URL(location.href).searchParams.get('server');
+  if (fromUrl !== null) store.server = normaliseServer(fromUrl);
+  return store.server ?? normaliseServer(API_BASE) ?? '';
+}
+
+function normaliseServer(raw) {
+  const value = String(raw ?? '').trim().replace(/\/+$/, '');
+  if (!value) return null;
+  return /^https?:\/\//.test(value) ? value : `https://${value}`;
+}
+
+/** Confirm a backend is actually there before offering to create a room. */
+async function probeServer() {
+  try {
+    const res = await fetch(`${app.server}/api/health`, { cache: 'no-store' });
+    app.serverOk = res.ok && (await res.json()).service === 'avalon';
+  } catch {
+    app.serverOk = false;
+  }
+  return app.serverOk;
+}
 
 // ---------------------------------------------------------------- dom helper
 
@@ -59,7 +93,7 @@ function toast(message, kind = 'error') {
 async function api(path, options = {}) {
   let res;
   try {
-    res = await fetch(path, {
+    res = await fetch(app.server + path, {
       method: options.body ? 'POST' : 'GET',
       headers: options.body ? { 'content-type': 'application/json' } : undefined,
       body: options.body ? JSON.stringify(options.body) : undefined,
@@ -84,7 +118,7 @@ function send(type, extra = {}) {
 
 function connect() {
   app.source?.close();
-  const source = new EventSource(`/api/rooms/${app.code}/events?playerId=${encodeURIComponent(app.playerId)}`);
+  const source = new EventSource(`${app.server}/api/rooms/${app.code}/events?playerId=${encodeURIComponent(app.playerId)}`);
   app.source = source;
 
   source.onmessage = (event) => {
@@ -169,6 +203,9 @@ function render() {
 }
 
 function screenHome() {
+  if (app.serverOk === null) return [h('div', { class: 'card' }, h('p', { class: 'muted', text: T('server.checking') }))];
+  if (app.serverOk === false) return [paneServer()];
+
   const hashCode = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1] ?? '';
   return [
     h('div', { class: 'card stack' },
@@ -187,7 +224,11 @@ function screenHome() {
                      onkeydown: (e) => { if (e.key === 'Enter') doJoin(); } })),
       h('button', { class: 'btn wide', onclick: doJoin }, T('home.go')),
     ),
-    h('button', { class: 'btn ghost', onclick: () => el('rules').showModal() }, T('home.rulesLink')),
+    h('div', { class: 'row' },
+      h('button', { class: 'btn ghost grow', onclick: () => el('rules').showModal() }, T('home.rulesLink')),
+      h('button', { class: 'btn ghost', onclick: () => { app.serverOk = false; render(); } }, T('server.change')),
+    ),
+    h('p', { class: 'muted', text: T('server.connected', { server: app.server || T('server.sameOrigin') }) }),
   ];
 
   function doJoin() {
@@ -197,6 +238,34 @@ function screenHome() {
     if (!code) { toast(T('err.noSuchRoom')); return; }
     joinRoom(code, name);
   }
+}
+
+/** Shown when no backend answers: this page alone is not a game. */
+function paneServer() {
+  const httpsPage = location.protocol === 'https:';
+  const submit = async () => {
+    const value = normaliseServer(el('serverInput').value);
+    app.server = value ?? '';
+    store.server = value;
+    app.serverOk = null;
+    render();
+    await probeServer();
+    if (!app.serverOk) toast(T('err.network'));
+    render();
+  };
+
+  return h('div', { class: 'card stack' },
+    h('h2', { text: T('server.title') }),
+    h('p', { class: 'muted', text: T('server.unreachable') }),
+    httpsPage ? h('p', { class: 'muted', text: T('server.mixedContent') }) : null,
+    h('label', {}, T('server.label'),
+      h('input', {
+        type: 'text', id: 'serverInput', value: app.server, spellcheck: 'false',
+        placeholder: T('server.placeholder'), autocapitalize: 'off', autocomplete: 'url',
+        onkeydown: (e) => { if (e.key === 'Enter') submit(); },
+      })),
+    h('button', { class: 'btn primary wide', onclick: submit }, T('server.connect')),
+  );
 }
 
 function screenGame() {
@@ -262,7 +331,12 @@ function paneLobby() {
 }
 
 function copyLink() {
-  const link = `${location.origin}/#/${app.code}`;
+  // Pages serves this from /<repo>/, so keep the path and carry the server
+  // over — a friend opening the link has no saved setting yet.
+  const url = new URL(location.href);
+  url.search = app.server ? `?server=${encodeURIComponent(app.server)}` : '';
+  url.hash = `#/${app.code}`;
+  const link = url.toString();
   navigator.clipboard?.writeText(link)
     .then(() => toast(T('lobby.copied'), 'info'))
     .catch(() => toast(link, 'info'));
@@ -515,15 +589,24 @@ window.addEventListener('hashchange', () => {
 });
 
 // A refresh inside a room reconnects silently if we still hold that seat.
-(function boot() {
+(async function boot() {
+  app.server = resolveServer();
+  render();                      // paint "looking for the server" straight away
+  await probeServer();
+
   const code = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
   const playerId = code && store.playerFor(code);
-  if (code && playerId) {
+  if (app.serverOk && code && playerId) {
     app.code = code;
     app.playerId = playerId;
-    api(`/api/rooms/${code}/join`, { body: { name: store.name, playerId } })
-      .then(() => connect())
-      .catch(() => { store.clearPlayer(code); app.code = null; app.playerId = null; render(); });
+    try {
+      await api(`/api/rooms/${code}/join`, { body: { name: store.name, playerId } });
+      connect();
+    } catch {
+      store.clearPlayer(code);
+      app.code = null;
+      app.playerId = null;
+    }
   }
   render();
 })();
