@@ -36,6 +36,7 @@ enters the code on their own phone.
 
 ```
 .github/        Tests on every push; Pages deploy on main.
+deploy/         systemd user unit for the game server.
 public/config.js  Which backend the client talks to (empty = same origin).
 src/rules.js    Setup tables, role definitions, who-sees-whom. Pure data.
 src/game.js     The state machine, and the per-player view filter.
@@ -92,21 +93,20 @@ Behind a reverse proxy, disable response buffering on `/api/rooms/*/events` or
 the SSE stream will stall (nginx: `proxy_buffering off;`). `PORT`, `HOST` and
 `ALLOW_ORIGIN` are read from the environment.
 
-As a user service:
+As a user service, `deploy/avalon.service` keeps the unit in the repo rather
+than loose in `~/.config/systemd/user`, where a restore would not find it:
 
-```ini
-# ~/.config/systemd/user/avalon.service
-[Unit]
-Description=Avalon
-After=network-online.target
+```bash
+systemctl --user link ~/avalon/deploy/avalon.service
+systemctl --user enable --now avalon
+loginctl enable-linger "$USER"      # keep it up across logout and reboot
+```
 
-[Service]
-ExecStart=/usr/bin/node %h/avalon/src/server.js
-Environment=PORT=8420
-Restart=on-failure
+Host-specific settings go in `~/.config/avalon.env` (outside the repo):
 
-[Install]
-WantedBy=default.target
+```sh
+PORT=8420
+ALLOW_ORIGIN=https://<you>.github.io
 ```
 
 ### Front end on GitHub Pages

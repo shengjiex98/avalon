@@ -1,0 +1,30 @@
+# Install without copying, so the unit stays version-controlled:
+#   systemctl --user link  %h/avalon/deploy/avalon.service
+#   systemctl --user enable --now avalon
+#   loginctl enable-linger "$USER"        # survive logout / reboot
+#
+# Host-specific settings (PORT, ALLOW_ORIGIN) go in ~/.config/avalon.env,
+# which is deliberately outside the repo.
+
+[Unit]
+Description=Avalon game server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/avalon
+EnvironmentFile=-%h/.config/avalon.env
+Environment=PORT=8420
+ExecStart=/usr/bin/env node %h/avalon/src/server.js
+Restart=on-failure
+RestartSec=3
+
+# The game holds nothing on disk; it does not need to write anywhere.
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
