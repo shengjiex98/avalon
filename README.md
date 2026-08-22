@@ -86,6 +86,17 @@ this model cannot represent honestly.
   and a Chinese reader can sit in the same game. The server never sends prose:
   it sends keys and parameters, and each browser renders them.
 
+## Testing a game on your own
+
+There is a **test mode** toggle at the foot of the page. Switch it on inside a
+room and you can add extra players and hop between seats: each one is a real
+player joined from this browser, and switching reopens the stream as them, so
+what you see is the genuine per-player view rather than a mock of one. That
+makes it possible to walk a five-handed Avalon or a whole werewolf night
+through alone, and it exercises the same view filtering the real game does.
+
+Seats are remembered per room, so a refresh puts you back where you were.
+
 ## Layout
 
 ```
@@ -161,6 +172,10 @@ client shows it in the reader's language.
   a view hook that throws used to freeze the last screen on display under a
   "connection lost" banner. Also that a first connection reads *connecting*
   rather than *dropped*.
+- **ui-testmode** — that the toggle starts off at the foot of the page, that
+  adding a seat goes through the ordinary join endpoint with a name that does
+  not collide, that switching seats reopens the stream as that player, and
+  that a refused join is reported rather than recorded as a phantom seat.
 - **deploy** — the Pages split: CORS on the allowlisted origin (and not on
   others), preflight, the health probe, and the two things that silently break
   a project Pages site — an absolute asset path, or a hardcoded `/api` fetch

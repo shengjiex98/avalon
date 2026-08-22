@@ -178,6 +178,16 @@ const STRINGS = {
     'err.serverError': 'Something went wrong on the server.',
     'err.network': 'Cannot reach the server. Retrying…',
 
+    'test.mode': 'Test mode',
+    'test.on': 'on',
+    'test.off': 'off',
+    'test.hint': 'Hold several seats in this browser, so you can walk a whole game through on your own. Each one is a real player on the server.',
+    'test.needRoom': 'Create or join a room first.',
+    'test.add': '+ Add a player',
+    'test.lobbyOnly': 'Players can only be added before the game starts',
+    'test.actingAs': 'Acting as',
+    'test.player': 'Test {n}',
+
     'conn.lost': 'Connection lost — reconnecting…',
     'conn.connecting': 'Connecting…',
     'conn.ok': 'Connected',
@@ -536,6 +546,16 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'err.payloadTooLarge': '请求内容过大。',
     'err.serverError': '服务器出错了。',
     'err.network': '无法连接服务器，正在重试……',
+
+    'test.mode': '测试模式',
+    'test.on': '开',
+    'test.off': '关',
+    'test.hint': '在这个浏览器里同时占几个座位,一个人就能把整局走完。每个座位都是服务器上真实的玩家。',
+    'test.needRoom': '请先创建或加入房间。',
+    'test.add': '+ 添加玩家',
+    'test.lobbyOnly': '游戏开始后不能再加人',
+    'test.actingAs': '当前扮演',
+    'test.player': '测试 {n}',
 
     'conn.lost': '连接中断，正在重连……',
     'conn.connecting': '正在连接……',

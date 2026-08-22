@@ -19,6 +19,8 @@ const app = {
   seerMode: 'player',
   muted: Boolean(localStorage.getItem('avalon.muted')),
   everConnected: false,   // distinguishes "connecting" from "dropped"
+  testMode: Boolean(localStorage.getItem('avalon.test')),
+  seats: [],              // every seat this device holds, for testing alone
   stepEndsAt: 0,
   clockStep: null,   // which night step stepEndsAt was anchored to
   showRole: true,
@@ -33,6 +35,12 @@ const store = {
   set name(v) { localStorage.setItem('avalon.name', v); },
   get server() { return localStorage.getItem('avalon.server'); },
   set server(v) { v ? localStorage.setItem('avalon.server', v) : localStorage.removeItem('avalon.server'); },
+  seatsFor: (code) => {
+    try { return JSON.parse(localStorage.getItem(`avalon.seats.${code}`)) ?? []; }
+    catch { return []; }
+  },
+  setSeats: (code, seats) => localStorage.setItem(`avalon.seats.${code}`, JSON.stringify(seats)),
+  clearSeats: (code) => localStorage.removeItem(`avalon.seats.${code}`),
   playerFor: (code) => localStorage.getItem(`avalon.player.${code}`),
   setPlayer: (code, id) => localStorage.setItem(`avalon.player.${code}`, id),
   clearPlayer: (code) => localStorage.removeItem(`avalon.player.${code}`),
@@ -150,12 +158,20 @@ async function joinRoom(code, name) {
     app.code = code;
     app.playerId = res.playerId;
     store.setPlayer(code, res.playerId);
+    rememberSeat(code, res.playerId, name);
     location.hash = `#/${code}`;
     connect();
     render();
   } catch (err) {
     toast(T(`err.${err.key}`, err.params));
   }
+}
+
+/** Track the seats this browser controls, so test mode can switch between them. */
+function rememberSeat(code, playerId, name) {
+  app.seats = store.seatsFor(code).filter((seat) => seat.id !== playerId);
+  app.seats.push({ id: playerId, name });
+  store.setSeats(code, app.seats);
 }
 
 function readName() {
@@ -171,6 +187,8 @@ function leaveRoom() {
     app.source?.close();
     store.clearPlayer(app.code);
     app.source = null; app.view = null; app.playerId = null;
+    store.clearSeats(app.code);
+    app.seats = [];
     location.hash = '';
     app.code = null;
     app.connected = false;
@@ -199,7 +217,7 @@ function render() {
   if (state) conn.textContent = T(state === 'lost' ? 'conn.lost' : 'conn.connecting');
 
   const view = el('view');
-  view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()));
+  view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()), paneTestMode());
 }
 
 /** In a room it is the room's game; on the home screen it is what Create makes. */
@@ -435,6 +453,71 @@ function formatParams(params) {
   return out;
 }
 
+// ---------------------------------------------------------------- test mode
+
+/**
+ * Playing a five-handed game on your own. Every seat here is a real player on
+ * the server, joined from this browser; switching seats reopens the stream as
+ * that player, so what you see is the genuine per-player view rather than a
+ * simulation of one.
+ */
+function paneTestMode() {
+  const rows = [h('button', {
+    class: 'btn ghost', id: 'testToggle',
+    onclick: () => {
+      app.testMode = !app.testMode;
+      localStorage.setItem('avalon.test', app.testMode ? '1' : '');
+      render();
+    },
+  }, `${T('test.mode')} · ${T(app.testMode ? 'test.on' : 'test.off')}`)];
+
+  if (app.testMode) {
+    rows.push(h('p', { class: 'muted', text: T('test.hint') }));
+    if (app.code && app.view) {
+      const lobby = app.view.phase === 'lobby';
+      rows.push(h('div', { class: 'row' },
+        h('button', { class: 'btn', id: 'testAdd', disabled: !lobby, onclick: addSeat },
+          lobby ? T('test.add') : T('test.lobbyOnly')),
+      ));
+      rows.push(h('p', { class: 'muted', text: T('test.actingAs') }));
+      rows.push(h('div', { class: 'row' }, app.seats.map((seat) => h('button', {
+        class: `btn seat-chip ${seat.id === app.playerId ? 'primary' : ''}`,
+        onclick: () => actAs(seat.id),
+      }, seat.name))));
+    } else {
+      rows.push(h('p', { class: 'muted', text: T('test.needRoom') }));
+    }
+  }
+  return h('div', { class: 'test-bar' }, rows);
+}
+
+/** Join the room again under a new name, from this same browser. */
+async function addSeat() {
+  const taken = new Set(app.view.players.map((p) => p.name.toLowerCase()));
+  let n = app.view.players.length + 1;
+  let name = T('test.player', { n });
+  while (taken.has(name.toLowerCase())) name = T('test.player', { n: ++n });
+
+  try {
+    const res = await api(`/api/rooms/${app.code}/join`, { body: { name } });
+    rememberSeat(app.code, res.playerId, name);
+    render();
+  } catch (err) {
+    toast(T(`err.${err.key}`, err.params));
+  }
+}
+
+/** Look through another seat's eyes, by reconnecting as them. */
+function actAs(playerId) {
+  if (playerId === app.playerId) return;
+  app.playerId = playerId;
+  store.setPlayer(app.code, playerId);
+  app.selection = [];
+  app.centres = [];
+  connect();
+  render();
+}
+
 // ---------------------------------------------------------------- boot
 
 /**
@@ -461,6 +544,7 @@ export async function main() {
   if (app.serverOk && code && playerId) {
     app.code = code;
     app.playerId = playerId;
+    app.seats = store.seatsFor(code);
     try {
       await api(`/api/rooms/${code}/join`, { body: { name: store.name, playerId } });
       connect();

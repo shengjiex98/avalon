@@ -208,3 +208,9 @@ button.centre-card:hover:not(:disabled) { border-color: var(--gold); }
 .order li.now { color: var(--gold); font-weight: 700; }
 .finding { background: var(--panel-2); border-left: 3px solid var(--gold);
   border-radius: 6px; padding: 8px 10px; margin: 0; }
+
+/* Test mode: playing several seats from one browser. */
+.test-bar { margin-top: 8px; padding: 12px; border: 1px dashed var(--line);
+  border-radius: var(--radius); display: grid; gap: 8px; opacity: .85; }
+.test-bar .muted { font-size: 13px; }
+.seat-chip { padding: 8px 14px; font-size: 14px; }
