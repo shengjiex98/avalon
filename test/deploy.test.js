@@ -102,6 +102,15 @@ test('the page loads its assets relatively, so a /<repo>/ subpath works', async 
   assert.match(html, /src="\.\/app\.js"/);
 });
 
+test('the connection banner lives outside the top bar', async () => {
+  // Inside the header it wrapped the row and pushed the language button onto
+  // a second line the moment the connection dropped.
+  const html = await read('../public/index.html');
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  assert.ok(!header.includes('id="conn"'), 'the banner must not sit in the header');
+  assert.match(html, /<div id="conn" class="conn-banner"/);
+});
+
 test('the client reaches the API through the configured base, never a bare path', async () => {
   const source = await read('../public/app.js');
   const bare = [...source.matchAll(/(?:fetch|EventSource)\(\s*[`'"]\/api/g)];

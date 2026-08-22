@@ -18,6 +18,7 @@ const app = {
   centres: [],       // centre cards the current prompt is collecting
   seerMode: 'player',
   muted: Boolean(localStorage.getItem('avalon.muted')),
+  everConnected: false,   // distinguishes "connecting" from "dropped"
   stepEndsAt: 0,
   clockStep: null,   // which night step stepEndsAt was anchored to
   showRole: true,
@@ -101,6 +102,7 @@ function connect() {
 
   source.onmessage = (event) => {
     app.connected = true;
+    app.everConnected = true;
     app.retry = 0;
     const next = JSON.parse(event.data);
     // Drop a stale team selection whenever the round or phase moves on.
@@ -110,7 +112,15 @@ function connect() {
       app.centres = [];
     }
     app.view = next;
-    gameFor(next.gameId).onView?.();   // re-anchor the clock before painting
+    try {
+      // Bind first: the hook reads the context that bindGame installs, and it
+      // runs before the paint so the clock is anchored. A throw in here must
+      // never cost us the redraw — that leaves the last screen frozen on
+      // display, which is worse than whatever went wrong.
+      bindGame(next.gameId).onView?.();
+    } catch (err) {
+      console.error(err);
+    }
     render();
   };
   source.onerror = () => {
@@ -163,6 +173,8 @@ function leaveRoom() {
     app.source = null; app.view = null; app.playerId = null;
     location.hash = '';
     app.code = null;
+    app.connected = false;
+    app.everConnected = false;
     render();
   });
 }
@@ -178,9 +190,13 @@ function render() {
   el('rulesBody').textContent = T(gameFor(currentGameId()).rulesKey);
   renderGameSwitch();
 
+  // A first connection is not a dropped one; saying "reconnecting" while
+  // simply joining is alarming and wrong.
   const conn = el('conn');
-  conn.hidden = !app.code || app.connected;
-  conn.textContent = T('conn.lost');
+  const state = app.code && !app.connected ? (app.everConnected ? 'lost' : 'connecting') : null;
+  conn.hidden = !state;
+  conn.className = `conn-banner ${state ?? ''}`;
+  if (state) conn.textContent = T(state === 'lost' ? 'conn.lost' : 'conn.connecting');
 
   const view = el('view');
   view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()));

@@ -157,6 +157,10 @@ client shows it in the reader's language.
   no untranslated key ever reaches the screen. There is no browser here, so
   this is the substitute. Includes a regression test that a redraw mid-step
   paints the time actually left rather than the step's full length.
+- **ui-connect** — joining and reconnecting from a cold module, which is where
+  a view hook that throws used to freeze the last screen on display under a
+  "connection lost" banner. Also that a first connection reads *connecting*
+  rather than *dropped*.
 - **deploy** — the Pages split: CORS on the allowlisted origin (and not on
   others), preflight, the health probe, and the two things that silently break
   a project Pages site — an absolute asset path, or a hardcoded `/api` fetch

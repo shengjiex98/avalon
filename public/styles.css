@@ -23,11 +23,13 @@ body {
   min-height: 100dvh;
 }
 
+.chrome {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(18,20,28,.86); backdrop-filter: blur(8px);
+}
 .topbar {
   display: flex; align-items: center; justify-content: space-between;
   gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line);
-  position: sticky; top: 0; background: rgba(18,20,28,.86);
-  backdrop-filter: blur(8px); z-index: 10;
 }
 .topbar h1 { font-size: 18px; margin: 0; letter-spacing: .12em; text-transform: uppercase; color: var(--gold); }
 .topbar-right { display: flex; align-items: center; gap: 10px; }
@@ -36,7 +38,10 @@ body {
   border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer;
 }
 .lang:hover { border-color: var(--gold); }
-.conn { font-size: 12px; color: var(--evil); }
+/* Connection state gets its own strip, so it cannot shove the top bar around. */
+.conn-banner { padding: 7px 16px; text-align: center; font-size: 13px; }
+.conn-banner.connecting { background: var(--panel-2); color: var(--muted); border-bottom: 1px solid var(--line); }
+.conn-banner.lost { background: #3a1a1e; color: var(--evil); border-bottom: 1px solid var(--evil); }
 
 .view { max-width: 720px; margin: 0 auto; padding: 16px 16px 64px; display: grid; gap: 16px; }
 

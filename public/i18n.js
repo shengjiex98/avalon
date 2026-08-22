@@ -179,6 +179,7 @@ const STRINGS = {
     'err.network': 'Cannot reach the server. Retrying…',
 
     'conn.lost': 'Connection lost — reconnecting…',
+    'conn.connecting': 'Connecting…',
     'conn.ok': 'Connected',
 
     // ---- One Night Ultimate Werewolf. Namespaced so a phase or a role can
@@ -537,6 +538,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'err.network': '无法连接服务器，正在重试……',
 
     'conn.lost': '连接中断，正在重连……',
+    'conn.connecting': '正在连接……',
     'conn.ok': '已连接',
 
     'game.avalon': '阿瓦隆',
