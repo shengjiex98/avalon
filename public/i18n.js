@@ -348,7 +348,7 @@ const STRINGS = {
 
     'onuw.rules.body': `One Night Ultimate Werewolf is a single night and a single vote, for 3\u201310 players. The deck always holds three more cards than there are players, and those three sit face down in the middle — so some roles are simply not in anyone\u2019s hands.
 
-At night, roles act in a fixed order: werewolves recognise each other, the Seer looks at a card, the Robber steals one, the Troublemaker swaps two others, the Drunk trades blindly with the middle, and the Insomniac checks what they ended up with. Here everyone chooses at once and the night is then resolved in that order, which comes to the same thing.
+At night, roles are woken one at a time in a fixed order: werewolves recognise each other, the Seer looks at a card, the Robber steals one, the Troublemaker swaps two others, the Drunk trades blindly with the middle, and the Insomniac checks what they ended up with. Each step runs on a countdown the whole table shares. Only roles in the deck are called — but a role is still called when its card is sitting in the centre.
 
 Then you argue. Then everyone points at once. Whoever collects the most fingers dies; if everyone gets exactly one vote, nobody does. The village wins if a werewolf dies. If no werewolf was dealt to a player at all, the village wins by killing nobody. The Tanner wins only by dying.
 
@@ -648,7 +648,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'onuw.night.done': '已完成，等待：{names}',
     'onuw.night.skip': '不行动',
     'onuw.night.confirm': '确认',
-    'onuw.night.hint': '所有人同时选择，随后按标准夜晚顺序结算。',
+    'onuw.night.hint': '本步结束由倒计时决定，提前选好也要等。',
 
     'onuw.act.loneWolf': '你是唯一的狼人，可以查看一张中央牌。',
     'onuw.act.seer': '查看一名玩家的牌，或两张中央牌。',
@@ -704,7 +704,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
 
     'onuw.rules.body': `一夜终极狼人是 3\u201310 人的游戏，只有一个夜晚和一次投票。牌堆永远比人数多三张，多出的三张面朝下放在中央 —— 所以有些角色根本不在任何人手里。
 
-夜晚按固定顺序行动：狼人互相确认，预言家查验，强盗抢牌，捣蛋鬼交换另外两人的牌，酒鬼与中央盲换，失眠者最后确认自己变成了什么。本实现让所有人同时选择，再按上述顺序结算，效果完全一致。
+夜晚按固定顺序逐个叫醒：狼人互相确认，预言家查验，强盗抢牌，捣蛋鬼交换另外两人的牌，酒鬼与中央盲换，失眠者最后确认自己变成了什么。每一步有固定倒计时，全场同步、同时播报；只叫本局牌堆里有的角色，但某张牌即使进了中央，对应角色照样会被叫到。
 
 然后开始辩论，最后同时指认。得票最多的人出局；若每人恰好一票，则无人出局。只要死了一只狼，村民阵营获胜；若一开始就没有玩家拿到狼牌，则必须无人出局村民才算赢。皮匠只有在自己出局时才获胜。
 

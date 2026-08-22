@@ -31,7 +31,17 @@ function paintClock() {
   if (bar) bar.setAttribute('style', `width:${clockFraction() * 100}%`);
 }
 
-const msLeft = () => Math.max(0, (app.stepEndsAt ?? 0) - Date.now());
+/**
+ * Prefer the local countdown, but fall back to the server's figure until this
+ * step has been anchored — otherwise the first paint after a reconnect, or any
+ * draw that beats the anchor, shows zero.
+ */
+function msLeft() {
+  const night = app.view?.night;
+  if (!night) return 0;
+  if (app.clockStep !== night.index) return night.msLeft;
+  return Math.max(0, (app.stepEndsAt ?? 0) - Date.now());
+}
 const clockText = () => String(Math.ceil(msLeft() / 1000));
 const clockFraction = () => {
   const total = app.view?.night?.msTotal ?? 1;
@@ -72,6 +82,7 @@ export function onView() {
   const night = app.view?.night;
   if (!night) { stopClock(); spokenStep = null; return; }
   app.stepEndsAt = Date.now() + night.msLeft;
+  app.clockStep = night.index;
   if (!clockTimer) clockTimer = setInterval(paintClock, 200);
   announce(night);
 }

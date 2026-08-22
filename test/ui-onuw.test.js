@@ -344,6 +344,20 @@ test('a redraw paints the time actually left, not the step\'s full length', () =
   }
 });
 
+test('a frame painted before the clock is anchored still shows the time', () => {
+  // Happens on the first paint after a reconnect: render runs with no local
+  // anchor for this step, and used to show zero.
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  app.stepEndsAt = 0;
+  app.clockStep = null;
+
+  const view = show(game, 'p0');
+  const shown = Number(view.byId('nightClock').text);
+  assert.ok(shown > 1, `the clock showed ${shown}`);
+  assert.equal(shown, Math.ceil(app.view.night.msLeft / 1000));
+});
+
 test('the voice can be muted, and the choice sticks', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');

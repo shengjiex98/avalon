@@ -19,6 +19,7 @@ const app = {
   seerMode: 'player',
   muted: Boolean(localStorage.getItem('avalon.muted')),
   stepEndsAt: 0,
+  clockStep: null,   // which night step stepEndsAt was anchored to
   showRole: true,
   source: null,      // EventSource
   retry: 0,
