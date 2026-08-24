@@ -26,7 +26,7 @@ function atHome({ testMode = false } = {}) {
   dom.localStorage.removeItem('avalon.seats.WXYZ');
   dom.localStorage.removeItem('avalon.player.WXYZ');
   dom.location.hash = '';
-  app.code = null; app.view = null; app.serverOk = true; app.lang = 'en';
+  app.code = null; app.view = null; app.lang = 'en'; app.server = ''; app.serverStatus = 'ready';
   app.testMode = testMode;
   app.seats = [];
   render();

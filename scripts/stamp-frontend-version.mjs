@@ -2,7 +2,7 @@ import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-/** Fingerprint the manifest and every relative JavaScript import in a Pages build. */
+/** Stamp the manifest and every relative JavaScript import in a Pages build. */
 export async function stampFrontend(directory, version) {
   if (!/^[a-zA-Z0-9._-]{1,128}$/.test(version)) throw new Error('Invalid front-end version');
   const root = resolve(directory);

@@ -105,7 +105,8 @@ Seats are remembered per room, so a refresh puts you back where you were.
 ## Layout
 
 ```
-.github/           Tests on every push; Pages deploy on main.
+.github/           Tests plus the official Pages client deployment.
+docs/              Architecture decisions and reversion guides.
 deploy/            systemd user unit for the game server.
 src/lobby.js       Joining, hosting, logging — what both games do identically.
 src/rooms.js       Room registry, subscriber fan-out, idle expiry.
@@ -118,7 +119,6 @@ public/ui.js       DOM helpers shared by every screen.
 public/games/      One module of screens per game.
 public/audio/onuw/  Pre-generated English and Mandarin night announcements.
 public/i18n.js     Every user-visible string, en + zh.
-public/config.js   Which backend the client talks to (empty = same origin).
 test/              Rules, engines, HTTP, translations, and the rendered UI.
 ```
 
@@ -131,7 +131,7 @@ registry lines — the room layer does not change.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | `{ok, service}` — a remote front end probes this first |
+| `GET` | `/api/health` | liveness and client protocol compatibility |
 | `POST` | `/api/rooms` | create a room, returns `{code}` |
 | `GET` | `/api/rooms/:code` | `{exists}` |
 | `POST` | `/api/rooms/:code/join` | `{name, playerId?}` → `{playerId}` |
@@ -145,9 +145,13 @@ Common actions: `leave`, `setGame`. Avalon adds `options`, `start`, `confirm`,
 `{error: "<key>", params: {…}}` — a translation key, not a sentence, so the
 client shows it in the reader's language.
 
+The browser and server currently speak protocol `1`. The Pages client checks
+that number before exposing the lobby, so independently deployed versions fail
+clearly when their API contract no longer matches.
+
 ## Testing
 
-`npm test` runs four suites with Node's built-in runner:
+`npm test` runs the suites with Node's built-in runner:
 
 - **rules** — setup tables, role fitting, and each role's knowledge.
 - **game** — deterministic full Avalon games: rejections, the hammer, two-fail
@@ -182,10 +186,8 @@ client shows it in the reader's language.
   adding a seat goes through the ordinary join endpoint with a name that does
   not collide, that switching seats reopens the stream as that player, and
   that a refused join is reported rather than recorded as a phantom seat.
-- **deploy** — the Pages split: CORS on the allowlisted origin (and not on
-  others), preflight, the health probe, and the two things that silently break
-  a project Pages site — an absolute asset path, or a hardcoded `/api` fetch
-  that ignores the configured backend.
+- **deploy** — both supported entry points: the Node-hosted client, the
+  fingerprinted Pages artifact, HTTPS backend selection, and protocol checks.
 
 ## Deploying
 
@@ -193,8 +195,8 @@ State is in memory: restarting drops in-progress games, and rooms idle for six
 hours are swept. That is deliberate for a party game — nothing to back up.
 
 Behind a reverse proxy, disable response buffering on `/api/rooms/*/events` or
-the SSE stream will stall (nginx: `proxy_buffering off;`). `PORT`, `HOST` and
-`ALLOW_ORIGIN` are read from the environment.
+the SSE stream will stall (nginx: `proxy_buffering off;`). `PORT` and `HOST`
+are read from the environment.
 
 As a user service, `deploy/avalon.service` keeps the unit in the repo rather
 than loose in `~/.config/systemd/user`, where a restore would not find it:
@@ -209,39 +211,15 @@ Host-specific settings go in `~/.config/avalon.env` (outside the repo):
 
 ```sh
 PORT=8420
-ALLOW_ORIGIN=https://<you>.github.io
+HOST=0.0.0.0
 ```
 
-### Front end on GitHub Pages
+The Node process is always a complete deployment: it serves both `public/` and
+`/api` from one origin. Point the public URL or reverse proxy at port 8420 and
+share that URL. Open games check the Node server's generated `/version.json`
+once a minute and offer to reload after a new deployment.
 
-Pages is static hosting, so it can serve the page but **not** the game. The
-split is: Pages hosts `public/`, and a server you run somewhere holds the
-rooms. `.github/workflows/pages.yml` publishes on every push to `main`, gated
-on the tests. Each build publishes a commit-based version manifest and
-fingerprints its module graph. Open games check that manifest once a minute
-and offer to reload when a newer front end is available; a normal refresh also
-resolves the current manifest before loading the app.
-
-1. **Enable it** — Settings → Pages → Source: **GitHub Actions**.
-2. **Point the client at your server** — Settings → Secrets and variables →
-   Actions → Variables → new variable `API_BASE`, e.g.
-   `https://avalon.example.ts.net`. The workflow writes it into
-   `public/config.js` at build time. Leave it unset and the page still
-   deploys; it just asks each player to type a server address once.
-3. **Let your server accept that origin** — start it with
-   `ALLOW_ORIGIN=https://<you>.github.io`. Without this the browser blocks
-   every call, and the page will report the server as unreachable.
-
-Two constraints worth knowing before you wire it up:
-
-- **The backend must be HTTPS.** Pages is served over HTTPS, and a browser
-  refuses to let an HTTPS page call an `http://` address. A plain
-  `http://192.168.1.x:8420` will not work, however reachable it is.
-- **Pages serves a project site from `/<repo>/`.** All asset paths are
-  relative for that reason; a test fails the build if an absolute one creeps
-  back in.
-
-Getting HTTPS onto a home server, easiest first:
+For remote players, put HTTPS in front of the Node process. Common routes are:
 
 | Route | Who can play | Notes |
 | --- | --- | --- |
@@ -249,15 +227,21 @@ Getting HTTPS onto a home server, easiest first:
 | `tailscale serve 8420` | tailnet members only | Same valid certificate, but reachable only from your tailnet. |
 | Cloudflare Tunnel / nginx + Let's Encrypt | anyone | The usual reverse-proxy setup; remember `proxy_buffering off`. |
 
-Players can also override the address themselves: `?server=https://…` on the
-URL, or the **Change server** button on the home screen. Copying a room link
-carries the server along, so sharing one link is enough.
+### Official GitHub Pages client
 
-### No Pages at all
+`https://shengjiex98.github.io/avalon/` is the optional stable client URL.
+It uses the repository's Actions variable `API_BASE` as its default HTTPS Node
+server. A `?server=` room link or a server saved in the browser overrides that
+default, and copied room links carry the active server address. Every Node
+deployment accepts requests from this exact Pages origin. Other browser origins
+are not supported, and a client served by Node always uses its own same-origin
+API.
 
-`node src/server.js` already serves the page and the API together on one
-origin. Pages only buys you a stable public URL for the front end; the game
-does not need it.
+The Pages workflow tests the repository, writes `API_BASE` into
+`public/config.js`, stamps the module graph with the commit SHA, and publishes
+`public/`. If maintaining two entry points stops being useful,
+[the single-server decision](docs/single-server.md) is the exact reversion
+checklist.
 
 ## Trust model
 

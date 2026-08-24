@@ -6,13 +6,16 @@ import { DEFAULT_GAME, GAME_IDS, gameFor } from './games/index.js';
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
 const VERSION_CHECK_MS = 60_000;
+const API_PROTOCOL = 1;
+const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 
 // ---------------------------------------------------------------- state
 
 const app = {
   lang: detectLang(),
-  server: null,      // resolved backend origin; '' means same origin
-  serverOk: null,    // null = not probed yet, false = unreachable
+  server: null,           // remote origin, or '' when Node serves this page
+  serverStatus: 'checking',
+  serverProtocol: null,
   code: null,
   playerId: null,
   view: null,        // latest server view, or null before the first event
@@ -54,33 +57,39 @@ const store = {
   clearPlayer: (code) => localStorage.removeItem(`avalon.player.${code}`),
 };
 
-/**
- * The page and the API are the same origin when you self-host, and different
- * origins when the front end is on GitHub Pages. Precedence, most specific
- * first: a ?server= link, a previously saved choice, the value baked in at
- * deploy time, then same origin.
- */
 function resolveServer() {
+  if (location.origin !== PAGES_ORIGIN) {
+    store.server = null;
+    return '';
+  }
   const fromUrl = new URL(location.href).searchParams.get('server');
   if (fromUrl !== null) store.server = normaliseServer(fromUrl);
   return store.server ?? normaliseServer(API_BASE) ?? '';
 }
 
+/** Remote servers must use HTTPS; local Node deployments use same-origin ''. */
 function normaliseServer(raw) {
-  const value = String(raw ?? '').trim().replace(/\/+$/, '');
-  if (!value) return null;
-  return /^https?:\/\//.test(value) ? value : `https://${value}`;
+  try {
+    const url = new URL(String(raw ?? '').trim());
+    return url.protocol === 'https:' ? url.origin : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Confirm a backend is actually there before offering to create a room. */
 async function probeServer() {
+  app.serverStatus = 'checking';
+  app.serverProtocol = null;
   try {
     const res = await fetch(`${app.server}/api/health`, { cache: 'no-store' });
-    app.serverOk = res.ok && (await res.json()).service === 'avalon';
+    const body = await res.json();
+    if (!res.ok || body.service !== 'avalon') throw new Error('not avalon');
+    app.serverProtocol = body.protocol;
+    app.serverStatus = body.protocol === API_PROTOCOL ? 'ready' : 'incompatible';
   } catch {
-    app.serverOk = false;
+    app.serverStatus = 'unreachable';
   }
-  return app.serverOk;
+  return app.serverStatus;
 }
 
 // ---------------------------------------------------------------- transport
@@ -304,8 +313,10 @@ function renderGameSwitch() {
 }
 
 function screenHome() {
-  if (app.serverOk === null) return [h('div', { class: 'card' }, h('p', { class: 'muted', text: T('server.checking') }))];
-  if (app.serverOk === false) return [paneServer()];
+  if (app.serverStatus === 'checking') {
+    return [h('div', { class: 'card' }, h('p', { class: 'muted', text: T('server.checking') }))];
+  }
+  if (app.serverStatus !== 'ready') return [paneServer()];
 
   // A shared link carries the room code, so someone arriving that way should
   // only have to give a name.
@@ -353,33 +364,36 @@ function screenHome() {
     ),
     h('div', { class: 'row' },
       h('button', { class: 'btn ghost grow', onclick: () => el('rules').showModal() }, T('home.rulesLink')),
-      h('button', { class: 'btn ghost', onclick: () => { app.serverOk = false; render(); } }, T('server.change')),
+      app.server ? h('button', {
+        class: 'btn ghost',
+        onclick: () => { app.serverStatus = 'unreachable'; render(); },
+      }, T('server.change')) : null,
     ),
-    h('p', { class: 'muted', text: T('server.connected', { server: app.server || T('server.sameOrigin') }) }),
-  ];
+    app.server ? h('p', { class: 'muted', text: T('server.connected', { server: app.server }) }) : null,
+  ].filter(Boolean);
 }
 
-/** Shown when no backend answers: this page alone is not a game. */
 function paneServer() {
-  const httpsPage = location.protocol === 'https:';
   const submit = async () => {
     const value = normaliseServer(el('serverInput').value);
-    app.server = value ?? '';
+    if (!value) return toast(T('server.httpsOnly'));
+    app.server = value;
     store.server = value;
-    app.serverOk = null;
     render();
     await probeServer();
-    if (!app.serverOk) toast(T('err.network'));
     render();
   };
 
+  const message = app.serverStatus === 'incompatible'
+    ? T('server.incompatible', { expected: API_PROTOCOL, actual: app.serverProtocol ?? '?' })
+    : T('server.unreachable');
+
   return h('div', { class: 'card stack' },
     h('h2', { text: T('server.title') }),
-    h('p', { class: 'muted', text: T('server.unreachable') }),
-    httpsPage ? h('p', { class: 'muted', text: T('server.mixedContent') }) : null,
+    h('p', { class: 'muted', text: message }),
     h('label', {}, T('server.label'),
       h('input', {
-        type: 'text', id: 'serverInput', value: app.server, spellcheck: 'false',
+        type: 'url', id: 'serverInput', value: app.server, spellcheck: 'false',
         placeholder: T('server.placeholder'), autocapitalize: 'off', autocomplete: 'url',
         onkeydown: (e) => { if (e.key === 'Enter') submit(); },
       })),
@@ -452,8 +466,6 @@ function paneLobby(game) {
 }
 
 function copyLink() {
-  // Pages serves this from /<repo>/, so keep the path and carry the server
-  // over — a friend opening the link has no saved setting yet.
   const url = new URL(location.href);
   url.search = app.server ? `?server=${encodeURIComponent(app.server)}` : '';
   url.hash = `#/${app.code}`;
@@ -594,12 +606,12 @@ export async function main() {
   startUpdateChecks();
 
   app.server = resolveServer();
-  render();                      // paint "looking for the server" straight away
+  render();
   await probeServer();
 
   const code = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
   const playerId = code && store.playerFor(code);
-  if (app.serverOk && code && playerId) {
+  if (app.serverStatus === 'ready' && code && playerId) {
     app.code = code;
     app.playerId = playerId;
     app.seats = store.seatsFor(code);

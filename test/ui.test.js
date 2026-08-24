@@ -14,11 +14,12 @@ const { app, render } = client;
 /** Draw the home screen fresh, optionally as if arriving on a shared link. */
 function home({ hash = '', lang = 'en' } = {}) {
   dom.location.hash = hash;
-  dom.location.href = 'https://someone.github.io/avalon/' + hash;
+  dom.location.href = 'http://localhost:8420/' + hash;
   app.lang = lang;
+  app.server = '';
+  app.serverStatus = 'ready';
   app.code = null;
   app.view = null;
-  app.serverOk = true;
   dom.calls.length = 0;
   render();
   return dom.fixtures.view;
@@ -149,14 +150,36 @@ test('the language toggle redraws the whole screen in Chinese', () => {
   assert.match(dom.fixtures.view.text, /Create a new room/);
 });
 
-test('an unreachable server explains itself instead of showing a lobby', () => {
+test('the Pages client asks for one HTTPS game server', () => {
   home();
-  app.serverOk = false;
+  app.serverStatus = 'unreachable';
   render();
   const view = dom.fixtures.view;
-  assert.equal(view.byId('nameInput'), null, 'no point asking for a name yet');
-  assert.ok(view.byId('serverInput'), 'it asks for a server address');
-  assert.match(view.text, /only the front end/i);
+  assert.equal(view.byId('nameInput'), null);
+  assert.ok(view.byId('serverInput'));
+  assert.match(view.text, /HTTPS address/);
+});
+
+test('the Pages client remembers a compatible server', async () => {
+  home();
+  app.serverStatus = 'unreachable';
+  render();
+  const view = dom.fixtures.view;
+  view.byId('serverInput').value = 'https://games.example.com/path';
+  buttons(view).find((button) => button.text === 'Connect').dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.equal(app.server, 'https://games.example.com');
+  assert.equal(app.serverStatus, 'ready');
+  assert.equal(dom.localStorage.getItem('avalon.server'), 'https://games.example.com');
+});
+
+test('an incompatible server reports both protocol versions', () => {
+  home();
+  app.serverStatus = 'incompatible';
+  app.serverProtocol = 2;
+  render();
+  assert.match(dom.fixtures.view.text, /protocol 1.*server uses 2/);
 });
 
 test('the lobby shows the room code and every player', () => {
