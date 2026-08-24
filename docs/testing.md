@@ -1,0 +1,33 @@
+# Testing
+
+Run all tests with Node's built-in test runner:
+
+```bash
+npm test
+```
+
+The suite does not need network access or a browser.
+
+## Test groups
+
+- **rules:** role setup, role fitting, and each role's knowledge.
+- **game:** deterministic Avalon games, including rejected teams, the fifth
+  rejection, two-fail quests, assassination outcomes, and hidden-role views.
+- **onuw:** deterministic nights on a controlled clock, deck-derived scripts,
+  center roles, fixed step timing, hidden actor state, forced Drunk swaps, win
+  conditions, and card privacy.
+- **rooms:** timer-driven night steps, broadcasts, and timer cleanup when rooms
+  expire.
+- **server:** real HTTP on an ephemeral port, including a complete five-player
+  game over SSE.
+- **i18n-coverage:** every client key, server error, win reason, and log event
+  exists in English and Chinese.
+- **ui:** home, invitations, language switching, and joining, rendered with the
+  lightweight DOM shim in `test/dom-shim.js`.
+- **ui-game / ui-onuw:** every phase of both games, rendered from real engine
+  views in both languages, including countdown redraw regressions.
+- **ui-connect:** cold joins, reconnection, and failures inside game view hooks.
+- **ui-testmode:** adding and switching seats through normal join and event
+  paths, including rejected joins.
+- **deploy:** Node-hosted and GitHub Pages entry points, frontend version
+  stamping, HTTPS backend selection, and protocol checks.
