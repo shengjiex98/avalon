@@ -69,14 +69,20 @@ function allowClient(req, res, clientOrigin) {
 async function api(rooms, req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','rooms',CODE,...]
 
-  // A small liveness endpoint for deployment checks and reverse proxies.
-  if (req.method === 'GET' && url.pathname === '/api/health') {
-    return json(res, 200, {
+  // Liveness always stays healthy. Updaters use /update to avoid interrupting
+  // any room whose game has left the lobby.
+  if (req.method === 'GET' && (url.pathname === '/api/health' || url.pathname === '/api/health/update')) {
+    const activeGames = rooms.activeGameCount();
+    const updateSafe = activeGames === 0;
+    const status = url.pathname === '/api/health/update' && !updateSafe ? 409 : 200;
+    return json(res, status, {
       ok: true,
       service: 'avalon',
       protocol: API_PROTOCOL,
       games: GAME_IDS,
       rooms: rooms.rooms.size,
+      activeGames,
+      updateSafe,
     });
   }
 
