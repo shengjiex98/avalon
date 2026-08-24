@@ -3,8 +3,9 @@
 #   systemctl --user enable --now avalon
 #   loginctl enable-linger "$USER"        # survive logout / reboot
 #
-# Host-specific settings (PORT, ALLOW_ORIGIN) go in ~/.config/avalon.env,
+# Host-specific settings (PORT, HOST) go in ~/.config/avalon.env,
 # which is deliberately outside the repo.
+# The server always accepts the official shengjiex98.github.io client.
 
 [Unit]
 Description=Avalon game server

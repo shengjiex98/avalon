@@ -34,7 +34,7 @@ const nightFrame = () => ({
 async function joinRoom(gameId, frame) {
   dom.location.hash = '';
   app.code = null; app.view = null; app.connected = false; app.everConnected = false;
-  app.serverOk = true; app.lang = 'zh';
+  app.lang = 'zh'; app.server = ''; app.serverStatus = 'ready';
   render();
 
   dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'me', code: 'WXYZ' });
@@ -90,7 +90,7 @@ test('a browser that blocks audio still gets its frame drawn', async () => {
 test('joining shows "connecting", not "connection lost"', async () => {
   dom.location.hash = '';
   app.code = null; app.view = null; app.connected = false; app.everConnected = false;
-  app.serverOk = true; app.lang = 'zh';
+  app.lang = 'zh'; app.server = ''; app.serverStatus = 'ready';
   render();
   assert.equal(dom.fixtures.conn.hidden, true, 'nothing to report before you join');
 

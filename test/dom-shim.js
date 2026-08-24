@@ -90,7 +90,7 @@ class Element {
  * Install a document matching public/index.html, plus the browser globals the
  * client touches. Returns handles the tests drive.
  */
-export function installDom({ hash = '', href = 'https://someone.github.io/avalon/', lang = 'en' } = {}) {
+export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 'en' } = {}) {
   const root = new Element('body');
   const make = (tag, id) => { const e = new Element(tag); e.id = id; root.append(e); return e; };
 
@@ -141,7 +141,8 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
 
   const calls = [];
   const state = {
-    health: true,          // does the backend answer the probe?
+    health: true,
+    protocol: 1,
     frontendVersion: 'dev',
     responses: new Map(),  // path -> body, for anything else
   };
@@ -151,7 +152,7 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
     calls.push({ path, method: options.method ?? 'GET', body: options.body ? JSON.parse(options.body) : null });
     if (path === '/api/health') {
       if (!state.health) throw new TypeError('fetch failed');
-      return jsonResponse({ ok: true, service: 'avalon' });
+      return jsonResponse({ ok: true, service: 'avalon', protocol: state.protocol });
     }
     if (/\/version\.json(?:\?|$)/.test(path)) return jsonResponse({ version: state.frontendVersion });
     if (state.responses.has(path)) return jsonResponse(state.responses.get(path));

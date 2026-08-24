@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 
-import { createApp } from '../src/server.js';
+import { API_PROTOCOL, CLIENT_ORIGIN, createApp } from '../src/server.js';
 import { Rooms } from '../src/rooms.js';
 import * as onuw from '../src/games/onuw/game.js';
 
@@ -44,6 +44,34 @@ test('serves the client', async () => {
     assert.equal(res.status, 200);
     assert.match(res.headers.get('content-type'), /text\/html/);
     assert.match(await res.text(), /<title>Avalon<\/title>/);
+  });
+});
+
+test('serves an uncached local front-end version', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(base + '/version.json');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
+    assert.match((await res.json()).version, /^local-[a-z0-9]+$/);
+  });
+});
+
+test('advertises one API protocol to the supported Pages client', async () => {
+  await withServer(async (base) => {
+    const health = await fetch(base + '/api/health', { headers: { origin: CLIENT_ORIGIN } });
+    assert.equal(health.headers.get('access-control-allow-origin'), CLIENT_ORIGIN);
+    assert.equal((await health.json()).protocol, API_PROTOCOL);
+
+    const preflight = await fetch(base + '/api/rooms', {
+      method: 'OPTIONS',
+      headers: { origin: CLIENT_ORIGIN, 'access-control-request-method': 'POST' },
+    });
+    assert.equal(preflight.status, 204);
+    assert.match(preflight.headers.get('access-control-allow-methods'), /POST/);
+
+    const stranger = await fetch(base + '/api/health', { headers: { origin: 'https://example.com' } });
+    assert.equal(stranger.headers.get('access-control-allow-origin'), null);
+    assert.match(stranger.headers.get('vary'), /origin/);
   });
 });
 

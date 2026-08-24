@@ -1,118 +1,23 @@
-// Guards for the split deployment: the front end on GitHub Pages, the game
-// server somewhere else. Both halves have to keep holding up their end.
+// Guards the two deliberate entry points: a self-contained Node deployment
+// and the official Pages client pointed at a compatible Node server.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { once } from 'node:events';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { createApp } from '../src/server.js';
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
-const PAGES = 'https://someone.github.io';
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
-async function withServer(options, fn) {
-  const server = createServer(createApp(options));
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  try {
-    await fn(`http://127.0.0.1:${server.address().port}`);
-  } finally {
-    server.close();
-    await once(server, 'close');
-  }
-}
-
-test('the health probe tells a remote front end the server is real', async () => {
-  await withServer({}, async (base) => {
-    const res = await fetch(base + '/api/health');
-    assert.equal(res.status, 200);
-    const body = await res.json();
-    assert.equal(body.ok, true);
-    assert.equal(body.service, 'avalon', 'the client checks this before offering a lobby');
-  });
-});
-
-test('an allowed origin gets a CORS header, and others do not', async () => {
-  await withServer({ allowedOrigins: [PAGES] }, async (base) => {
-    const allowed = await fetch(base + '/api/health', { headers: { origin: PAGES } });
-    assert.equal(allowed.headers.get('access-control-allow-origin'), PAGES);
-    assert.match(allowed.headers.get('vary') ?? '', /origin/i);
-
-    const stranger = await fetch(base + '/api/health', { headers: { origin: 'https://evil.example' } });
-    assert.equal(stranger.headers.get('access-control-allow-origin'), null);
-  });
-});
-
-test('a trailing slash on the configured origin does not break the match', async () => {
-  await withServer({ allowedOrigins: [PAGES] }, async (base) => {
-    const res = await fetch(base + '/api/health', { headers: { origin: PAGES + '/' } });
-    assert.equal(res.headers.get('access-control-allow-origin'), PAGES);
-  });
-});
-
-test('preflight is answered so cross-origin POSTs can go through', async () => {
-  await withServer({ allowedOrigins: [PAGES] }, async (base) => {
-    const res = await fetch(base + '/api/rooms', {
-      method: 'OPTIONS',
-      headers: { origin: PAGES, 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type' },
-    });
-    assert.equal(res.status, 204);
-    assert.equal(res.headers.get('access-control-allow-origin'), PAGES);
-    assert.match(res.headers.get('access-control-allow-methods'), /POST/);
-    assert.match(res.headers.get('access-control-allow-headers'), /content-type/);
-  });
-});
-
-test('with no allowlist the API stays same-origin only', async () => {
-  await withServer({ allowedOrigins: [] }, async (base) => {
-    const res = await fetch(base + '/api/health', { headers: { origin: PAGES } });
-    assert.equal(res.headers.get('access-control-allow-origin'), null);
-  });
-});
-
-test('a cross-origin room can be created and streamed', async () => {
-  await withServer({ allowedOrigins: ['*'] }, async (base) => {
-    const created = await fetch(base + '/api/rooms', { method: 'POST', headers: { origin: PAGES } });
-    assert.equal(created.headers.get('access-control-allow-origin'), PAGES);
-    const { code } = await created.json();
-
-    const joined = await fetch(`${base}/api/rooms/${code}/join`, {
-      method: 'POST',
-      headers: { origin: PAGES, 'content-type': 'application/json' },
-      body: JSON.stringify({ name: 'Ann' }),
-    });
-    const { playerId } = await joined.json();
-
-    // EventSource cannot set headers, so the SSE response itself must carry CORS.
-    const abort = new AbortController();
-    const stream = await fetch(`${base}/api/rooms/${code}/events?playerId=${playerId}`, {
-      headers: { origin: PAGES }, signal: abort.signal,
-    });
-    assert.equal(stream.headers.get('access-control-allow-origin'), PAGES);
-    assert.match(stream.headers.get('content-type'), /text\/event-stream/);
-    abort.abort();
-  });
-});
-
-test('the page loads its assets relatively, so a /<repo>/ subpath works', async () => {
-  const html = await read('../public/index.html');
-  const absolute = [...html.matchAll(/(?:src|href)="(\/[^/][^"]*)"/g)].map((m) => m[1]);
-  assert.deepEqual(absolute, [], 'GitHub Pages serves a project site from a subpath');
-  assert.match(html, /src="\.\/bootstrap\.js"/);
-});
-
-test('every page load resolves the current deployed front-end version', async () => {
+test('every page load resolves the current server-hosted version', async () => {
   const bootstrap = await read('../public/bootstrap.js');
   assert.match(bootstrap, /version\.json/);
   assert.match(bootstrap, /cache:\s*'no-store'/);
   assert.match(bootstrap, /app\.js\?v=/);
 });
 
-test('the Pages build fingerprints every module in the deployed graph', async () => {
+test('the Pages artifact fingerprints its complete module graph', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'avalon-version-'));
   await mkdir(join(dir, 'games'));
   await writeFile(join(dir, 'app.js'), "import './ui.js';\nimport * as game from './games/index.js';\n");
@@ -128,30 +33,34 @@ test('the Pages build fingerprints every module in the deployed graph', async ()
 });
 
 test('the connection banner lives outside the top bar', async () => {
-  // Inside the header it wrapped the row and pushed the language button onto
-  // a second line the moment the connection dropped.
   const html = await read('../public/index.html');
   const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
   assert.ok(!header.includes('id="conn"'), 'the banner must not sit in the header');
   assert.match(html, /<div id="conn" class="conn-banner"/);
 });
 
-test('the client reaches the API through the configured base, never a bare path', async () => {
+test('the browser defaults to Node but can remember one HTTPS backend', async () => {
   const source = await read('../public/app.js');
-  const bare = [...source.matchAll(/(?:fetch|EventSource)\(\s*[`'"]\/api/g)];
-  assert.deepEqual(bare.map((m) => m[0]), [], 'a hardcoded /api path breaks the Pages build');
+  const config = await read('../public/config.js');
+  assert.match(source, /API_PROTOCOL\s*=\s*1/);
+  assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
+  assert.match(source, /location\.origin !== PAGES_ORIGIN/);
+  assert.match(source, /normaliseServer\(API_BASE\)/);
+  assert.match(source, /avalon\.server/);
+  assert.match(source, /url\.protocol === 'https:'/);
+  assert.match(source, /fetch\(app\.server \+ path,/);
+  assert.match(source, /new EventSource\(`\$\{app\.server\}\/api\/rooms\//);
+  assert.match(source, /url\.search = app\.server \? `\?server=/);
+  assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the shipped config defaults to same origin', async () => {
-  const { API_BASE } = await import('../public/config.js');
-  assert.equal(API_BASE, '', 'self-hosting must work with no configuration');
-});
-
-test('the deploy workflow publishes the front end and gates on the tests', async () => {
+test('the Pages workflow tests and publishes only the browser client', async () => {
   const workflow = await read('../.github/workflows/pages.yml');
-  assert.match(workflow, /npm test/, 'do not publish a build the tests reject');
-  assert.match(workflow, /API_BASE/, 'the backend address has to be injected');
+  assert.match(workflow, /npm test/);
+  assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
+  assert.match(workflow, /writeFileSync\("public\/config\.js"/);
   assert.match(workflow, /stamp-frontend-version\.mjs public "\$GITHUB_SHA"/);
   assert.match(workflow, /actions\/deploy-pages/);
-  assert.match(workflow, /path:\s*public/, 'only the front end is published');
+  assert.match(workflow, /path:\s*public/);
+  assert.doesNotMatch(workflow, /ALLOW_ORIGIN/);
 });

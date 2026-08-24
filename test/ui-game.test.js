@@ -26,9 +26,10 @@ function newGame({ confirm = true } = {}) {
 /** Draw what `playerId` would see right now. */
 function show(game, playerId, lang = 'en') {
   app.lang = lang;
+  app.server = '';
+  app.serverStatus = 'ready';
   app.code = game.code;
   app.playerId = playerId;
-  app.serverOk = true;
   app.selection = [];
   app.infoPopup = null;
   app.view = g.viewFor(game, playerId);

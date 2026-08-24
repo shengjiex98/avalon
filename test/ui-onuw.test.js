@@ -18,7 +18,7 @@ const { app, render } = client;
 
 function home({ lang = 'en' } = {}) {
   dom.location.hash = '';
-  app.lang = lang; app.code = null; app.view = null; app.serverOk = true;
+  app.lang = lang; app.server = ''; app.serverStatus = 'ready'; app.code = null; app.view = null;
   dom.calls.length = 0;
   render();
   return dom.fixtures.view;
@@ -61,7 +61,7 @@ function finishNight(game) {
 
 /** Draw what `playerId` sees right now. */
 function show(game, playerId, lang = 'en') {
-  app.lang = lang; app.code = game.code; app.playerId = playerId; app.serverOk = true;
+  app.lang = lang; app.server = ''; app.serverStatus = 'ready'; app.code = game.code; app.playerId = playerId;
   app.selection = []; app.centres = []; app.seerMode = 'player'; app.infoPopup = null;
   app.view = w.viewFor(game, playerId, clock);
   render();
