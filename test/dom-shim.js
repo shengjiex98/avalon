@@ -144,6 +144,8 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     health: true,
     protocol: 1,
     frontendVersion: 'dev',
+    confirmResult: true,
+    confirmations: [],
     responses: new Map(),  // path -> body, for anything else
   };
 
@@ -195,7 +197,13 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
 
   Object.assign(globalThis, {
     document,
-    window: { addEventListener() {} },
+    window: {
+      addEventListener() {},
+      confirm(message) {
+        state.confirmations.push(String(message));
+        return state.confirmResult;
+      },
+    },
     localStorage,
     location,
     fetch: fetchStub,
