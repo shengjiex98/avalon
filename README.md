@@ -1,8 +1,7 @@
 # Avalon
 
 Play **The Resistance: Avalon** or **One Night Ultimate Werewolf** in a web
-browser. One player creates a room, everyone joins from their phone, and each
-player sees only the information meant for them.
+browser. One player creates a room, everyone joins from their phone.
 
 - 3–10 players for One Night Ultimate Werewolf
 - 5–10 players for Avalon
@@ -28,10 +27,7 @@ player sees only the information meant for them.
 
 Open the [public Avalon client](https://shengjiex98.github.io/avalon/), enter
 your name, and create a room. Share the four-letter room code with the other
-players.
-
-The public client connects to the default game server automatically. You do
-not need to install Node.js, run a server, or host anything yourself.
+players. The public client connects to the default game server automatically.
 
 ## Optional: self-host
 
