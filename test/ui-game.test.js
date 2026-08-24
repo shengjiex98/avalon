@@ -105,16 +105,37 @@ test('Avalon offers matching role and reference popups', () => {
   assert.doesNotMatch(dom.fixtures.view.text, /Role guide/);
 });
 
-test('only the host sees the active-game reset control', () => {
+test('only the host can confirm an active-game reset', () => {
   const game = newGame();
   let view = show(game, 'p1');
   assert.equal(view.byId('resetGame'), null);
 
   view = show(game, game.hostId);
   dom.calls.length = 0;
+  dom.state.confirmations.length = 0;
+  dom.state.confirmResult = false;
+  view.byId('resetGame').dispatch('click');
+  assert.deepEqual(dom.state.confirmations, [
+    'Reset this game? The current game will end and everyone will return to the lobby.',
+  ]);
+  assert.equal(dom.calls.find((entry) => entry.path.endsWith('/action')), undefined);
+
+  dom.state.confirmResult = true;
   view.byId('resetGame').dispatch('click');
   const call = dom.calls.find((entry) => entry.path.endsWith('/action'));
   assert.equal(call.body.type, 'reset');
+});
+
+test('the reset confirmation follows the host language', () => {
+  const game = newGame();
+  const view = show(game, game.hostId, 'zh');
+  dom.state.confirmations.length = 0;
+  dom.state.confirmResult = false;
+  view.byId('resetGame').dispatch('click');
+  assert.deepEqual(dom.state.confirmations, [
+    '确定要重置本局游戏吗？当前游戏将结束，所有玩家都会返回等待室。',
+  ]);
+  dom.state.confirmResult = true;
 });
 
 test('Merlin is shown who is evil, but never told their roles', () => {

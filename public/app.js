@@ -416,7 +416,9 @@ function screenGame() {
     canReset ? h('div', { class: 'row game-utility' },
       h('button', {
         class: 'btn ghost grow', id: 'resetGame', type: 'button',
-        onclick: () => send('reset'),
+        onclick: () => {
+          if (window.confirm(T('game.resetConfirm'))) send('reset');
+        },
       }, T('game.reset')),
     ) : null,
     paneLog(),

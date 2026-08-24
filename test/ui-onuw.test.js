@@ -273,6 +273,7 @@ test('One Night Werewolf uses the shared host-only reset control', () => {
 
   const hostView = show(game, game.hostId);
   dom.calls.length = 0;
+  dom.state.confirmResult = true;
   hostView.byId('resetGame').dispatch('click');
   const call = dom.calls.find((entry) => entry.path.endsWith('/action'));
   assert.equal(call.body.type, 'reset');

@@ -48,6 +48,7 @@ const STRINGS = {
     'lobby.share': 'Share this code so others can join.',
 
     'game.reset': 'Reset game',
+    'game.resetConfirm': 'Reset this game? The current game will end and everyone will return to the lobby.',
     'avalon.ref.title': 'Roles in this game',
     'avalon.ref.inPlay': 'Role guide ({n} players)',
 
@@ -427,6 +428,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'lobby.share': '把房间号发给朋友即可加入。',
 
     'game.reset': '重置游戏',
+    'game.resetConfirm': '确定要重置本局游戏吗？当前游戏将结束，所有玩家都会返回等待室。',
     'avalon.ref.title': '本局角色',
     'avalon.ref.inPlay': '角色说明（{n} 人）',
 
