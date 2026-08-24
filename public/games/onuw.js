@@ -270,8 +270,20 @@ function referenceContent() {
 }
 
 export function panes() {
-  const byPhase = { night: paneNight, day: paneDay, vote: paneVote, over: paneOver };
+  const byPhase = { reveal: paneReveal, night: paneNight, day: paneDay, vote: paneVote, over: paneOver };
   return byPhase[app.view.phase]();
+}
+
+function paneReveal() {
+  const v = app.view;
+  const done = v.players.find((p) => p.id === v.you.id)?.ready;
+  return [h('div', { class: 'card stack' },
+    h('h2', { text: T('onuw.reveal.title') }),
+    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
+    done
+      ? h('p', { class: 'muted', text: T('onuw.reveal.waiting', { names: waitingNames() }) })
+      : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('onuw.reveal.ready')),
+  )];
 }
 
 function paneNight() {

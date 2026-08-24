@@ -12,7 +12,7 @@ let clock = 1_700_000_000_000;
 const now = () => clock;
 
 /** A game dealt exactly as `deck` says: seat i gets deck[i], the rest is centre. */
-function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus']) {
+function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus'], { ready = true } = {}) {
   const count = deck.length - 3;
   const game = w.createGame('TEST', { now });
   names.slice(0, count).forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
@@ -27,9 +27,7 @@ function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus']) {
   game.info = {};
   game.swaps = [];
   game.actions = {};
-  game.step = 0;
-  game.stepEndsAt = clock + stepMillis(game.script[0], game.pace);
-  w.openStepForTests(game);
+  if (ready) for (const p of game.players) w.confirmRole(game, p.id, { now });
   return game;
 }
 
@@ -68,6 +66,48 @@ test('a deck that cannot fit is refused rather than silently trimmed', () => {
 });
 
 // ---------------------------------------------------------------- the script
+
+test('the night clock waits until every player is ready', () => {
+  const game = dealt(
+    ['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner'],
+    undefined,
+    { ready: false },
+  );
+
+  assert.equal(game.phase, 'reveal');
+  assert.equal(game.step, -1);
+  assert.equal(game.stepEndsAt, 0);
+  assert.equal(w.nextDeadline(game), null, 'the room must not schedule a timer yet');
+  assert.equal(w.viewFor(game, 'p0', clock).night, null);
+
+  w.confirmRole(game, 'p0', { now });
+  w.confirmRole(game, 'p1', { now });
+  assert.equal(game.phase, 'reveal', 'one unread role still holds the game');
+  assert.deepEqual(w.viewFor(game, 'p0', clock).waitingFor, ['p2']);
+
+  const startedAt = clock;
+  w.confirmRole(game, 'p2', { now });
+  assert.equal(game.phase, 'night');
+  assert.equal(w.currentStep(game).key, 'nightfall');
+  assert.equal(game.stepEndsAt, startedAt + stepMillis(game.script[0], game.pace));
+  assert.equal(w.viewFor(game, 'p0', clock).night.msLeft, stepMillis(game.script[0], game.pace));
+  assert.ok(w.nextDeadline(game) > startedAt);
+});
+
+test('the reveal view shows readiness without leaking anyone else\'s card', () => {
+  const game = dealt(
+    ['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner'],
+    undefined,
+    { ready: false },
+  );
+  w.confirmRole(game, 'p0', { now });
+
+  const view = w.viewFor(game, 'p1', clock);
+  assert.deepEqual(view.players.map((p) => p.ready), [true, false, false]);
+  assert.deepEqual(view.waitingFor, ['p1', 'p2']);
+  assert.ok(view.players.every((p) => p.startRole === undefined));
+  assert.equal(view.you.role, 'werewolf');
+});
 
 test('the script holds the deck\'s waking roles, in the canonical order', () => {
   const full = buildDeck(10, defaultOptions(10));

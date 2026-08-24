@@ -41,6 +41,7 @@ export const GAMES = {
     actions: {
       options: (g, id, body) => onuw.setOptions(g, id, body.options ?? {}),
       start: (g, id) => onuw.startGame(g, id),
+      confirm: (g, id) => onuw.confirmRole(g, id),
       night: (g, id, body) => onuw.submitNight(g, id, body.action ?? {}),
       startVote: (g, id) => onuw.startVote(g, id),
       vote: (g, id, body) => onuw.castVote(g, id, body.target),

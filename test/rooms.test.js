@@ -20,11 +20,31 @@ function startedGame(rooms) {
 // same way the server does.
 import { gameFor } from '../src/games/index.js';
 const require_addPlayer = (g, i, name) => gameFor(g.gameId).addPlayer(g, { id: `p${i}`, name });
+const readyEveryone = (rooms, code, game) => {
+  for (const p of game.players) rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, p.id));
+};
+
+test('starting deals roles but schedules no timer until everyone is ready', () => {
+  const rooms = new Rooms();
+  const { code, room } = startedGame(rooms);
+  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+
+  assert.equal(room.game.phase, 'reveal');
+  assert.equal(room.timer, null);
+  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p1'));
+  assert.equal(room.timer, null, 'a partial table must not start the clock');
+
+  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p2'));
+  assert.equal(room.game.phase, 'night');
+  assert.ok(room.timer, 'the final ready schedules the first step');
+});
 
 test('a night advances on the room\'s own clock, with nobody pressing anything', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
   rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  readyEveryone(rooms, code, room.game);
   assert.equal(room.game.phase, 'night');
   assert.equal(room.game.step, 0);
 
@@ -38,6 +58,7 @@ test('subscribers are pushed the new step without asking', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
   rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  readyEveryone(rooms, code, room.game);
 
   const seen = [];
   rooms.subscribe(code, 'p1', (view) => seen.push(view.night?.key ?? view.phase));
@@ -53,6 +74,7 @@ test('a swept room takes its timer with it', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
   rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  readyEveryone(rooms, code, room.game);
   assert.ok(room.timer, 'a night schedules a wake-up');
 
   room.touchedAt = Date.now() - 24 * 60 * 60 * 1000;

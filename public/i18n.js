@@ -297,6 +297,10 @@ const STRINGS = {
     'onuw.team.werewolf': 'Werewolf',
     'onuw.team.tanner': 'Tanner',
 
+    'onuw.reveal.title': 'Look at your card',
+    'onuw.reveal.ready': 'Ready',
+    'onuw.reveal.waiting': 'Ready. Waiting for: {names}',
+
     'onuw.phase.night': 'Night',
     'onuw.phase.day': 'Day',
     'onuw.phase.vote': 'The vote',
@@ -668,6 +672,10 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'onuw.team.village': '村民阵营',
     'onuw.team.werewolf': '狼人阵营',
     'onuw.team.tanner': '皮匠',
+
+    'onuw.reveal.title': '查看你的牌',
+    'onuw.reveal.ready': '准备好了',
+    'onuw.reveal.waiting': '已准备。等待：{names}',
 
     'onuw.phase.night': '夜晚',
     'onuw.phase.day': '白天',
