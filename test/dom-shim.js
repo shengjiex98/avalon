@@ -167,6 +167,31 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
     close() { this.closed = true; }
   }
 
+  class AudioStub {
+    static instances = [];
+    static playError = null;
+
+    constructor(src = '') {
+      this.src = src;
+      this.paused = true;
+      this.muted = false;
+      this.currentTime = 0;
+      this.playCalls = 0;
+      AudioStub.instances.push(this);
+    }
+
+    play() {
+      this.playCalls += 1;
+      this.paused = false;
+      return AudioStub.playError ? Promise.reject(AudioStub.playError) : Promise.resolve();
+    }
+
+    pause() { this.paused = true; }
+    load() {}
+    removeAttribute(name) { if (name === 'src') this.src = ''; }
+    finish() { this.paused = true; this.onended?.(); }
+  }
+
   Object.assign(globalThis, {
     document,
     window: { addEventListener() {} },
@@ -174,9 +199,10 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
     location,
     fetch: fetchStub,
     EventSource: EventSourceStub,
+    Audio: AudioStub,
   });
 
-  return { root, fixtures, document, localStorage, location, calls, state, EventSourceStub, storage };
+  return { root, fixtures, document, localStorage, location, calls, state, EventSourceStub, AudioStub, storage };
 }
 
 export { Element, TextNode };

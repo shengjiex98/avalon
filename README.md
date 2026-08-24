@@ -58,7 +58,10 @@ Whatever you look at, you see **while you are still awake** — the Seer's
 reading, the card the Robber took, the lone wolf's peek at the centre. A
 foldaway pane lists the deck, what each role does, and the night order, with
 the current step marked. The host sets the pace (brisk / normal / relaxed) in
-the lobby, and voice can be muted per device.
+the lobby, and voice can be muted per device. Night calls use checked-in neural
+voice recordings in both English and Mandarin, so the narrator sounds the same
+on every browser and does not depend on the device's speech synthesizer. The
+source lines and regeneration command live in `scripts/generate-onuw-audio.py`.
 
 Then you argue, then everyone points at once. Most fingers dies; if every
 player collects exactly one vote, nobody does. You belong to the team of the
@@ -113,6 +116,7 @@ src/games/onuw/    One Night Werewolf's rules and state machine.
 public/app.js      The shell: transport, home, lobby, the switcher.
 public/ui.js       DOM helpers shared by every screen.
 public/games/      One module of screens per game.
+public/audio/onuw/  Pre-generated English and Mandarin night announcements.
 public/i18n.js     Every user-visible string, en + zh.
 public/config.js   Which backend the client talks to (empty = same origin).
 test/              Rules, engines, HTTP, translations, and the rendered UI.
