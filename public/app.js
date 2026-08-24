@@ -23,7 +23,7 @@ const app = {
   seats: [],              // every seat this device holds, for testing alone
   stepEndsAt: 0,
   clockStep: null,   // which night step stepEndsAt was anchored to
-  showRole: true,
+  infoPopup: null,   // shared overlay state; hidden until explicitly opened
   source: null,      // EventSource
   retry: 0,
 };
@@ -39,6 +39,8 @@ const store = {
     try { return JSON.parse(localStorage.getItem(`avalon.seats.${code}`)) ?? []; }
     catch { return []; }
   },
+  nameFor: (code, playerId) =>
+    store.seatsFor(code).find((seat) => seat.id === playerId)?.name ?? store.name,
   setSeats: (code, seats) => localStorage.setItem(`avalon.seats.${code}`, JSON.stringify(seats)),
   clearSeats: (code) => localStorage.removeItem(`avalon.seats.${code}`),
   playerFor: (code) => localStorage.getItem(`avalon.player.${code}`),
@@ -118,6 +120,7 @@ function connect() {
         || next.gameId !== app.view.gameId) {
       app.selection = [];
       app.centres = [];
+      app.infoPopup = null;
     }
     app.view = next;
     try {
@@ -187,6 +190,7 @@ function leaveRoom() {
     app.source?.close();
     store.clearPlayer(app.code);
     app.source = null; app.view = null; app.playerId = null;
+    app.infoPopup = null;
     store.clearSeats(app.code);
     app.seats = [];
     location.hash = '';
@@ -341,10 +345,17 @@ function paneServer() {
 function screenGame() {
   const v = app.view;
   const game = bindGame(v.gameId);
+  const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
   return [
     ...(v.phase === 'lobby' ? paneLobby(game) : [...game.header_(), ...game.panes()]),
+    canReset ? h('div', { class: 'row' },
+      h('button', {
+        class: 'btn danger grow', id: 'resetGame', type: 'button',
+        onclick: () => send('reset'),
+      }, T('game.reset')),
+    ) : null,
     paneLog(),
-  ];
+  ].filter(Boolean);
 }
 
 /** Hand the current game module everything it needs to draw with. */
@@ -514,6 +525,7 @@ function actAs(playerId) {
   store.setPlayer(app.code, playerId);
   app.selection = [];
   app.centres = [];
+  app.infoPopup = null;
   connect();
   render();
 }
@@ -546,7 +558,7 @@ export async function main() {
     app.playerId = playerId;
     app.seats = store.seatsFor(code);
     try {
-      await api(`/api/rooms/${code}/join`, { body: { name: store.name, playerId } });
+      await api(`/api/rooms/${code}/join`, { body: { name: store.nameFor(code, playerId), playerId } });
       connect();
     } catch {
       store.clearPlayer(code);

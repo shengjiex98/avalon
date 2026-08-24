@@ -64,7 +64,7 @@ function finishNight(game) {
 /** Draw what `playerId` sees right now. */
 function show(game, playerId, lang = 'en') {
   app.lang = lang; app.code = game.code; app.playerId = playerId; app.serverOk = true;
-  app.selection = []; app.centres = []; app.seerMode = 'player'; app.showRole = true;
+  app.selection = []; app.centres = []; app.seerMode = 'player'; app.infoPopup = null;
   app.view = w.viewFor(game, playerId, clock);
   render();
   return dom.fixtures.view;
@@ -155,6 +155,10 @@ test('the lobby refuses a deck that does not fit and says so', () => {
   ['Ann', '张三', 'Cai'].forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
   const view = show(game, 'p0');
   assert.match(view.text, /1 optional cards fit/);
+  assert.equal(view.byClass('role-options').length, 1);
+  assert.equal(view.byClass('role-option').length, 6);
+  assert.ok(view.byClass('role-option').some((row) => row.className.includes('selected')),
+    'selected roles have a visible row state');
 
   // Three players hold six cards: the five core ones leave room for one more.
   assert.throws(() => w.setOptions(game, 'p0', { minion: true, drunk: true }), { key: 'tooManyRoles' });
@@ -213,7 +217,37 @@ test('the night calls the deck\'s roles and no others', () => {
   assert.equal(heard.length, game.script.length);
 });
 
-test('the reference pane lists the deck, the abilities and the order', () => {
+test('the card starts hidden and opens in a dismissible popup', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  const view = show(game, 'p0');
+
+  const tools = view.byClass('info-buttons')[0];
+  assert.deepEqual(buttons(tools).map((button) => button.text), ['Your card', 'Roles and night order']);
+  assert.equal(view.byClass('role-name').length, 0, 'the dealt card is absent by default');
+
+  view.byId('cardToggle').dispatch('click');
+  const open = dom.fixtures.view;
+  assert.equal(open.byClass('role-name')[0].text, 'Seer');
+  assert.equal(app.infoPopup, 'onuw-card');
+
+  open.byId('infoPopupBackdrop').dispatch('click');
+  assert.equal(app.infoPopup, null);
+  assert.equal(dom.fixtures.view.byClass('role-name').length, 0, 'clicking outside hides it again');
+});
+
+test('One Night Werewolf uses the shared host-only reset control', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  assert.equal(show(game, 'p1').byId('resetGame'), null);
+
+  const hostView = show(game, game.hostId);
+  dom.calls.length = 0;
+  hostView.byId('resetGame').dispatch('click');
+  const call = dom.calls.find((entry) => entry.path.endsWith('/action'));
+  assert.equal(call.body.type, 'reset');
+});
+
+test('the reference popup lists the deck, the abilities and the order', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');
   const view = show(game, 'p1');
@@ -231,8 +265,8 @@ test('the reference pane lists the deck, the abilities and the order', () => {
   assert.deepEqual(order, ['Everyone closes their eyes', 'Werewolf', 'Seer', 'Robber', 'Troublemaker']);
   assert.equal(order.filter((_, i) => open.byClass('order')[0].childNodes[i].className === 'now').length, 1);
 
-  open.byId('refToggle').dispatch('click');
-  assert.ok(!/Night order/.test(dom.fixtures.view.text), 'and folds away again');
+  open.byId('infoPopupBackdrop').dispatch('click');
+  assert.ok(!/Night order/.test(dom.fixtures.view.text), 'and closes from the backdrop');
 });
 
 test('a paired werewolf is awake and sees their partner', () => {
@@ -250,9 +284,12 @@ test('a lone werewolf may look at one centre card, or decline', () => {
   stepTo(game, 'werewolf');
   const view = show(game, 'p0');
   assert.match(view.text, /You are the only werewolf/);
-  assert.match(view.text, /Werewolf/, 'the wolf can see what they are on screen');
+  assert.equal(view.byClass('role-name').length, 0, 'the role stays hidden until asked for');
+  view.byId('cardToggle').dispatch('click');
+  assert.equal(dom.fixtures.view.byClass('role-name')[0].text, 'Werewolf');
+  dom.fixtures.view.byId('infoPopupBackdrop').dispatch('click');
 
-  const cards = view.byClass('centre-card');
+  const cards = dom.fixtures.view.byClass('centre-card');
   assert.equal(cards.length, 3);
   assert.ok(cards.every((c) => c.text.includes('?')), 'the centre stays face down');
 

@@ -30,10 +30,24 @@ function show(game, playerId, lang = 'en') {
   app.playerId = playerId;
   app.serverOk = true;
   app.selection = [];
+  app.infoPopup = null;
   app.view = g.viewFor(game, playerId);
   render();
   return dom.fixtures.view;
 }
+
+test('the Avalon lobby uses the shared aligned role picker', () => {
+  const game = g.createGame('WXYZ');
+  ['Ann', '张三', 'Cai', 'Dee', 'Eli'].forEach((name, i) => g.addPlayer(game, { id: `p${i}`, name }));
+  g.setOptions(game, 'p0', { percival: true });
+  const view = show(game, 'p0');
+  assert.equal(view.byClass('role-options').length, 1);
+  assert.equal(view.byClass('role-option').length, 4);
+  const percival = view.byClass('role-option').find((row) => row.text.includes('Percival'));
+  assert.match(percival.className, /selected/);
+  assert.equal(percival.byClass('role-option-name')[0].text, 'Percival');
+  assert.match(percival.byClass('role-option-description')[0].text, /Merlin/);
+});
 
 const buttons = (node) => node.findAll((n) => n.tagName === 'BUTTON');
 const labelled = (node, re) => buttons(node).filter((b) => re.test(b.text));
@@ -55,8 +69,13 @@ test('the reveal screen shows your own role and waits for everyone', () => {
   const merlin = roleId(game, 'merlin');
   const view = show(game, merlin);
 
-  assert.match(view.text, /Merlin/);
-  assert.match(view.text, /Good/);
+  assert.doesNotMatch(view.text, /Merlin/, 'the role starts hidden');
+  view.byId('roleToggle').dispatch('click');
+  const open = dom.fixtures.view;
+  assert.match(open.text, /Merlin/);
+  assert.match(open.text, /Good/);
+  open.byId('infoPopupBackdrop').dispatch('click');
+  assert.doesNotMatch(dom.fixtures.view.text, /Merlin/, 'clicking outside hides it again');
   assert.equal(labelled(view, /I have seen my role/).length, 1);
   assertNoRawKeys(view, 'reveal screen');
 
@@ -67,15 +86,46 @@ test('the reveal screen shows your own role and waits for everyone', () => {
   assert.match(after.text, /Waiting for:/);
 });
 
+test('Avalon offers matching role and reference popups', () => {
+  const game = newGame({ confirm: false });
+  const view = show(game, 'p0');
+  const tools = view.byClass('info-buttons')[0];
+  assert.deepEqual(buttons(tools).map((button) => button.text), ['Show my role', 'Roles in this game']);
+  assert.doesNotMatch(view.text, /Role guide/);
+
+  view.byId('avalonRefToggle').dispatch('click');
+  const open = dom.fixtures.view;
+  assert.match(open.text, /Role guide \(5 players\)/);
+  assert.match(open.text, /Merlin/);
+  assert.match(open.text, /Assassin/);
+  assert.match(open.text, /Loyal Servant of Arthur ×2/);
+  assert.match(open.text, /Guide good without revealing yourself/);
+  open.byId('infoPopupBackdrop').dispatch('click');
+  assert.doesNotMatch(dom.fixtures.view.text, /Role guide/);
+});
+
+test('only the host sees the active-game reset control', () => {
+  const game = newGame();
+  let view = show(game, 'p1');
+  assert.equal(view.byId('resetGame'), null);
+
+  view = show(game, game.hostId);
+  dom.calls.length = 0;
+  view.byId('resetGame').dispatch('click');
+  const call = dom.calls.find((entry) => entry.path.endsWith('/action'));
+  assert.equal(call.body.type, 'reset');
+});
+
 test('Merlin is shown who is evil, but never told their roles', () => {
   const game = newGame();
   const merlin = roleId(game, 'merlin');
   const view = show(game, merlin);
+  view.byId('roleToggle').dispatch('click');
 
   const evilNames = game.players
     .filter((p) => sideOf(game.roles[p.id]) === 'evil')
     .map((p) => p.name);
-  const tags = view.byClass('tag').filter((t) => t.text === 'evil');
+  const tags = dom.fixtures.view.byClass('tag').filter((t) => t.text === 'evil');
   assert.equal(tags.length, evilNames.length, 'one marker per evil player');
 
   // Each marker sits in a row naming that player, and nothing names a role.
@@ -89,8 +139,9 @@ test('Merlin is shown who is evil, but never told their roles', () => {
 test('a loyal servant is told plainly that they know nothing', () => {
   const game = newGame();
   const view = show(game, roleId(game, 'servant'));
-  assert.match(view.text, /Loyal Servant/);
-  assert.match(view.text, /know nothing about the other players/i);
+  view.byId('roleToggle').dispatch('click');
+  assert.match(dom.fixtures.view.text, /Loyal Servant/);
+  assert.match(dom.fixtures.view.text, /know nothing about the other players/i);
 });
 
 test('the leader gets pickable players and a disabled submit until the team is full', () => {
@@ -123,17 +174,25 @@ test('a non-leader sees who is choosing and cannot pick', () => {
 test('the vote screen offers approve and reject, then reports the tally', () => {
   const game = newGame();
   g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  g.castVote(game, 'p0', true);
   let view = show(game, 'p2');
   assert.match(view.text, /Do you approve this team\?/);
   assert.match(view.text, /Proposed team: Ann, 张三/);
   assert.equal(labelled(view, /^Approve$/).length, 1);
   assert.equal(labelled(view, /^Reject$/).length, 1);
+  const annPending = view.byClass('player').find((row) => row.text.includes('Ann'));
+  assert.match(annPending.text, /Voted/);
+  assert.doesNotMatch(annPending.text, /Approve|Reject/, 'a pending choice stays secret');
   assertNoRawKeys(view, 'vote');
 
-  for (const p of game.players) g.castVote(game, p.id, true);
+  g.castVote(game, 'p1', false);
+  for (const p of game.players.slice(2)) g.castVote(game, p.id, true);
   view = show(game, 'p2');
-  assert.match(view.text, /5 approve, 0 reject/);
+  assert.match(view.text, /4 approve, 1 reject/);
   assert.match(view.text, /approved/);
+  const resultRows = view.byClass('vote-result')[0].byClass('player');
+  assert.match(resultRows.find((row) => row.text.includes('Ann')).text, /Approve/);
+  assert.match(resultRows.find((row) => row.text.includes('张三')).text, /Reject/);
 });
 
 test('only evil players are offered a fail card', () => {

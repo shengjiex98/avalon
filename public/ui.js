@@ -19,6 +19,30 @@ export function h(tag, props = {}, ...children) {
   return node;
 }
 
+/** A shared, dismissible information overlay used by both games. */
+export function infoPopup({ title, closeLabel, onClose }, ...children) {
+  return h('div', {
+    class: 'info-popup-backdrop', id: 'infoPopupBackdrop',
+    onclick: onClose,
+    onkeydown: (event) => { if (event.key === 'Escape') onClose(); },
+  },
+    h('section', {
+      class: 'card stack info-popup', role: 'dialog', 'aria-modal': 'true',
+      'aria-labelledby': 'infoPopupTitle',
+      onclick: (event) => event.stopPropagation(),
+    },
+      h('div', { class: 'row' },
+        h('h2', { class: 'grow', id: 'infoPopupTitle', text: title }),
+        h('button', {
+          class: 'btn ghost popup-close', type: 'button',
+          'aria-label': closeLabel, onclick: onClose,
+        }, '×'),
+      ),
+      ...children,
+    ),
+  );
+}
+
 let toastTimer;
 export function toast(message, kind = 'error') {
   const box = el('toast');

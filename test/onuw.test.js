@@ -385,3 +385,16 @@ test('play again reshuffles the same table', () => {
   assert.deepEqual(game.script, []);
   assert.deepEqual(w.viewFor(game, 'p0', clock).players[0].startRole, undefined);
 });
+
+test('the host can abandon an active night without changing the table settings', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  game.pace = 'fast';
+  assert.equal(game.phase, 'night');
+  assert.throws(() => w.restartToLobby(game, 'p1'), { key: 'hostOnly' });
+  w.restartToLobby(game, 'p0');
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.players.length, 3);
+  assert.equal(game.pace, 'fast');
+  assert.deepEqual(game.startRoles, {});
+  assert.deepEqual(game.script, []);
+});

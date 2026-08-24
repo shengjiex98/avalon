@@ -80,6 +80,20 @@ test('a tied vote is a rejection and passes leadership on', () => {
   assert.equal(leaderId(game), 'p1');
 });
 
+test('pending Avalon votes reveal participation but not choices', () => {
+  const game = setup(5);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  g.castVote(game, 'p0', true);
+  g.castVote(game, 'p1', false);
+
+  const view = g.viewFor(game, 'p2');
+  assert.equal(view.lastVote, null);
+  assert.equal(view.players.find((p) => p.id === 'p0').hasVoted, true);
+  assert.equal(view.players.find((p) => p.id === 'p1').hasVoted, true);
+  assert.ok(!JSON.stringify(view).includes('"p0":true'));
+  assert.ok(!JSON.stringify(view).includes('"p1":false'));
+});
+
 test('five rejections in a row hand the game to evil', () => {
   const game = setup(5);
   for (let i = 0; i < 5; i++) {
@@ -233,6 +247,27 @@ test('play again returns the same table to the lobby', () => {
   assert.deepEqual(game.quests, []);
   assert.equal(game.winner, null);
   assert.deepEqual(g.viewFor(game, 'p0').players[0].role, undefined);
+});
+
+test('the host can abandon an active game and return the same table to the lobby', () => {
+  const game = setup(5);
+  assert.equal(game.phase, 'team');
+  assert.throws(() => g.restartToLobby(game, 'p1'), { key: 'hostOnly' });
+  g.restartToLobby(game, 'p0');
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.players.length, 5);
+  assert.deepEqual(game.roles, {});
+  assert.deepEqual(game.quests, []);
+});
+
+test('the active Avalon view exposes role counts but never role assignments', () => {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < 5; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  g.setOptions(game, 'p0', { percival: true, morgana: true });
+  g.startGame(game, 'p0', { shuffle: (list) => list });
+  const view = g.viewFor(game, 'p4');
+  assert.deepEqual(view.roleCounts, { merlin: 1, percival: 1, servant: 1, assassin: 1, morgana: 1 });
+  assert.ok(view.players.every((p) => p.role === undefined));
 });
 
 test('leaving is a lobby-only move and hands the host role on', () => {
