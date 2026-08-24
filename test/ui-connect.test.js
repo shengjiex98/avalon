@@ -68,12 +68,11 @@ test('the first frame of an Avalon room paints too', async () => {
   assert.equal(dom.fixtures.view.byId('nameInput'), null);
 });
 
-test('a browser whose speech synthesis throws still gets its frame drawn', async () => {
-  // Some browsers throw out of speak(). Announcing the night runs before the
-  // paint, so anything it throws would otherwise freeze the last screen on
-  // display — which is how the first-frame bug looked to the player.
-  globalThis.speechSynthesis = { speak() { throw new Error('no voice here'); }, cancel() {} };
-  globalThis.SpeechSynthesisUtterance = class { constructor(text) { this.text = text; } };
+test('a browser that blocks audio still gets its frame drawn', async () => {
+  // Browsers can reject media playback until the page gets a user gesture.
+  // Announcing runs before paint, so that rejection must not freeze the last
+  // screen on display — which is how the first-frame bug looked to the player.
+  dom.AudioStub.playError = new Error('playback blocked');
   app.muted = false;
 
   try {
@@ -81,8 +80,7 @@ test('a browser whose speech synthesis throws still gets its frame drawn', async
     assert.match(dom.fixtures.view.text, /Step 2 of 2|第 2 \/ 2 步/, 'the night was still drawn');
     assert.equal(dom.fixtures.conn.hidden, true, 'and it does not look like a dropped connection');
   } finally {
-    delete globalThis.speechSynthesis;
-    delete globalThis.SpeechSynthesisUtterance;
+    dom.AudioStub.playError = null;
     app.view = { ...app.view, night: null };
     const onuw = await import('../public/games/onuw.js');
     onuw.onView();          // stop the countdown interval

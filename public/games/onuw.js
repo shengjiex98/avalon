@@ -17,6 +17,61 @@ export function bind(ctx) {
  */
 let clockTimer = null;
 let spokenStep = null;
+let announcementAudio = null;
+let announcementQueue = [];
+
+const AUDIO_ROOT = new URL('../audio/onuw/', import.meta.url);
+
+function audioPlayer() {
+  if (announcementAudio || typeof Audio === 'undefined') return announcementAudio;
+  announcementAudio = new Audio();
+  announcementAudio.preload = 'auto';
+  announcementAudio.onended = playNextAnnouncement;
+  announcementAudio.onerror = playNextAnnouncement;
+  return announcementAudio;
+}
+
+function stopAnnouncements() {
+  announcementQueue = [];
+  if (!announcementAudio) return;
+  announcementAudio.pause();
+  announcementAudio.removeAttribute?.('src');
+  announcementAudio.load?.();
+}
+
+function playNextAnnouncement() {
+  const audio = audioPlayer();
+  if (!audio || app?.muted || !announcementQueue.length) return stopAnnouncements();
+  audio.src = announcementQueue.shift();
+  const started = audio.play();
+  // Autoplay policies can still refuse playback when a player has not touched
+  // the page. The written call remains visible, and a rejection must never
+  // interrupt the game frame that delivered it.
+  started?.catch?.(() => { announcementQueue = []; });
+}
+
+const announcementUrl = (lang, phase, key) =>
+  new URL(`${lang}/${phase}-${key}.mp3`, AUDIO_ROOT).href;
+
+/**
+ * Prime media playback during the player's first gesture. Mobile browsers
+ * otherwise refuse an announcement that begins later from an SSE frame.
+ */
+function unlockAnnouncements() {
+  const audio = audioPlayer();
+  if (!audio || announcementQueue.length || !audio.paused) return;
+  audio.src = new URL('unlock.wav', AUDIO_ROOT).href;
+  const started = audio.play();
+  started?.then?.(() => {
+    audio.pause();
+    audio.currentTime = 0;
+  }).catch?.(() => {});
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', unlockAnnouncements, { once: true });
+  window.addEventListener('keydown', unlockAnnouncements, { once: true });
+}
 
 function stopClock() {
   clearInterval(clockTimer);
@@ -49,28 +104,25 @@ const clockFraction = () => {
 };
 
 /**
- * Read the announcement aloud. Every player hears the same line, including the
- * roles nobody was dealt — that is what stops the table reading the deck off
- * what does and does not get called.
+ * Play the pre-generated announcement. Every player hears the same line,
+ * including the roles nobody was dealt — that is what stops the table reading
+ * the deck off what does and does not get called.
  */
 function announce(night) {
   if (spokenStep === night.index) return;
   const previous = spokenStep;
   spokenStep = night.index;
-  if (app.muted || typeof speechSynthesis === 'undefined') return;
+  if (app.muted) return stopAnnouncements();
 
-  const lines = [];
+  const clips = [];
   const script = app.view.nightScript ?? [];
   const prevKey = previous !== null ? script[previous] : null;
-  if (prevKey && prevKey !== 'nightfall') lines.push(T(`onuw.sleep.${prevKey}`));
-  lines.push(T(`onuw.wake.${night.key}`));
-
-  for (const text of lines) {
-    const said = new SpeechSynthesisUtterance(text);
-    said.lang = app.lang === 'zh' ? 'zh-CN' : 'en-US';
-    said.rate = 0.95;
-    speechSynthesis.speak(said);
-  }
+  const lang = app.lang === 'zh' ? 'zh' : 'en';
+  if (prevKey && prevKey !== 'nightfall') clips.push(announcementUrl(lang, 'sleep', prevKey));
+  clips.push(announcementUrl(lang, 'wake', night.key));
+  stopAnnouncements();
+  announcementQueue = clips;
+  playNextAnnouncement();
 }
 
 /**
@@ -80,7 +132,7 @@ function announce(night) {
  */
 export function onView() {
   const night = app.view?.night;
-  if (!night) { stopClock(); spokenStep = null; return; }
+  if (!night) { stopClock(); stopAnnouncements(); spokenStep = null; return; }
   app.stepEndsAt = Date.now() + night.msLeft;
   app.clockStep = night.index;
   if (!clockTimer) clockTimer = setInterval(paintClock, 200);
@@ -299,7 +351,8 @@ function paneNight() {
         onclick: () => {
           app.muted = !app.muted;
           localStorage.setItem('avalon.muted', app.muted ? '1' : '');
-          if (app.muted && typeof speechSynthesis !== 'undefined') speechSynthesis.cancel();
+          if (app.muted) stopAnnouncements();
+          else unlockAnnouncements();
           render();
         },
       }, `${T('onuw.voice')}: ${app.muted ? '✕' : '🔊'}`),

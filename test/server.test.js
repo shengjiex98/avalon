@@ -47,6 +47,15 @@ test('serves the client', async () => {
   });
 });
 
+test('serves pre-generated announcement audio with the right media type', async () => {
+  await withServer(async (base) => {
+    const res = await fetch(base + '/audio/onuw/zh/wake-seer.mp3');
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'audio/mpeg');
+    assert.ok(Number(res.headers.get('content-length')) > 1_000);
+  });
+});
+
 test('refuses to walk out of the public directory', async () => {
   await withServer(async (base) => {
     const res = await fetch(base + '/../src/server.js', { redirect: 'manual' });
