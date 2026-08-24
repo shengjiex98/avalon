@@ -3,7 +3,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -163,6 +163,7 @@ function stream(rooms, req, res, code, playerId) {
 
 async function serveStatic(req, res, url) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'notFound' });
+  if (url.pathname === '/version.json') return serveLocalVersion(req, res);
   const rel = url.pathname === '/' ? 'index.html' : normalize(url.pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
   const path = join(PUBLIC_DIR, rel);
   if (!path.startsWith(PUBLIC_DIR)) return json(res, 403, { error: 'notFound' });
@@ -180,6 +181,29 @@ async function serveStatic(req, res, url) {
     res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
     res.end('Not found');
   }
+}
+
+/** Local development has no build SHA, so use the newest public-file mtime. */
+async function serveLocalVersion(req, res) {
+  const modified = await newestMtime(PUBLIC_DIR);
+  const body = Buffer.from(JSON.stringify({ version: `local-${Math.floor(modified).toString(36)}` }));
+  res.writeHead(200, {
+    'content-type': MIME['.json'],
+    'content-length': body.length,
+    'cache-control': 'no-store',
+  });
+  res.end(req.method === 'HEAD' ? undefined : body);
+}
+
+async function newestMtime(dir) {
+  let newest = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true })) {
+    if (entry.name === 'version.json' || entry.name === '.nojekyll') continue;
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) newest = Math.max(newest, await newestMtime(path));
+    else if (entry.isFile()) newest = Math.max(newest, (await stat(path)).mtimeMs);
+  }
+  return newest;
 }
 
 function json(res, status, payload) {

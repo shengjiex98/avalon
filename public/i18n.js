@@ -196,6 +196,8 @@ const STRINGS = {
     'conn.lost': 'Connection lost — reconnecting…',
     'conn.connecting': 'Connecting…',
     'conn.ok': 'Connected',
+    'update.available': 'A new version of the game is available.',
+    'update.reload': 'Reload',
 
     // ---- One Night Ultimate Werewolf. Namespaced so a phase or a role can
     // mean something different here than it does in Avalon.
@@ -574,6 +576,8 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'conn.lost': '连接中断，正在重连……',
     'conn.connecting': '正在连接……',
     'conn.ok': '已连接',
+    'update.available': '游戏有新版本可用。',
+    'update.reload': '重新加载',
 
     'game.avalon': '阿瓦隆',
     'game.onuw': '一夜狼人',

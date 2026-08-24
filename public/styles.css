@@ -42,6 +42,13 @@ body {
 .conn-banner { padding: 7px 16px; text-align: center; font-size: 13px; }
 .conn-banner.connecting { background: var(--panel-2); color: var(--muted); border-bottom: 1px solid var(--line); }
 .conn-banner.lost { background: #3a1a1e; color: var(--evil); border-bottom: 1px solid var(--evil); }
+.update-banner {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  background: #2d2718; color: var(--gold); border-bottom: 1px solid var(--gold);
+  font-size: 14px;
+}
+.update-banner[hidden] { display: none; }
+.update-banner .btn { padding: 6px 12px; font-size: 13px; }
 
 .view { max-width: 720px; margin: 0 auto; padding: 16px 16px 64px; display: grid; gap: 16px; }
 

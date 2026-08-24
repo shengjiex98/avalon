@@ -97,6 +97,7 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
   const fixtures = {
     langToggle: make('button', 'langToggle'),
     conn: make('span', 'conn'),
+    update: make('div', 'update'),
     view: make('main', 'view'),
     gameSwitch: make('div', 'gameSwitch'),
     rules: make('dialog', 'rules'),
@@ -133,12 +134,15 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
     origin: new URL(href).origin,
     pathname: new URL(href).pathname,
     protocol: new URL(href).protocol,
+    reloadCalls: 0,
+    reload() { this.reloadCalls += 1; },
     toString() { return this.href; },
   };
 
   const calls = [];
   const state = {
     health: true,          // does the backend answer the probe?
+    frontendVersion: 'dev',
     responses: new Map(),  // path -> body, for anything else
   };
 
@@ -149,6 +153,7 @@ export function installDom({ hash = '', href = 'https://someone.github.io/avalon
       if (!state.health) throw new TypeError('fetch failed');
       return jsonResponse({ ok: true, service: 'avalon' });
     }
+    if (/\/version\.json(?:\?|$)/.test(path)) return jsonResponse({ version: state.frontendVersion });
     if (state.responses.has(path)) return jsonResponse(state.responses.get(path));
     return jsonResponse({ error: 'noSuchRoom', params: {} }, 400);
   };

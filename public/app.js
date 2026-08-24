@@ -3,6 +3,10 @@ import { API_BASE } from './config.js';
 import { el, h, toast } from './ui.js';
 import { DEFAULT_GAME, GAME_IDS, gameFor } from './games/index.js';
 
+const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
+const VERSION_URL = new URL('./version.json', import.meta.url);
+const VERSION_CHECK_MS = 60_000;
+
 // ---------------------------------------------------------------- state
 
 const app = {
@@ -26,6 +30,8 @@ const app = {
   infoPopup: null,   // shared overlay state; hidden until explicitly opened
   source: null,      // EventSource
   retry: 0,
+  latestVersion: LOADED_VERSION,
+  updateAvailable: false,
 };
 
 const T = (key, params) => t(app.lang, key, params);
@@ -211,6 +217,7 @@ function render() {
   }
   el('rulesBody').textContent = T(gameFor(currentGameId()).rulesKey);
   renderGameSwitch();
+  renderUpdateBanner();
 
   // A first connection is not a dropped one; saying "reconnecting" while
   // simply joining is alarming and wrong.
@@ -222,6 +229,44 @@ function render() {
 
   const view = el('view');
   view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()), paneTestMode());
+}
+
+function renderUpdateBanner() {
+  const banner = el('update');
+  banner.hidden = !app.updateAvailable;
+  if (banner.hidden) return banner.replaceChildren();
+  banner.replaceChildren(
+    h('span', { class: 'grow', text: T('update.available') }),
+    h('button', {
+      class: 'btn primary', id: 'reloadVersion', type: 'button',
+      onclick: () => location.reload(),
+    }, T('update.reload')),
+  );
+}
+
+/** Ask the front-end host directly so browser and CDN caches cannot hide a deploy. */
+export async function checkForUpdate() {
+  try {
+    const url = new URL(VERSION_URL);
+    url.searchParams.set('check', Date.now());
+    const res = await fetch(url.href, { cache: 'no-store' });
+    if (!res.ok) return false;
+    const version = String((await res.json()).version ?? '');
+    if (!version || version === LOADED_VERSION) return false;
+    app.latestVersion = version;
+    app.updateAvailable = true;
+    renderUpdateBanner();
+    return true;
+  } catch {
+    return false; // losing the update check must never interrupt the game
+  }
+}
+
+function startUpdateChecks() {
+  void checkForUpdate();
+  const timer = setInterval(checkForUpdate, VERSION_CHECK_MS);
+  timer.unref?.();
+  window.addEventListener('focus', checkForUpdate);
 }
 
 /** In a room it is the room's game; on the home screen it is what Create makes. */
@@ -546,6 +591,7 @@ export async function main() {
   window.addEventListener('hashchange', () => {
     if (!app.code) render();
   });
+  startUpdateChecks();
 
   app.server = resolveServer();
   render();                      // paint "looking for the server" straight away
