@@ -74,6 +74,18 @@ test('a room round-trips create, join and reconnect', async () => {
   });
 });
 
+test('a stale event stream gets a clean error without crashing the server', async () => {
+  await withServer(async (base) => {
+    const stale = await fetch(`${base}/api/rooms/ZZZZ/events?playerId=gone`);
+    assert.equal(stale.status, 400);
+    assert.equal((await stale.json()).error, 'noSuchRoom');
+
+    const health = await fetch(base + '/api/health');
+    assert.equal(health.status, 200);
+    assert.equal((await health.json()).service, 'avalon');
+  });
+});
+
 test('game errors come back as translatable keys, not prose', async () => {
   await withServer(async (base) => {
     const { code } = await (await post(base, '/api/rooms')).json();

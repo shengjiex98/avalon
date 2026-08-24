@@ -1,6 +1,6 @@
 // One Night Werewolf's screens.
 
-import { h } from '../ui.js';
+import { h, infoPopup } from '../ui.js';
 
 let T, send, app, joinNames, render;
 
@@ -111,22 +111,24 @@ export function lobbyOptions() {
   const v = app.view;
   const isHost = v.you?.id === v.hostId;
 
-  const toggle = (key) => h('label', { class: 'toggle' },
+  const toggle = (key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.options[key], disabled: !isHost,
       onchange: (e) => send('options', { options: { [key]: e.target.checked } }),
     }),
-    h('span', {}, roleName(key)),
-    h('span', { class: 'muted', text: ` — ${T(`onuw.roleDesc.${key}`)}` }),
+    h('span', { class: 'role-option-copy' },
+      h('span', { class: 'role-option-name', text: roleName(key) }),
+      h('span', { class: 'role-option-description', text: T(`onuw.roleDesc.${key}`) }),
+    ),
   );
 
   return h('div', { class: 'card stack' },
     h('h2', { text: T('lobby.roles') }),
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
-    h('p', { class: 'muted', text: T('onuw.optionRoom', { n: v.optionRoom }) }),
-    ...OPTIONS.map(toggle),
+    h('p', { class: 'option-room', text: T('onuw.optionRoom', { n: v.optionRoom }) }),
+    h('div', { class: 'role-options' }, OPTIONS.map(toggle)),
     h('h3', { text: T('onuw.pace') }),
-    h('div', { class: 'row' }, ['brisk', 'normal', 'relaxed'].map((pace) => h('button', {
+    h('div', { class: 'row pace-picker' }, ['brisk', 'normal', 'relaxed'].map((pace) => h('button', {
       class: `btn grow ${v.pace === pace ? 'primary' : ''}`, id: `pace-${pace}`, disabled: !isHost,
       onclick: () => send('options', { options: { pace } }),
     }, T(`onuw.pace.${pace}`)))),
@@ -147,24 +149,17 @@ export function lobbyOptions() {
 // ---------------------------------------------------------------- shared bits
 
 /** The card you were dealt. It may not be the card you end up with. */
-function paneCard() {
+function cardContent() {
   const v = app.view;
-  if (!v.you?.role) return h('div');
+  if (!v.you?.role) return null;
   const evil = v.you.team === 'werewolf';
-  return h('div', { class: 'card stack' },
-    h('div', { class: 'row' },
-      h('h2', { class: 'grow', text: T('onuw.night.yourCard') }),
-      h('button', { class: 'btn ghost', onclick: () => { app.showRole = !app.showRole; render(); } },
-        app.showRole ? T('reveal.hide') : T('reveal.show')),
+  return h('div', { class: 'reveal-card stack' },
+    h('div', {},
+      h('p', { class: 'role-name', text: roleName(v.you.role) }),
+      h('span', { class: `side ${evil ? 'side-evil' : 'side-good'}`, text: T(`onuw.team.${v.you.team}`) }),
     ),
-    app.showRole ? h('div', { class: 'reveal-card stack' },
-      h('div', {},
-        h('p', { class: 'role-name', text: roleName(v.you.role) }),
-        h('span', { class: `side ${evil ? 'side-evil' : 'side-good'}`, text: T(`onuw.team.${v.you.team}`) }),
-      ),
-      h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
-      ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
-    ) : null,
+    h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
+    ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
   );
 }
 
@@ -217,7 +212,36 @@ const waitingNames = () => joinNames(app.view.waitingFor.map(
 // ---------------------------------------------------------------- phases
 
 export function header_() {
-  return app.view.phase === 'over' ? [paneReference()] : [paneCard(), paneReference()];
+  const popup = app.infoPopup === 'onuw-card'
+    ? infoPopup({
+        title: T('onuw.night.yourCard'), closeLabel: T('reveal.hide'), onClose: closeInfoPopup,
+      }, cardContent())
+    : app.infoPopup === 'onuw-reference'
+      ? infoPopup({
+          title: T('onuw.ref.title'), closeLabel: T('reveal.hide'), onClose: closeInfoPopup,
+        }, referenceContent())
+      : null;
+
+  return [
+    h('div', { class: 'row info-buttons' },
+      h('button', {
+        class: 'btn grow', id: 'cardToggle', type: 'button',
+        'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'onuw-card',
+        onclick: () => { app.infoPopup = 'onuw-card'; render(); },
+      }, T('onuw.night.yourCard')),
+      h('button', {
+        class: 'btn grow', id: 'refToggle', type: 'button',
+        'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'onuw-reference',
+        onclick: () => { app.infoPopup = 'onuw-reference'; render(); },
+      }, T('onuw.ref.title')),
+    ),
+    popup,
+  ].filter(Boolean);
+}
+
+function closeInfoPopup() {
+  app.infoPopup = null;
+  render();
 }
 
 /**
@@ -225,20 +249,12 @@ export function header_() {
  * night runs in. All of it is public — the lobby agreed the deck — so having
  * it on hand just saves asking.
  */
-function paneReference() {
+function referenceContent() {
   const v = app.view;
   const deck = v.deck ?? {};
   const script = v.nightScript ?? [];
 
-  return h('div', { class: 'card stack' },
-    h('div', { class: 'row' },
-      h('h2', { class: 'grow', text: T('onuw.ref.title') }),
-      h('button', {
-        class: 'btn ghost', id: 'refToggle',
-        onclick: () => { app.showRef = !app.showRef; render(); },
-      }, app.showRef ? T('reveal.hide') : T('onuw.ref.show')),
-    ),
-    app.showRef ? h('div', { class: 'stack' },
+  return h('div', { class: 'stack' },
       h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
       h('div', { class: 'stack tight' }, Object.keys(deck).map((role) => h('div', { class: 'ref-role' },
         h('span', { class: 'tag', text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
@@ -250,7 +266,6 @@ function paneReference() {
         text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
       }))),
       h('p', { class: 'muted', text: T('onuw.ref.note') }),
-    ) : null,
   );
 }
 

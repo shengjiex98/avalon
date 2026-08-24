@@ -134,6 +134,29 @@ test('switching seats reopens the stream as that player', async () => {
   assert.match(chips()[1].className, /primary/);
 });
 
+test('refreshing after switching seats preserves the test player name', async () => {
+  await inRoom();
+  dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'p2', code: 'WXYZ' });
+  bottomOf(dom.fixtures.view).byId('testAdd').dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  bottomOf(dom.fixtures.view).byClass('seat-chip')[1].dispatch('click');
+
+  // Re-run boot with only persisted browser state, as a page refresh would.
+  dom.location.hash = '#/WXYZ';
+  app.source?.close();
+  app.code = null;
+  app.playerId = null;
+  app.view = null;
+  app.source = null;
+  app.seats = [];
+  dom.calls.length = 0;
+  await client.main();
+
+  const rejoined = dom.calls.find((c) => c.path === '/api/rooms/WXYZ/join');
+  assert.equal(rejoined.body.playerId, 'p2');
+  assert.equal(rejoined.body.name, 'Test 2', 'the selected seat keeps its own name');
+});
+
 test('seats cannot be added once the game is running', async () => {
   await inRoom();
   const table = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli'].map((name, i) => ({ id: `p${i + 1}`, name }));

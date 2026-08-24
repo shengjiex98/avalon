@@ -336,16 +336,27 @@ function resolveVote(g) {
   logEvent(g, 'log.gameOver', { winner: g.winners[0] ?? 'nobody' });
 }
 
-export function resetToLobby(g, playerId) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase === 'over', 'gameInProgress');
+function rebuildLobby(g) {
   const keep = {
     code: g.code, players: g.players, hostId: g.hostId,
-    options: g.options, optionsTouched: g.optionsTouched,
+    options: g.options, optionsTouched: g.optionsTouched, pace: g.pace,
   };
   const fresh = createGame(g.code);
   Object.assign(g, fresh, keep, { version: g.version });
   logEvent(g, 'log.newGame', {});
+}
+
+export function resetToLobby(g, playerId) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase === 'over', 'gameInProgress');
+  rebuildLobby(g);
+}
+
+/** Let the host abandon an active game and immediately return to its lobby. */
+export function restartToLobby(g, playerId) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
+  rebuildLobby(g);
 }
 
 // ---------------------------------------------------------------- views

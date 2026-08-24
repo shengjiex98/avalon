@@ -48,6 +48,10 @@ const STRINGS = {
     'lobby.hostOnlyRoles': 'Only the host can change these.',
     'lobby.share': 'Share this code so others can join.',
 
+    'game.reset': 'Reset game',
+    'avalon.ref.title': 'Roles in this game',
+    'avalon.ref.inPlay': 'Role guide ({n} players)',
+
     'role.merlin': 'Merlin',
     'role.percival': 'Percival',
     'role.servant': 'Loyal Servant of Arthur',
@@ -103,6 +107,7 @@ const STRINGS = {
     'vote.approve': 'Approve',
     'vote.reject': 'Reject',
     'vote.cast': 'Your vote is in. Waiting for: {names}',
+    'vote.voted': 'Voted',
     'vote.team': 'Proposed team: {names}',
     'vote.result': 'Vote {n}: {yes} approve, {no} reject — {outcome}',
     'vote.approved': 'approved',
@@ -297,7 +302,7 @@ const STRINGS = {
     'onuw.phase.vote': 'The vote',
     'onuw.phase.over': 'Game over',
 
-    'onuw.night.yourCard': 'You were dealt',
+    'onuw.night.yourCard': 'Your card',
     'onuw.night.nothingToDo': 'You sleep through the night. Wait for the others.',
     'onuw.night.waiting': 'Still acting: {names}',
     'onuw.night.done': 'Done. Waiting for: {names}',
@@ -417,6 +422,10 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'lobby.hostOnlyRoles': '只有房主可以修改。',
     'lobby.share': '把房间号发给朋友即可加入。',
 
+    'game.reset': '重置游戏',
+    'avalon.ref.title': '本局角色',
+    'avalon.ref.inPlay': '角色说明（{n} 人）',
+
     'role.merlin': '梅林',
     'role.percival': '派西维尔',
     'role.servant': '亚瑟的忠臣',
@@ -472,6 +481,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'vote.approve': '赞成',
     'vote.reject': '反对',
     'vote.cast': '你已投票。等待：{names}',
+    'vote.voted': '已投票',
     'vote.team': '提名队伍：{names}',
     'vote.result': '第 {n} 次表决：{yes} 赞成，{no} 反对 —— {outcome}',
     'vote.approved': '通过',
@@ -664,7 +674,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'onuw.phase.vote': '投票',
     'onuw.phase.over': '游戏结束',
 
-    'onuw.night.yourCard': '你拿到的牌',
+    'onuw.night.yourCard': '你的牌',
     'onuw.night.nothingToDo': '你今晚安睡，等待其他人行动。',
     'onuw.night.waiting': '仍在行动：{names}',
     'onuw.night.done': '已完成，等待：{names}',

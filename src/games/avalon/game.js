@@ -198,14 +198,25 @@ function finish(g, winner, reason) {
   logEvent(g, 'log.gameOver', { winner });
 }
 
-/** Back to the lobby with the same people, ready for another game. */
-export function resetToLobby(g, playerId) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase === 'over', 'gameInProgress');
+function rebuildLobby(g) {
   const keep = { code: g.code, players: g.players, hostId: g.hostId, options: g.options };
   const fresh = createGame(g.code);
   Object.assign(g, fresh, keep, { version: g.version });
   logEvent(g, 'log.newGame', {});
+}
+
+/** Back to the lobby after a completed game, with the same table. */
+export function resetToLobby(g, playerId) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase === 'over', 'gameInProgress');
+  rebuildLobby(g);
+}
+
+/** Let the host abandon an active game and immediately return to its lobby. */
+export function restartToLobby(g, playerId) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
+  rebuildLobby(g);
 }
 
 // ---------------------------------------------------------------- views
@@ -234,6 +245,8 @@ export function viewFor(g, viewerId) {
       role: revealAll ? g.roles[p.id] : undefined,
     })),
     options: { ...g.options },
+    // The deck is public; only the mapping from a role to a player is secret.
+    roleCounts: g.phase === 'lobby' ? null : countRoles(buildRoleList(g.players.length, g.options)),
     round: g.round,
     rejects: g.rejects,
     maxRejects: MAX_REJECTS,
@@ -258,6 +271,12 @@ export function viewFor(g, viewerId) {
   };
 }
 
+function countRoles(roles) {
+  const counts = {};
+  for (const role of roles) counts[role] = (counts[role] ?? 0) + 1;
+  return counts;
+}
+
 function waitingFor(g) {
   switch (g.phase) {
     case 'reveal': return g.players.filter((p) => !g.ready?.[p.id]);
@@ -268,4 +287,3 @@ function waitingFor(g) {
     default: return [];
   }
 }
-

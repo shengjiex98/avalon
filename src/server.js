@@ -137,6 +137,12 @@ async function api(rooms, req, res, url) {
 
 function stream(rooms, req, res, code, playerId) {
   if (!playerId) return json(res, 400, { error: 'notInGame' });
+  // Validate before committing the SSE headers. A stale room URL must get a
+  // normal JSON error, rather than throwing after the 200 response has begun.
+  const room = rooms.get(code);
+  if (!room.game.players.some((player) => player.id === playerId)) {
+    throw new GameError('notInGame');
+  }
   res.writeHead(200, {
     'content-type': 'text/event-stream',
     'cache-control': 'no-cache, no-transform',
