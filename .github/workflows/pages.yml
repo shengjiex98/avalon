@@ -56,6 +56,9 @@ jobs:
           '
           cat public/config.js
 
+      - name: Stamp the front-end version
+        run: node scripts/stamp-frontend-version.mjs public "$GITHUB_SHA"
+
       - name: Bypass Jekyll
         run: touch public/.nojekyll
 

@@ -124,3 +124,16 @@ test('a dropped stream says so, and says it below the top bar', async () => {
   assert.match(dom.fixtures.conn.className, /conn-banner/);
   assert.match(dom.fixtures.conn.className, /lost/);
 });
+
+test('a new front-end version offers a reload button', async () => {
+  app.lang = 'en';
+  dom.state.frontendVersion = 'new-build';
+  assert.equal(await client.checkForUpdate(), true);
+  assert.equal(dom.fixtures.update.hidden, false);
+  assert.match(dom.fixtures.update.text, /new version/);
+
+  const reload = dom.fixtures.update.byId('reloadVersion');
+  assert.equal(reload.text, 'Reload');
+  reload.dispatch('click');
+  assert.equal(dom.location.reloadCalls, 1);
+});

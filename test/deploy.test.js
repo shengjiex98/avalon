@@ -4,9 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { createApp } from '../src/server.js';
+import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const PAGES = 'https://someone.github.io';
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
@@ -99,7 +102,29 @@ test('the page loads its assets relatively, so a /<repo>/ subpath works', async 
   const html = await read('../public/index.html');
   const absolute = [...html.matchAll(/(?:src|href)="(\/[^/][^"]*)"/g)].map((m) => m[1]);
   assert.deepEqual(absolute, [], 'GitHub Pages serves a project site from a subpath');
-  assert.match(html, /src="\.\/app\.js"/);
+  assert.match(html, /src="\.\/bootstrap\.js"/);
+});
+
+test('every page load resolves the current deployed front-end version', async () => {
+  const bootstrap = await read('../public/bootstrap.js');
+  assert.match(bootstrap, /version\.json/);
+  assert.match(bootstrap, /cache:\s*'no-store'/);
+  assert.match(bootstrap, /app\.js\?v=/);
+});
+
+test('the Pages build fingerprints every module in the deployed graph', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'avalon-version-'));
+  await mkdir(join(dir, 'games'));
+  await writeFile(join(dir, 'app.js'), "import './ui.js';\nimport * as game from './games/index.js';\n");
+  await writeFile(join(dir, 'ui.js'), 'export const ui = true;\n');
+  await writeFile(join(dir, 'games/index.js'), "export { ui } from '../ui.js';\n");
+
+  await stampFrontend(dir, 'abc123');
+
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'version.json'), 'utf8')), { version: 'abc123' });
+  assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/ui\.js\?v=abc123/);
+  assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/games\/index\.js\?v=abc123/);
+  assert.match(await readFile(join(dir, 'games/index.js'), 'utf8'), /\.\.\/ui\.js\?v=abc123/);
 });
 
 test('the connection banner lives outside the top bar', async () => {
@@ -126,6 +151,7 @@ test('the deploy workflow publishes the front end and gates on the tests', async
   const workflow = await read('../.github/workflows/pages.yml');
   assert.match(workflow, /npm test/, 'do not publish a build the tests reject');
   assert.match(workflow, /API_BASE/, 'the backend address has to be injected');
+  assert.match(workflow, /stamp-frontend-version\.mjs public "\$GITHUB_SHA"/);
   assert.match(workflow, /actions\/deploy-pages/);
   assert.match(workflow, /path:\s*public/, 'only the front end is published');
 });

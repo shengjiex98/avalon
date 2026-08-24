@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#12141c">
 <title>Avalon</title>
-<link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./styles.css" data-app-styles>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🗡️</text></svg>">
 </head>
 <body>
@@ -18,6 +18,7 @@
       </div>
     </header>
     <div id="conn" class="conn-banner" role="status" hidden></div>
+    <div id="update" class="update-banner" role="status" hidden></div>
   </div>
 
   <main id="view" class="view"></main>
@@ -30,6 +31,6 @@
 
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./bootstrap.js"></script>
 </body>
 </html>

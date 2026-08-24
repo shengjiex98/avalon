@@ -213,7 +213,10 @@ ALLOW_ORIGIN=https://<you>.github.io
 Pages is static hosting, so it can serve the page but **not** the game. The
 split is: Pages hosts `public/`, and a server you run somewhere holds the
 rooms. `.github/workflows/pages.yml` publishes on every push to `main`, gated
-on the tests.
+on the tests. Each build publishes a commit-based version manifest and
+fingerprints its module graph. Open games check that manifest once a minute
+and offer to reload when a newer front end is available; a normal refresh also
+resolves the current manifest before loading the app.
 
 1. **Enable it** — Settings → Pages → Source: **GitHub Actions**.
 2. **Point the client at your server** — Settings → Secrets and variables →
