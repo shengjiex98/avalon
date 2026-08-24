@@ -25,7 +25,7 @@ function home({ lang = 'en' } = {}) {
 }
 
 /** A dealt werewolf game, exactly as the deck says. */
-function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee']) {
+function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee'], { ready = true } = {}) {
   const count = deck.length - 3;
   const game = w.createGame('WXYZ', { now });
   names.slice(0, count).forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
@@ -38,9 +38,7 @@ function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee']) {
   game.info = {};
   game.swaps = [];
   game.actions = {};
-  game.step = 0;
-  game.stepEndsAt = clock + stepMillis(game.script[0], game.pace);
-  w.openStepForTests(game);
+  if (ready) for (const p of game.players) w.confirmRole(game, p.id, { now });
   return game;
 }
 
@@ -165,6 +163,39 @@ test('the lobby refuses a deck that does not fit and says so', () => {
 });
 
 // ---------------------------------------------------------------- the night
+
+test('players inspect their card and mark ready before the countdown appears', () => {
+  const game = dealt(
+    ['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner'],
+    undefined,
+    { ready: false },
+  );
+  let view = show(game, 'p0');
+
+  assert.match(view.text, /Look at your card/);
+  assert.equal(view.byId('nightClock'), null, 'the countdown has not started');
+  assert.equal(labelled(view, /^Ready$/).length, 1);
+  assert.equal(view.byClass('role-name').length, 0, 'the card starts hidden');
+
+  view.byId('cardToggle').dispatch('click');
+  assert.equal(dom.fixtures.view.byClass('role-name')[0].text, 'Seer');
+
+  dom.calls.length = 0;
+  labelled(dom.fixtures.view, /^Ready$/)[0].dispatch('click');
+  assert.equal(dom.calls.find((c) => c.path.endsWith('/action')).body.type, 'confirm');
+
+  w.confirmRole(game, 'p0', { now });
+  view = show(game, 'p0');
+  assert.match(view.text, /Ready\. Waiting for: 张三, Cai/);
+  assert.equal(labelled(view, /^Ready$/).length, 0);
+  assert.equal(view.byClass('tag').filter((tag) => tag.text === '✓').length, 1);
+
+  w.confirmRole(game, 'p1', { now });
+  w.confirmRole(game, 'p2', { now });
+  view = show(game, 'p0');
+  assert.match(view.text, /Everyone, close your eyes/);
+  assert.match(view.byId('nightClock').text, /^\d+$/);
+});
 
 test('everyone sees the same announcement and the same countdown', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);

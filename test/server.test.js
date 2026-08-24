@@ -235,9 +235,19 @@ test('a three player werewolf game plays through over the wire', async () => {
 
     assert.equal((await act(ids[0], { type: 'start' })).status, 200);
     let view = await viewOf(ids[0]);
-    assert.equal(view.phase, 'night');
+    assert.equal(view.phase, 'reveal');
     assert.ok(view.you.role, 'each player is dealt a card');
     assert.equal(view.centre, null, 'the centre is face down');
+    assert.equal(view.night, null, 'the clock waits while roles are being read');
+
+    for (const id of ids.slice(0, -1)) assert.equal((await act(id, { type: 'confirm' })).status, 200);
+    view = await viewOf(ids[0]);
+    assert.equal(view.phase, 'reveal', 'the game waits for the final player');
+    assert.deepEqual(view.waitingFor, [ids.at(-1)]);
+
+    assert.equal((await act(ids.at(-1), { type: 'confirm' })).status, 200);
+    view = await viewOf(ids[0]);
+    assert.equal(view.phase, 'night');
     assert.equal(view.night.key, 'nightfall', 'the night opens with everyone closing their eyes');
     assert.ok(view.night.msLeft > 0, 'and a clock the whole room shares');
 

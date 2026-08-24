@@ -26,7 +26,7 @@ import {
 import * as lobby from '../../lobby.js';
 import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
 
-export const PHASES = ['lobby', 'night', 'day', 'vote', 'over'];
+export const PHASES = ['lobby', 'reveal', 'night', 'day', 'vote', 'over'];
 
 export function createGame(code, { now = Date.now } = {}) {
   return {
@@ -37,6 +37,7 @@ export function createGame(code, { now = Date.now } = {}) {
     script: [],              // this deck's night, decided when the cards are dealt
     step: -1,                // index into script
     stepEndsAt: 0,           // ms timestamp; the same deadline for everyone
+    ready: {},               // playerId -> confirmed they have read their role
     startRoles: {},          // playerId -> the card dealt to them
     centreStart: [],         // the three cards nobody was dealt
     finalRoles: {},          // after the night's swaps
@@ -87,11 +88,24 @@ export function startGame(g, playerId, { shuffle = defaultShuffle, now = Date.no
   g.centre = g.centreStart.slice();
 
   g.script = nightScript(deck);
+  g.phase = 'reveal';
+  g.ready = {};
+  g.step = -1;
+  g.stepEndsAt = 0;
+  logEvent(g, 'log.gameStarted', { count: g.players.length });
+}
+
+/** Every player gets time to inspect their card before the shared clock begins. */
+export function confirmRole(g, playerId, { now = Date.now } = {}) {
+  require_(g.phase === 'reveal', 'wrongPhase');
+  require_(playerById(g, playerId), 'notInGame');
+  g.ready[playerId] = true;
+  if (!g.players.every((p) => g.ready[p.id])) return;
+
   g.phase = 'night';
   g.step = 0;
   g.stepEndsAt = now() + stepMillis(g.script[0], g.pace);
   openStep(g);
-  logEvent(g, 'log.gameStarted', { count: g.players.length });
 }
 
 // ---------------------------------------------------------------- the night
@@ -368,8 +382,11 @@ export function viewFor(g, viewerId, now = Date.now()) {
   const startRole = g.startRoles[viewerId] ?? null;
   const step = currentStep(g);
   const awake = night && isAwake(g, viewerId);
-  // Nobody is waited on at night — see the note at the top of this file.
-  const waiting = g.phase === 'vote' ? g.players.filter((p) => !(p.id in g.votes)) : [];
+  // Readiness is public before night begins. During the night, nobody is
+  // waited on by name — see the note at the top of this file.
+  const waiting = g.phase === 'reveal'
+    ? g.players.filter((p) => !g.ready[p.id])
+    : g.phase === 'vote' ? g.players.filter((p) => !(p.id in g.votes)) : [];
 
   return {
     ...lobby.baseView(g, viewerId),
@@ -387,6 +404,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
       id: p.id,
       name: p.name,
       seat: i,
+      ready: g.phase === 'reveal' ? Boolean(g.ready[p.id]) : undefined,
       // No `acted` at night: it would be false only for players holding an
       // action role, which is the deck read straight off the screen.
       voted: g.phase === 'vote' ? p.id in g.votes : undefined,

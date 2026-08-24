@@ -33,9 +33,11 @@ spare three sit face down in the middle, so some roles are in nobody's hands.
 Roles: Werewolf ×2, Minion, Mason ×2, Seer, Robber, Troublemaker, Drunk,
 Insomniac, Hunter, Tanner, Villager.
 
-The night runs on a **shared clock**, the way the physical game's companion app
-does: a fixed script of role steps, each a fixed length, announced on screen
-and read aloud, identical on every player's phone.
+After the cards are dealt, every player can inspect their role and marks
+themselves ready. The night starts only once the whole table is ready. It then
+runs on a **shared clock**, the way the physical game's companion app does: a
+fixed script of role steps, each a fixed length, announced on screen and read
+aloud, identical on every player's phone.
 
 The script is built from the deck, and two rules keep it from telling anyone
 anything:
