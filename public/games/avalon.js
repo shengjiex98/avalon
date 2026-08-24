@@ -1,7 +1,7 @@
 // Avalon's screens. The shell hands over a context so these read the same as
 // they did when they lived in app.js.
 
-import { h, infoPopup } from '../ui.js';
+import { h, infoPopup, rolePortrait } from '../ui.js';
 
 let T, send, app, nameOf, namesOf, waitingNames, playerList, render;
 
@@ -21,6 +21,7 @@ export function lobbyOptions() {
   const optionRow = (key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', { type: 'checkbox', checked: v.options[key], disabled: !isHost,
       onchange: (e) => send('options', { options: { [key]: e.target.checked } }) }),
+    rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
       h('span', { class: 'role-option-name', text: T(`role.${key}`) }),
       h('span', { class: 'role-option-description', text: T(`roleDesc.${key}`) }),
@@ -48,12 +49,12 @@ export function header_() {
   return [
     h('div', { class: 'row info-buttons' },
       h('button', {
-        class: 'btn grow', id: 'roleToggle', type: 'button',
+        class: 'btn grow info-btn', id: 'roleToggle', type: 'button',
         'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'avalon-role',
         onclick: () => { app.infoPopup = 'avalon-role'; render(); },
       }, T('reveal.show')),
       h('button', {
-        class: 'btn grow', id: 'avalonRefToggle', type: 'button',
+        class: 'btn grow info-btn', id: 'avalonRefToggle', type: 'button',
         'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'avalon-reference',
         onclick: () => { app.infoPopup = 'avalon-reference'; render(); },
       }, T('avalon.ref.title')),
@@ -76,9 +77,17 @@ function roleContent() {
   if (!v.you?.role) return null;
   const side = v.you.side;
   return h('div', { class: 'reveal-card stack' },
-    h('div', {},
-      h('p', { class: 'role-name', text: T(`role.${v.you.role}`) }),
-      h('span', { class: `side ${side === 'evil' ? 'side-evil' : 'side-good'}`, text: T(`side.${side}`) }),
+    h('div', { class: 'role-hero' },
+      rolePortrait(v.you.role),
+      h('div', { class: 'role-hero-copy' },
+        h('p', { class: 'eyebrow', text: T('know.title') }),
+        h('p', { class: 'role-name', text: T(`role.${v.you.role}`) }),
+        h('span', {
+          class: `faction-sigil ${side}`, title: T(`side.${side}`),
+          'aria-label': T(`side.${side}`), text: side === 'evil' ? '☾' : '☀',
+        }),
+        h('span', { class: 'visually-hidden', text: T(`side.${side}`) }),
+      ),
     ),
     h('p', { class: 'muted', text: T(`roleDesc.${v.you.role}`) }),
     v.knowledge.length
@@ -104,6 +113,7 @@ function referenceContent() {
     ...['good', 'evil'].map((side) => h('div', { class: 'stack tight' },
       h('h3', { text: T(`side.${side}`) }),
       ...roles.filter((role) => sideOfRole(role) === side).map((role) => h('div', { class: 'ref-role' },
+        rolePortrait(role, { small: true }),
         h('span', {
           class: `tag ${side === 'evil' ? 'evil' : 'good'}`,
           text: counts[role] > 1 ? `${T(`role.${role}`)} ×${counts[role]}` : T(`role.${role}`),
@@ -116,10 +126,14 @@ function referenceContent() {
 
 function paneBoard() {
   const v = app.view;
-  return h('div', { class: 'card stack' },
+  return h('div', { class: 'card stack board-card' },
     h('div', { class: 'row' },
       h('h2', { class: 'grow', text: T('board.title') }),
-      h('span', { class: 'muted', text: T('board.evilCount', { n: v.evilCount, total: v.players.length }) }),
+      h('span', {
+        class: 'evil-count', title: T('board.evilCount', { n: v.evilCount, total: v.players.length }),
+        'aria-label': T('board.evilCount', { n: v.evilCount, total: v.players.length }),
+        text: `☾ ${v.evilCount}`,
+      }),
     ),
     h('div', { class: 'board' }, v.boardSizes.map((q, i) => {
       const done = v.quests.find((x) => x.round === i);
@@ -149,6 +163,8 @@ function paneBoard() {
           h('span', { class: 'name', text: p.name }),
           h('span', {
             class: `tag ${approved ? 'ok' : 'evil'}`,
+            title: T(approved ? 'vote.approve' : 'vote.reject'),
+            'aria-label': T(approved ? 'vote.approve' : 'vote.reject'),
             text: T(approved ? 'vote.approve' : 'vote.reject'),
           }),
         );
@@ -164,7 +180,7 @@ function paneReveal() {
   const done = v.players.find((p) => p.id === v.you.id)?.ready;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.reveal') }),
-    playerList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
+    playerList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('reveal.confirm'), text: '◆' })] : []) }),
     done
       ? h('p', { class: 'muted', text: T('reveal.waiting', { names: waitingNames() }) })
       : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('reveal.confirm')),
@@ -211,7 +227,7 @@ function paneVote() {
       p.onTeam ? h('span', { class: 'tag team', text: T('phase.quest') }) : null,
       // During voting, reveal only that a choice is locked in. The actual
       // approve/reject token appears for everyone once the vote resolves.
-      p.hasVoted ? h('span', { class: 'tag', text: T('vote.voted') }) : null,
+      p.hasVoted ? h('span', { class: 'tag status-glyph', title: T('vote.voted'), text: T('vote.voted') }) : null,
     ].filter(Boolean) }),
     voted
       ? h('p', { class: 'muted', text: T('vote.cast', { names: waitingNames() }) })
@@ -235,7 +251,7 @@ function paneQuest() {
     h('h2', { text: T('phase.quest') }),
     h('p', { text: T('quest.watching', { round: v.round + 1, names: namesOf(v.team) }) }),
     v.failsRequired === 2 ? h('p', { class: 'muted', text: T('quest.needsTwo') }) : null,
-    playerList({ only: v.team, tags: (p) => (p.hasPlayed ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
+    playerList({ only: v.team, tags: (p) => (p.hasPlayed ? [h('span', { class: 'tag ok status-glyph', title: T('quest.played'), text: '◆' })] : []) }),
     onTeam && !played ? h('div', { class: 'stack' },
       h('p', { text: T('quest.prompt') }),
       h('div', { class: 'row' },
@@ -276,11 +292,16 @@ function paneOver() {
     v.assassinTarget ? h('p', { class: 'muted', text: T('over.assassinPicked', { name: nameOf(v.assassinTarget) }) }) : null,
     h('h3', { text: T('over.roles') }),
     h('div', { class: 'players' }, v.players.map((p) => h('div', { class: 'player' },
+      rolePortrait(p.role, { small: true }),
       h('span', { class: 'seat', text: p.seat + 1 }),
       h('span', { class: 'name', text: p.name }),
       h('span', { class: 'tag', text: T(`role.${p.role}`) }),
-      h('span', { class: `tag ${p.role && sideOfRole(p.role) === 'evil' ? 'evil' : 'good'}`,
-                  text: T(`side.${sideOfRole(p.role)}`) }),
+      h('span', {
+        class: `faction-sigil mini ${sideOfRole(p.role)}`,
+        title: T(`side.${sideOfRole(p.role)}`),
+        'aria-label': T(`side.${sideOfRole(p.role)}`),
+        text: sideOfRole(p.role) === 'evil' ? '☾' : '☀',
+      }),
     ))),
     v.you.id === v.hostId
       ? h('button', { class: 'btn primary wide', onclick: () => send('again') }, T('over.again'))

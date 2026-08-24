@@ -2,6 +2,14 @@
 
 export const el = (id) => document.getElementById(id);
 
+/** Portraits share one generated atlas so the game pays a single image load. */
+export function rolePortrait(role, { small = false } = {}) {
+  return h('span', {
+    class: `role-portrait portrait-${role} ${small ? 'portrait-small' : ''}`,
+    'aria-hidden': 'true',
+  });
+}
+
 export function h(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {

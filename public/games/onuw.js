@@ -1,6 +1,6 @@
 // One Night Werewolf's screens.
 
-import { h, infoPopup } from '../ui.js';
+import { h, infoPopup, rolePortrait } from '../ui.js';
 
 let T, send, app, joinNames, render;
 
@@ -168,6 +168,7 @@ export function lobbyOptions() {
       type: 'checkbox', checked: v.options[key], disabled: !isHost,
       onchange: (e) => send('options', { options: { [key]: e.target.checked } }),
     }),
+    rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
       h('span', { class: 'role-option-name', text: roleName(key) }),
       h('span', { class: 'role-option-description', text: T(`onuw.roleDesc.${key}`) }),
@@ -206,9 +207,18 @@ function cardContent() {
   if (!v.you?.role) return null;
   const evil = v.you.team === 'werewolf';
   return h('div', { class: 'reveal-card stack' },
-    h('div', {},
-      h('p', { class: 'role-name', text: roleName(v.you.role) }),
-      h('span', { class: `side ${evil ? 'side-evil' : 'side-good'}`, text: T(`onuw.team.${v.you.team}`) }),
+    h('div', { class: 'role-hero' },
+      rolePortrait(v.you.role),
+      h('div', { class: 'role-hero-copy' },
+        h('p', { class: 'eyebrow', text: T('onuw.night.yourCard') }),
+        h('p', { class: 'role-name', text: roleName(v.you.role) }),
+        h('span', {
+          class: `faction-sigil ${evil ? 'evil' : 'good'}`,
+          title: T(`onuw.team.${v.you.team}`), 'aria-label': T(`onuw.team.${v.you.team}`),
+          text: evil ? '☾' : '☀',
+        }),
+        h('span', { class: 'visually-hidden', text: T(`onuw.team.${v.you.team}`) }),
+      ),
     ),
     h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
     ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
@@ -277,12 +287,12 @@ export function header_() {
   return [
     h('div', { class: 'row info-buttons' },
       h('button', {
-        class: 'btn grow', id: 'cardToggle', type: 'button',
+        class: 'btn grow info-btn', id: 'cardToggle', type: 'button',
         'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'onuw-card',
         onclick: () => { app.infoPopup = 'onuw-card'; render(); },
       }, T('onuw.night.yourCard')),
       h('button', {
-        class: 'btn grow', id: 'refToggle', type: 'button',
+        class: 'btn grow info-btn', id: 'refToggle', type: 'button',
         'aria-haspopup': 'dialog', 'aria-expanded': app.infoPopup === 'onuw-reference',
         onclick: () => { app.infoPopup = 'onuw-reference'; render(); },
       }, T('onuw.ref.title')),
@@ -309,6 +319,7 @@ function referenceContent() {
   return h('div', { class: 'stack' },
       h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
       h('div', { class: 'stack tight' }, Object.keys(deck).map((role) => h('div', { class: 'ref-role' },
+        rolePortrait(role, { small: true }),
         h('span', { class: 'tag', text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
         h('span', { class: 'muted', text: T(`onuw.roleDesc.${role}`) }),
       ))),
@@ -331,7 +342,7 @@ function paneReveal() {
   const done = v.players.find((p) => p.id === v.you.id)?.ready;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('onuw.reveal.title') }),
-    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok', text: '✓' })] : []) }),
+    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.reveal.ready'), text: '✓' })] : []) }),
     done
       ? h('p', { class: 'muted', text: T('onuw.reveal.waiting', { names: waitingNames() }) })
       : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('onuw.reveal.ready')),
@@ -516,7 +527,7 @@ function paneVote() {
         picked: app.selection,
         exclude: me?.voted ? v.players.map((p) => p.id) : [v.you.id],
         onpick: me?.voted ? null : (p) => { app.selection = [p.id]; render(); },
-        tags: (p) => (p.voted ? [h('span', { class: 'tag ok', text: '✓' })] : []),
+        tags: (p) => (p.voted ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.vote.cast', { name: '', names: '' }), text: '◆' })] : []),
       }),
       me?.voted ? null : h('button', {
         class: 'btn danger wide', disabled: !app.selection.length,
@@ -548,6 +559,7 @@ function paneOver() {
 
       h('h3', { text: T('onuw.over.table') }),
       h('div', { class: 'players' }, v.players.map((p) => h('div', { class: `player ${p.dead ? 'dead' : ''}` },
+        rolePortrait(p.finalRole, { small: true }),
         h('span', { class: 'seat', text: p.seat + 1 }),
         h('span', { class: 'name', text: p.name }),
         h('span', { class: 'tag', text: T('onuw.over.dealt', { role: roleName(p.startRole) }) }),
