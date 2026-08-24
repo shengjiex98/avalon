@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#12141c">
+<meta name="theme-color" content="#080d1c">
 <title>Avalon</title>
 <link rel="stylesheet" href="./styles.css" data-app-styles>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🗡️</text></svg>">
@@ -11,7 +11,10 @@
 <body>
   <div class="chrome">
     <header class="topbar">
-      <h1 data-i18n="app.title">Avalon</h1>
+      <div class="brand" aria-label="Avalon">
+        <span class="brand-gem" aria-hidden="true">◆</span>
+        <h1 data-i18n="app.title">Avalon</h1>
+      </div>
       <div id="gameSwitch" class="seg" role="group" aria-label="Game"></div>
       <div class="topbar-right">
         <button id="langToggle" class="lang" type="button" aria-label="Language">中文</button>

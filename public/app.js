@@ -405,16 +405,22 @@ function screenGame() {
   const v = app.view;
   const game = bindGame(v.gameId);
   const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
-  return [
-    ...(v.phase === 'lobby' ? paneLobby(game) : [...game.header_(), ...game.panes()]),
-    canReset ? h('div', { class: 'row' },
+  const content = v.phase === 'lobby'
+    ? h('div', { class: 'lobby-scroll' }, ...paneLobby(game))
+    : [
+        ...game.header_(),
+        h('div', { class: 'phase-area' }, ...game.panes()),
+      ];
+  return [h('section', { class: `game-screen game-${v.gameId} phase-${v.phase}` },
+    content,
+    canReset ? h('div', { class: 'row game-utility' },
       h('button', {
-        class: 'btn danger grow', id: 'resetGame', type: 'button',
+        class: 'btn ghost grow', id: 'resetGame', type: 'button',
         onclick: () => send('reset'),
       }, T('game.reset')),
     ) : null,
     paneLog(),
-  ].filter(Boolean);
+  )];
 }
 
 /** Hand the current game module everything it needs to draw with. */
@@ -503,8 +509,12 @@ function playerList({ selectable = false, selected = [], onpick, tags, only, exc
 
 function paneLog() {
   const entries = app.view.log.slice().reverse();
-  return h('div', { class: 'card' },
-    h('h2', { text: T('log.title') }),
+  return h('details', { class: 'card journal' },
+    h('summary', {},
+      h('span', { 'aria-hidden': 'true', text: '▤' }),
+      h('span', { text: T('log.title') }),
+      h('span', { class: 'journal-count', text: entries.length }),
+    ),
     h('div', { class: 'log' }, entries.map((e) => h('div', {
       text: T(e.key, formatParams(e.params)),
     }))),
