@@ -147,8 +147,11 @@ test('Merlin is shown who is evil, but never told their roles', () => {
   const evilNames = game.players
     .filter((p) => sideOf(game.roles[p.id]) === 'evil')
     .map((p) => p.name);
-  const tags = dom.fixtures.view.byClass('tag').filter((t) => t.text === 'evil');
+  // The marker is the moon sigil the reveal card teaches, not the word "evil".
+  const tags = dom.fixtures.view.byClass('faction-sigil').filter((t) => t.className.includes('mini'));
   assert.equal(tags.length, evilNames.length, 'one marker per evil player');
+  assert.ok(tags.every((t) => t.text === '☾' && t.getAttribute('aria-label') === 'evil'),
+    'and it still says which side it means');
 
   // Each marker sits in a row naming that player, and nothing names a role.
   const rows = tags.map((t) => t.parentNode.text);
@@ -203,8 +206,11 @@ test('the vote screen offers approve and reject, then reports the tally', () => 
   assert.equal(labelled(view, /^Approve$/).length, 1);
   assert.equal(labelled(view, /^Reject$/).length, 1);
   const annPending = view.byClass('player').find((row) => row.text.includes('Ann'));
-  assert.match(annPending.text, /Voted/);
-  assert.doesNotMatch(annPending.text, /Approve|Reject/, 'a pending choice stays secret');
+  const locked = annPending.byClass('status-glyph');
+  assert.equal(locked.length, 1, 'a locked-in choice shows as one token');
+  assert.equal(locked[0].text, '◆');
+  assert.equal(locked[0].getAttribute('title'), 'Voted');
+  assert.doesNotMatch(annPending.text, /Approve|Reject|✓|✕/, 'a pending choice stays secret');
   assertNoRawKeys(view, 'vote');
 
   g.castVote(game, 'p1', false);
@@ -212,9 +218,13 @@ test('the vote screen offers approve and reject, then reports the tally', () => 
   view = show(game, 'p2');
   assert.match(view.text, /4 approve, 1 reject/);
   assert.match(view.text, /approved/);
+  // Resolved votes read as a tick or a cross, each still named for a reader.
   const resultRows = view.byClass('vote-result')[0].byClass('player');
-  assert.match(resultRows.find((row) => row.text.includes('Ann')).text, /Approve/);
-  assert.match(resultRows.find((row) => row.text.includes('张三')).text, /Reject/);
+  const token = (name) => resultRows.find((row) => row.text.includes(name)).byClass('tag')[0];
+  assert.equal(token('Ann').text, '✓');
+  assert.equal(token('Ann').getAttribute('aria-label'), 'Approve');
+  assert.equal(token('张三').text, '✕');
+  assert.equal(token('张三').getAttribute('aria-label'), 'Reject');
 });
 
 test('only evil players are offered a fail card', () => {
