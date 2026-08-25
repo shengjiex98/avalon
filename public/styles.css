@@ -115,19 +115,32 @@ input[type=text]:focus { outline: 2px solid var(--good); outline-offset: 1px; }
 .pace-picker .btn { flex-basis: 0; }
 
 .players { display: grid; gap: 8px; }
+/* Rows wrap and their text truncates: a long name or a row of wordy tags has to
+   break inside the box rather than push the whole page wider than the screen. */
 .player {
-  display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+  display: flex; flex-wrap: wrap; align-items: center; align-content: center;
+  gap: 10px; padding: 10px 12px;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
-  text-align: left; width: 100%; color: inherit; font: inherit;
+  text-align: left; width: 100%; min-width: 0; color: inherit; font: inherit;
 }
 button.player { cursor: pointer; }
 button.player:hover:not(:disabled) { border-color: var(--gold); }
 button.player:disabled { cursor: default; }
 .player.selected { border-color: var(--good); background: #1b2740; }
-.player .name { flex: 1 1 auto; font-weight: 600; }
+.player .name {
+  flex: 1 1 auto; min-width: 0; font-weight: 600;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
 .player .seat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; min-width: 1.6em; }
+/* The recap's tags are a paragraph's worth, so they take the width of the row
+   and wrap among themselves under the name. */
+.player-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; min-width: 0; }
 
-.tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.tag {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line);
+  color: var(--muted); white-space: nowrap; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis;
+}
 .tag.leader { border-color: var(--gold); color: var(--gold); }
 .tag.team { border-color: var(--good); color: var(--good); }
 .tag.evil { border-color: var(--evil); color: var(--evil); }
@@ -447,7 +460,8 @@ input[type=text]:focus { outline-color: var(--gold); }
   min-height: 40px; gap: 6px; padding: 7px 8px; border-radius: 4px;
   border-color: #544c3a; background: rgba(7, 16, 41, .78);
 }
-.player .name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
+.player .name { font-size: 14px; }
+.player-tags { gap: 6px; }
 .player .seat {
   display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px;
   border: 1px solid #5e728c; color: #d6e9ef; font-size: 11px;

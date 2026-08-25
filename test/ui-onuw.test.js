@@ -520,6 +520,26 @@ test('the end screen explains the night and the verdict', () => {
   assert.match(loser.text, /You lost\./);
 });
 
+test('the end screen keeps each seat\u2019s tags inside the seat\u2019s box', () => {
+  // A recap row carries several wordy tags. They ride in one wrapping strip, so
+  // a narrow screen breaks them under the name instead of pushing the row —
+  // and with it the page — wider than the viewport.
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  finishNight(game);
+  w.startVote(game, 'p0');
+  for (const [voter, target] of [['p0', 'p2'], ['p1', 'p2'], ['p2', 'p0']]) w.castVote(game, voter, target);
+
+  const view = show(game, 'p0');
+  const rows = view.byClass('player');
+  assert.equal(rows.length, game.players.length);
+  for (const row of rows) {
+    const strips = row.byClass('player-tags');
+    assert.equal(strips.length, 1, 'one strip per seat');
+    assert.equal(row.byClass('tag').length, strips[0].byClass('tag').length,
+      'every tag sits inside it');
+  }
+});
+
 test('the whole werewolf game reads in Chinese', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');

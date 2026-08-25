@@ -561,16 +561,21 @@ function paneOver() {
         : h('p', { class: 'muted', text: T('onuw.info.swappedNobody') }),
 
       h('h3', { text: T('onuw.over.table') }),
+      // Every seat carries several sentences' worth of tags here, far more than
+      // the one-line rows the pick lists use. They ride in their own wrapping
+      // strip so they break under the name rather than out of the box.
       h('div', { class: 'players' }, v.players.map((p) => h('div', { class: `player ${p.dead ? 'dead' : ''}` },
         rolePortrait(p.finalRole, { small: true }),
         h('span', { class: 'seat', text: p.seat + 1 }),
         h('span', { class: 'name', text: p.name }),
-        h('span', { class: 'tag', text: T('onuw.over.dealt', { role: roleName(p.startRole) }) }),
-        p.finalRole !== p.startRole
-          ? h('span', { class: 'tag good', text: T('onuw.over.ended', { role: roleName(p.finalRole) }) })
-          : null,
-        p.votedFor ? h('span', { class: 'tag', text: T('onuw.over.votedFor', { name: v.players.find((q) => q.id === p.votedFor)?.name }) }) : null,
-        p.dead ? h('span', { class: 'tag evil', text: '☠' }) : null,
+        h('div', { class: 'player-tags' },
+          h('span', { class: 'tag', text: T('onuw.over.dealt', { role: roleName(p.startRole) }) }),
+          p.finalRole !== p.startRole
+            ? h('span', { class: 'tag good', text: T('onuw.over.ended', { role: roleName(p.finalRole) }) })
+            : null,
+          p.votedFor ? h('span', { class: 'tag', text: T('onuw.over.votedFor', { name: v.players.find((q) => q.id === p.votedFor)?.name }) }) : null,
+          p.dead ? h('span', { class: 'tag evil', text: '☠' }) : null,
+        ),
       ))),
 
       h('h3', { text: T('onuw.centre') }),
