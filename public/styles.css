@@ -513,24 +513,30 @@ input[type=text]:focus { outline-color: var(--gold); }
   --portrait-x: 0%; --portrait-y: 0%;
   display: block; flex: 0 0 auto; width: 110px; height: 110px; border-radius: 50%;
   background-image: url('./art/jrpg-role-atlas.webp');
-  background-repeat: no-repeat; background-size: 400% 300%;
+  background-repeat: no-repeat; background-size: 400% 500%;
   background-position: var(--portrait-x) var(--portrait-y);
   box-shadow: 0 0 0 2px #10182f, 0 0 0 3px var(--gold), 0 5px 16px rgba(0,0,0,.45);
 }
 .portrait-small { width: 36px; height: 36px; box-shadow: 0 0 0 1px #0b1125, 0 0 0 2px #8b713d; }
-.portrait-merlin { --portrait-x: 33.333%; --portrait-y: 0%; }
-.portrait-percival { --portrait-x: 66.667%; --portrait-y: 0%; }
-.portrait-morgana { --portrait-x: 100%; --portrait-y: 0%; }
-.portrait-mordred { --portrait-x: 0%; --portrait-y: 50%; }
-.portrait-assassin { --portrait-x: 33.333%; --portrait-y: 50%; }
-.portrait-minion { --portrait-x: 66.667%; --portrait-y: 50%; }
-.portrait-oberon { --portrait-x: 100%; --portrait-y: 50%; }
-.portrait-servant, .portrait-mason, .portrait-hunter { --portrait-x: 0%; --portrait-y: 0%; }
-.portrait-werewolf { --portrait-x: 0%; --portrait-y: 100%; }
-.portrait-seer, .portrait-insomniac { --portrait-x: 33.333%; --portrait-y: 100%; }
-.portrait-robber, .portrait-troublemaker { --portrait-x: 66.667%; --portrait-y: 100%; }
-.portrait-villager, .portrait-drunk { --portrait-x: 100%; --portrait-y: 100%; }
-.portrait-tanner { --portrait-x: 100%; --portrait-y: 50%; }
+/* One tile per role, laid out by scripts/role_art.py: 4 columns, 5 rows. */
+.portrait-merlin       { --portrait-x: 0%;      --portrait-y: 0%; }
+.portrait-percival     { --portrait-x: 33.333%; --portrait-y: 0%; }
+.portrait-servant      { --portrait-x: 66.667%; --portrait-y: 0%; }
+.portrait-morgana      { --portrait-x: 100%;    --portrait-y: 0%; }
+.portrait-mordred      { --portrait-x: 0%;      --portrait-y: 25%; }
+.portrait-assassin     { --portrait-x: 33.333%; --portrait-y: 25%; }
+.portrait-minion       { --portrait-x: 66.667%; --portrait-y: 25%; }
+.portrait-oberon       { --portrait-x: 100%;    --portrait-y: 25%; }
+.portrait-werewolf     { --portrait-x: 0%;      --portrait-y: 50%; }
+.portrait-seer         { --portrait-x: 33.333%; --portrait-y: 50%; }
+.portrait-robber       { --portrait-x: 66.667%; --portrait-y: 50%; }
+.portrait-villager     { --portrait-x: 100%;    --portrait-y: 50%; }
+.portrait-troublemaker { --portrait-x: 0%;      --portrait-y: 75%; }
+.portrait-drunk        { --portrait-x: 33.333%; --portrait-y: 75%; }
+.portrait-insomniac    { --portrait-x: 66.667%; --portrait-y: 75%; }
+.portrait-mason        { --portrait-x: 100%;    --portrait-y: 75%; }
+.portrait-hunter       { --portrait-x: 0%;      --portrait-y: 100%; }
+.portrait-tanner       { --portrait-x: 33.333%; --portrait-y: 100%; }
 
 .reveal-card {
   padding: 15px; border-radius: 5px; border-color: #b89142;

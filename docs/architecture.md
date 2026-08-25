@@ -25,7 +25,9 @@ public/app.js       Transport, home, lobby, and game switcher.
 public/ui.js        Shared DOM helpers.
 public/games/       Browser screens for each game.
 public/audio/onuw/  English and Mandarin night announcements.
+public/art/         Role portrait atlas and the tiles it is built from.
 public/i18n.js      English and Chinese user-visible strings.
+scripts/            Offline asset generation: narration audio, role portraits.
 test/               Engine, HTTP, translation, deployment, and UI tests.
 ```
 

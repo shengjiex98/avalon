@@ -7,6 +7,7 @@ hosts. Detailed reference material lives here.
 - [Deployment and operations](deployment.md)
 - [Architecture and repository layout](architecture.md)
 - [HTTP API and client protocol](api.md)
+- [Role portraits](role-art.md)
 - [Test suite](testing.md)
 - [Security and trust model](security.md)
 - [Single-server deployment decision](single-server.md)

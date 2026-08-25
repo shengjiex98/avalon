@@ -2,7 +2,10 @@
 
 export const el = (id) => document.getElementById(id);
 
-/** Portraits share one generated atlas so the game pays a single image load. */
+/**
+ * Portraits share one atlas so the game pays a single image load. The tile a
+ * role gets is set in `styles.css`; see docs/role-art.md.
+ */
 export function rolePortrait(role, { small = false } = {}) {
   return h('span', {
     class: `role-portrait portrait-${role} ${small ? 'portrait-small' : ''}`,
