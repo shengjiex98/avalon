@@ -23,6 +23,7 @@ class Element {
     this.disabled = false;
     this.checked = false;
     this.open = false;
+    this.scrollTop = 0;
     this.parentNode = null;
   }
 
@@ -54,6 +55,9 @@ class Element {
     if (!this.listeners.has(type)) this.listeners.set(type, []);
     this.listeners.get(type).push(fn);
   }
+
+  /** Scroll the way a user would, so listeners see the new offset. */
+  scrollTo_(top) { this.scrollTop = top; this.dispatch('scroll'); }
 
   /** Fire a listener the way a user would. Returns false if nothing is bound. */
   dispatch(type, event = {}) {

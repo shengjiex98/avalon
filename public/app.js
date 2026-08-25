@@ -31,6 +31,7 @@ const app = {
   stepEndsAt: 0,
   clockStep: null,   // which night step stepEndsAt was anchored to
   infoPopup: null,   // shared overlay state; hidden until explicitly opened
+  logOpen: false,    // the journal is a disclosure the user owns, not the renderer
   source: null,      // EventSource
   retry: 0,
   latestVersion: LOADED_VERSION,
@@ -237,7 +238,41 @@ function render() {
   if (state) conn.textContent = T(state === 'lost' ? 'conn.lost' : 'conn.connecting');
 
   const view = el('view');
+  scrollPanes = [];
   view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()), paneTestMode());
+  restoreScroll();
+}
+
+// ---- scroll memory
+//
+// Every click re-renders the whole view, so a scrollable pane that is rebuilt
+// from scratch snaps back to the top: the middle of a game screen jumps under
+// the player's thumb on every tap. Remember where each pane sat and put it
+// back before the browser paints, so the rebuild is invisible.
+
+let scrollTops = new Map();
+let scrollPanes = [];
+
+/**
+ * A scrollable pane whose position survives the next re-render. The key names
+ * the content, not the element: change it and the pane deliberately starts at
+ * the top again, which is what genuinely new content wants.
+ */
+function scrollPane(key, props, ...children) {
+  const node = h('div', { ...props, onscroll: () => scrollTops.set(key, node.scrollTop) }, ...children);
+  scrollPanes.push([key, node]);
+  return node;
+}
+
+function restoreScroll() {
+  const kept = new Map();
+  for (const [key, node] of scrollPanes) {
+    const top = scrollTops.get(key) ?? 0;
+    if (top) node.scrollTop = top;
+    kept.set(key, top);
+  }
+  scrollTops = kept;   // panes that are gone take their offsets with them
+  scrollPanes = [];
 }
 
 function renderUpdateBanner() {
@@ -405,11 +440,12 @@ function screenGame() {
   const v = app.view;
   const game = bindGame(v.gameId);
   const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
+  const paneKey = `${v.gameId}:${v.phase}:${game.paneKey?.() ?? ''}`;
   const content = v.phase === 'lobby'
-    ? h('div', { class: 'lobby-scroll' }, ...paneLobby(game))
+    ? scrollPane(`lobby:${paneKey}`, { class: 'lobby-scroll' }, ...paneLobby(game))
     : [
         ...game.header_(),
-        h('div', { class: 'phase-area' }, ...game.panes()),
+        scrollPane(`phase:${paneKey}`, { class: 'phase-area' }, ...game.panes()),
       ];
   return [h('section', { class: `game-screen game-${v.gameId} phase-${v.phase}` },
     content,
@@ -511,13 +547,16 @@ function playerList({ selectable = false, selected = [], onpick, tags, only, exc
 
 function paneLog() {
   const entries = app.view.log.slice().reverse();
-  return h('details', { class: 'card journal' },
+  return h('details', {
+    class: 'card journal', open: app.logOpen,
+    ontoggle: (event) => { app.logOpen = Boolean(event.target.open); },
+  },
     h('summary', {},
       h('span', { 'aria-hidden': 'true', text: '▤' }),
       h('span', { text: T('log.title') }),
       h('span', { class: 'journal-count', text: entries.length }),
     ),
-    h('div', { class: 'log' }, entries.map((e) => h('div', {
+    scrollPane('log', { class: 'log' }, entries.map((e) => h('div', {
       text: T(e.key, formatParams(e.params)),
     }))),
   );
