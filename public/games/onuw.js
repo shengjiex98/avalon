@@ -147,6 +147,14 @@ export const taglineKey = 'onuw.tagline';
 const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
 const roleName = (role) => T(`onuw.role.${role}`);
 
+/**
+ * How a card is coloured: red for the werewolf side, gold for the tanner, blue
+ * for the village. The server owns the rules; this is only the palette, the
+ * same way Avalon's client knows which of its own roles are evil.
+ */
+const WOLF_ROLES = new Set(['werewolf', 'minion']);
+const teamTag = (role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
+
 /** Role keys arrive raw from the server so each client can name them itself. */
 export function formatParams(params) {
   const out = { ...params };
@@ -189,7 +197,7 @@ export function lobbyOptions() {
     h('h3', { text: T('onuw.deck') }),
     v.deck
       ? h('div', { class: 'deck' }, Object.entries(v.deck).map(([role, n]) =>
-          h('span', { class: 'tag', text: n > 1 ? `${roleName(role)} ×${n}` : roleName(role) })))
+          h('span', { class: `tag ${teamTag(role)}`, text: n > 1 ? `${roleName(role)} ×${n}` : roleName(role) })))
       : h('p', { class: 'muted', text: T('onuw.deckTooBig', { n: v.players.length }) }),
     h('p', { class: 'muted', text: T('onuw.deckHint') }),
     h('h3', { text: T('onuw.ref.order') }),
@@ -320,7 +328,7 @@ function referenceContent() {
       h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
       h('div', { class: 'stack tight' }, Object.keys(deck).map((role) => h('div', { class: 'ref-role' },
         rolePortrait(role, { small: true }),
-        h('span', { class: 'tag', text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
+        h('span', { class: `tag ${teamTag(role)}`, text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
         h('span', { class: 'muted', text: T(`onuw.roleDesc.${role}`) }),
       ))),
       h('h3', { text: T('onuw.ref.order') }),
@@ -345,7 +353,7 @@ function paneReveal() {
   const done = v.players.find((p) => p.id === v.you.id)?.ready;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('onuw.reveal.title') }),
-    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.reveal.ready'), text: '✓' })] : []) }),
+    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.reveal.ready'), text: '◆' })] : []) }),
     done
       ? h('p', { class: 'muted', text: T('onuw.reveal.waiting', { names: waitingNames() }) })
       : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('onuw.reveal.ready')),
@@ -557,21 +565,45 @@ function paneOver() {
 
       h('h3', { text: T('onuw.over.night') }),
       v.swaps.length
-        ? h('div', { class: 'log' }, v.swaps.map((s) => h('div', { text: line(s) })))
+        // Not the journal: this list is the whole point of the screen, so it
+        // sizes to its lines instead of scrolling inside a fixed frame.
+        ? h('div', { class: 'log night-log' }, v.swaps.map((s) => h('div', { text: line(s) })))
         : h('p', { class: 'muted', text: T('onuw.info.swappedNobody') }),
 
       h('h3', { text: T('onuw.over.table') }),
-      h('div', { class: 'players' }, v.players.map((p) => h('div', { class: `player ${p.dead ? 'dead' : ''}` },
-        rolePortrait(p.finalRole, { small: true }),
-        h('span', { class: 'seat', text: p.seat + 1 }),
-        h('span', { class: 'name', text: p.name }),
-        h('span', { class: 'tag', text: T('onuw.over.dealt', { role: roleName(p.startRole) }) }),
-        p.finalRole !== p.startRole
-          ? h('span', { class: 'tag good', text: T('onuw.over.ended', { role: roleName(p.finalRole) }) })
-          : null,
-        p.votedFor ? h('span', { class: 'tag', text: T('onuw.over.votedFor', { name: v.players.find((q) => q.id === p.votedFor)?.name }) }) : null,
-        p.dead ? h('span', { class: 'tag evil', text: '☠' }) : null,
-      ))),
+      // Each seat's night reads as symbols rather than sentences: the card it
+      // was dealt, an arrow, the card it ended with, in its team's colour. The
+      // sentences stay on as titles, so nothing is lost to a screen reader.
+      h('div', { class: 'players' }, v.players.map((p) => {
+        const moved = p.finalRole !== p.startRole;
+        const dealt = T('onuw.over.dealt', { role: roleName(p.startRole) });
+        const ended = T('onuw.over.ended', { role: roleName(p.finalRole) });
+        const cardLabel = moved ? `${dealt} → ${ended}` : dealt;
+        const votedFor = p.votedFor && v.players.find((q) => q.id === p.votedFor)?.name;
+        const voteLabel = votedFor && T('onuw.over.votedFor', { name: votedFor });
+        return h('div', { class: `player ${p.dead ? 'dead' : ''}` },
+          rolePortrait(p.finalRole, { small: true }),
+          h('span', { class: 'seat', text: p.seat + 1 }),
+          h('span', { class: 'name', text: p.name }),
+          h('div', { class: 'player-tags' },
+            h('span', { class: `tag ${teamTag(p.finalRole)}`, role: 'img', title: cardLabel, 'aria-label': cardLabel },
+              moved ? h('span', { class: 'was', text: roleName(p.startRole) }) : null,
+              moved ? h('span', { class: 'arrow', 'aria-hidden': 'true', text: '→' }) : null,
+              roleName(p.finalRole)),
+            votedFor
+              ? h('span', { class: 'tag', role: 'img', title: voteLabel, 'aria-label': voteLabel },
+                  h('span', { class: 'arrow', 'aria-hidden': 'true', text: '☞' }), votedFor)
+              : null,
+            p.dead
+              ? h('span', {
+                  class: 'tag evil', text: '☠', role: 'img',
+                  title: T('onuw.over.dead', { names: p.name }),
+                  'aria-label': T('onuw.over.dead', { names: p.name }),
+                })
+              : null,
+          ),
+        );
+      })),
 
       h('h3', { text: T('onuw.centre') }),
       centreRow(),
