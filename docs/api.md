@@ -4,7 +4,7 @@ The browser uses JSON actions and one server-sent event stream per player.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/health` | Liveness and client protocol compatibility. |
+| `GET` | `/api/health` | Liveness, client protocol compatibility, and the commit being served. |
 | `GET` | `/api/health/update` | Deployment gate; returns `409` while a game is outside its lobby. |
 | `POST` | `/api/rooms` | Create a room and return `{code}`. |
 | `GET` | `/api/rooms/:code` | Return `{exists}`. |
@@ -38,9 +38,16 @@ The current client protocol is `1`. `/api/health` reports it, and the optional
 GitHub Pages client checks it before opening a lobby. This makes independently
 deployed incompatible clients and servers fail with a clear error.
 
+The `commit` field reports the checkout this process started from, or `null`
+when the source is not a git checkout. A deployment pipeline compares it with
+the commit it published to confirm the server actually restarted.
+
 ## Update gate
 
 Automatic deployment systems should use `/api/health` for ordinary liveness
 checks and call `/api/health/update` immediately before replacing the process.
 A `409` response means at least one game has started and deployment should be
-retried later. Rooms that are still in the lobby do not block an update.
+retried later. Rooms that are still in the lobby never block an update. A
+finished game blocks only while its result is fresh: five minutes after the
+last interaction with the room, the results screen stops holding up a
+deployment.

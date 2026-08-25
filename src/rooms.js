@@ -5,6 +5,7 @@ import { DEFAULT_GAME, GAMES, gameFor } from './games/index.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 const IDLE_MS = 6 * 60 * 60 * 1000; // rooms vanish six hours after the last touch
+const OVER_GRACE_MS = 5 * 60 * 1000; // finished games stay protected while players read results
 
 export class Rooms {
   constructor({ now = Date.now } = {}) {
@@ -50,11 +51,17 @@ export class Rooms {
     return this.rooms.has(String(code || '').toUpperCase());
   }
 
-  /** Rooms outside the lobby contain a game session that a restart would lose. */
+  /**
+   * Rooms holding something a restart would lose: a game in play, or one that
+   * just finished and whose result is still on screen. A lobby costs nothing to
+   * recreate, and a result nobody has touched for a few minutes is abandoned.
+   */
   activeGameCount() {
     let count = 0;
     for (const room of this.rooms.values()) {
-      if (room.game.phase !== 'lobby') count += 1;
+      if (room.game.phase === 'lobby') continue;
+      if (room.game.phase === 'over' && this.now() - room.touchedAt >= OVER_GRACE_MS) continue;
+      count += 1;
     }
     return count;
   }

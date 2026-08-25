@@ -6,6 +6,9 @@
 # Host-specific settings (PORT, HOST) go in ~/.config/avalon.env,
 # which is deliberately outside the repo.
 # The server always accepts the official shengjiex98.github.io client.
+#
+# Deployments arrive from CI, with avalon-update.timer as the hourly fallback;
+# both go through deploy/update.sh, which refuses to restart during a game.
 
 [Unit]
 Description=Avalon game server
@@ -17,7 +20,10 @@ Type=simple
 WorkingDirectory=%h/avalon
 EnvironmentFile=-%h/.config/avalon.env
 Environment=PORT=8420
-ExecStart=/usr/bin/env node %h/avalon/src/server.js
+# An absolute path, not `env node`: the runtime is hand-installed under
+# ~/.local, so resolving through PATH is the one part of this deployment that
+# is not pinned. deploy/update.sh checks the major version before restarting.
+ExecStart=%h/.local/bin/node %h/avalon/src/server.js
 Restart=on-failure
 RestartSec=3
 

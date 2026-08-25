@@ -3,6 +3,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,36 @@ import { GAMES, GAME_IDS, gameFor } from './games/index.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 export const API_PROTOCOL = 1;
+
+/**
+ * The commit this process is serving, read from the checkout rather than from
+ * `git`, so nothing has to be executable for health to answer. Resolved once:
+ * the answer describes the code already loaded, which is what a deployment
+ * pipeline needs to hear -- a working tree moved underneath a running process
+ * has not been deployed until the restart.
+ */
+function readDeployedCommit() {
+  const sha = /^[0-9a-f]{40}$/;
+  try {
+    const gitDir = fileURLToPath(new URL('../.git/', import.meta.url));
+    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
+    if (!head.startsWith('ref: ')) return sha.test(head) ? head : null;
+
+    const ref = head.slice(5).trim();
+    try {
+      const loose = readFileSync(join(gitDir, ref), 'utf8').trim();
+      if (sha.test(loose)) return loose;
+    } catch { /* a packed ref, read below */ }
+
+    for (const line of readFileSync(join(gitDir, 'packed-refs'), 'utf8').split('\n')) {
+      const [candidate, name] = line.split(' ');
+      if (name === ref && sha.test(candidate)) return candidate;
+    }
+  } catch { /* not a checkout: a tarball or an image */ }
+  return null;
+}
+
+export const DEPLOYED_COMMIT = readDeployedCommit();
 
 // The one supported remote client. Same-origin clients need no CORS headers.
 export const CLIENT_ORIGIN = 'https://shengjiex98.github.io';
@@ -83,6 +114,7 @@ async function api(rooms, req, res, url) {
       rooms: rooms.rooms.size,
       activeGames,
       updateSafe,
+      commit: DEPLOYED_COMMIT,
     });
   }
 

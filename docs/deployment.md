@@ -26,7 +26,8 @@ rooms idle for six hours are removed. There is no database or state to back up.
 Keep `/api/health` as the container or service liveness check. Immediately
 before an automatic update, call `/api/health/update`. A `409` response means a
 game is active and the updater should retry later. Lobby rooms do not block an
-update.
+update, and a finished game stops blocking five minutes after the last
+interaction with it.
 
 SSE response buffering must be disabled for `/api/rooms/*/events`. For nginx,
 use `proxy_buffering off;`; otherwise clients will not receive room updates
@@ -73,8 +74,93 @@ priority, and copied room links preserve the active server address. Node
 accepts cross-origin requests from this exact Pages origin; other browser
 origins are unsupported. A client served by Node always uses its own origin.
 
-The Pages workflow runs the tests, writes `API_BASE` to `public/config.js`,
-stamps the JavaScript module graph with the commit SHA, and publishes `public/`.
+The `deploy-pages` job runs after the server has taken the same commit. It
+writes `API_BASE` to `public/config.js`, stamps the JavaScript module graph with
+the commit SHA, and publishes `public/`.
 
 If maintaining both entry points is no longer useful, follow the
 [single-server reversion checklist](single-server.md).
+
+## Continuous deployment
+
+`.github/workflows/deploy.yml` runs on every push to `main` as three ordered
+jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
+A client newer than its server fails the protocol check and closes the lobby, so
+the server takes each commit first and the client is published only if it did.
+
+CI never connects to this host. The two sides meet on an ntfy topic:
+
+```text
+CI  --"deploy <sha>"-->  ntfy topic  -->  avalon-listen  -->  avalon-update
+CI  <--"deployed|busy|failed <sha>"--  update.sh
+CI  confirms GET $API_BASE/api/health .commit == <sha>
+```
+
+The notification only makes the deployment prompt; it is never what convinces
+CI that anything happened. A run succeeds when the **server itself** reports the
+commit, so the topic can be public without granting anyone the ability to
+publish a client against a server that never updated. The worst a stranger who
+learns the topic can do is make this host run `git fetch` and find nothing new.
+
+`deploy/listen.mjs` holds the subscription, started by `avalon-listen.service`.
+It never interprets a message: a body must match `deploy <40 hex>` exactly, and
+the only thing a match does is start `avalon-update.service`. Reconnection is
+`Restart=always`.
+
+`deploy/update.sh` publishes what happened, each message carrying the target
+commit so concurrent runs cannot read each other's results:
+
+| Message | Meaning | What CI does |
+| --- | --- | --- |
+| `deployed <sha>` | Restarted on the new commit | Confirms via health, then publishes the client |
+| `busy <sha>` | A game is in progress | Logs it and keeps waiting |
+| `failed <sha> …` | Update failed and rolled back | Fails the run immediately |
+
+CI re-sends the trigger every five minutes for up to an hour, so a deployment
+refused mid-game lands as soon as the table clears. If the hour runs out, the
+run fails and **nothing** is published, leaving client and server together on
+the older commit; re-run it from the Actions tab.
+
+`deploy/gate.sh` is what answers "is a game in progress", by calling
+`/api/health/update` on localhost. It knows nothing about how the server is
+deployed, so it stays usable if the server later ships as a container image.
+`AVALON_FORCE=1` skips it, for when a restart cannot wait.
+
+`deploy/update.sh` gates first, then fast-forwards the checkout, checks the Node
+major version, runs the tests, and restarts the service. If the tests fail it
+restores the previous commit, so a bad `main` cannot take the server down. The
+checkout it manages is deploy-only: it discards local edits without warning.
+
+### Repository configuration
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Secret | `NTFY_TOPIC` | The deployment topic. On a public server the name is the only thing gating access, so treat it as a secret |
+| Variable | `API_BASE` | The server's public base URL, used both as the Pages client's default backend and as the deployment's proof of success |
+
+This host needs the same `NTFY_TOPIC` (and optionally `NTFY_SERVER`) in
+`~/.config/avalon.env`, next to `PORT`:
+
+```bash
+systemctl --user link ~/avalon/deploy/avalon-listen.service
+systemctl --user enable --now avalon-listen
+```
+
+Because `API_BASE` doubles as the health URL, the server has to be reachable
+from the internet for CI to confirm a deployment. That is already true here via
+`tailscale funnel`; a tailnet-only server would need a different proof.
+
+### Hourly fallback
+
+A host that was rebooting or offline when the trigger was published never sees
+it, and would otherwise stay stale indefinitely. The `avalon-update.timer` unit
+runs the same script hourly to close that gap:
+
+```bash
+systemctl --user link ~/avalon/deploy/avalon-update.service
+systemctl --user link ~/avalon/deploy/avalon-update.timer
+systemctl --user enable --now avalon-update.timer
+```
+
+The timer treats exit 75 as success, because "a game was running, try later" is
+a healthy outcome rather than a failure worth alerting on.

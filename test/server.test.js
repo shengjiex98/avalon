@@ -76,7 +76,8 @@ test('advertises one API protocol to the supported Pages client', async () => {
 });
 
 test('the update health check permits lobbies but blocks active games', async () => {
-  const rooms = new Rooms();
+  let clock = Date.parse('2026-01-01T00:00:00Z');
+  const rooms = new Rooms({ now: () => clock });
   const code = rooms.create('avalon');
 
   await withServer(async (base) => {
@@ -100,11 +101,23 @@ test('the update health check permits lobbies but blocks active games', async ()
     assert.equal(blockedHealth.updateSafe, false);
 
     rooms.get(code).game.phase = 'over';
-    assert.equal((await fetch(base + '/api/health/update')).status, 409, 'results remain protected until play again');
+    assert.equal((await fetch(base + '/api/health/update')).status, 409, 'results remain protected while players read them');
+
+    clock += 5 * 60 * 1000;
+    assert.equal((await fetch(base + '/api/health/update')).status, 200, 'an untouched result stops blocking after the grace period');
 
     rooms.get(code).game.phase = 'lobby';
     assert.equal((await fetch(base + '/api/health/update')).status, 200);
   }, { rooms });
+});
+
+test('health reports the commit this process is serving', async () => {
+  await withServer(async (base) => {
+    const { commit } = await (await fetch(base + '/api/health')).json();
+    // The deployment pipeline compares this with the commit it published, so
+    // "some string" is not good enough: it is a full SHA or an honest null.
+    assert.ok(commit === null || /^[0-9a-f]{40}$/.test(commit), `unusable commit: ${commit}`);
+  });
 });
 
 test('serves pre-generated announcement audio with the right media type', async () => {

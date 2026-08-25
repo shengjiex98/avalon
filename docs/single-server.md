@@ -25,9 +25,11 @@ deployment one URL, one version, and one failure domain.
 
 ## Reversion checklist
 
-1. Delete `.github/workflows/pages.yml` and
-   `scripts/stamp-frontend-version.mjs`. Delete `public/config.js` and do not
-   check in `public/version.json`; Node generates that response from public-file
+1. Delete the `deploy-pages` job from `.github/workflows/deploy.yml` and delete
+   `scripts/stamp-frontend-version.mjs`. Keep the `deploy-server` job and
+   `deploy/`: continuous deployment of the Node server is independent of which
+   clients exist. Delete `public/config.js` and do not check in
+   `public/version.json`; Node generates that response from public-file
    modification times.
 2. In `public/app.js`, remove backend selection and protocol probing. Call
    `fetch(path)` and `new EventSource('/api/...')` directly, omit the server

@@ -1,5 +1,6 @@
-// Guards the two deliberate entry points: a self-contained Node deployment
-// and the official Pages client pointed at a compatible Node server.
+// Guards the two deliberate entry points -- a self-contained Node deployment
+// and the official Pages client pointed at a compatible Node server -- and the
+// pipeline that keeps the two on the same commit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -54,8 +55,8 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the Pages workflow tests and publishes only the browser client', async () => {
-  const workflow = await read('../.github/workflows/pages.yml');
+test('the deploy workflow tests and publishes only the browser client', async () => {
+  const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow, /npm test/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
   assert.match(workflow, /writeFileSync\("public\/config\.js"/);
@@ -63,4 +64,59 @@ test('the Pages workflow tests and publishes only the browser client', async () 
   assert.match(workflow, /actions\/deploy-pages/);
   assert.match(workflow, /path:\s*public/);
   assert.doesNotMatch(workflow, /ALLOW_ORIGIN/);
+});
+
+test('the client is published only after the server takes the same commit', async () => {
+  const workflow = await read('../.github/workflows/deploy.yml');
+  const server = workflow.indexOf('deploy-server:');
+  const pages = workflow.indexOf('deploy-pages:');
+  assert.ok(server !== -1 && pages !== -1);
+  assert.ok(server < pages, 'the server must be deployed before the Pages client');
+  assert.match(workflow.slice(pages), /needs:\s*deploy-server/);
+  assert.match(workflow.slice(server, pages), /needs:\s*test/);
+});
+
+test('the deploy job proves the server took the commit before publishing the client', async () => {
+  const workflow = await read('../.github/workflows/deploy.yml');
+
+  // A status message is a hint; the health endpoint is the evidence. Accepting
+  // the message alone would let anyone who knows the topic publish a client
+  // against a server that never updated.
+  assert.match(workflow, /\.commit \/\/ empty/);
+  assert.match(workflow, /\[ "\$commit" = "\$GITHUB_SHA" \]/);
+
+  // since= must be captured before the trigger, or a fast deploy is missed.
+  assert.ok(workflow.indexOf('since=$(date +%s)') < workflow.indexOf('publish\n'),
+    'capture since before publishing');
+
+  assert.match(workflow, /failed \$GITHUB_SHA[^\n]*\n\s*echo "::error/, 'fail fast on a rollback');
+  assert.match(workflow, /busy \$GITHUB_SHA/, 'a game in progress is a wait, not a failure');
+
+  // Scoped to this job: deploy-pages still needs id-token for actions/deploy-pages.
+  const job = workflow.slice(workflow.indexOf('deploy-server:'), workflow.indexOf('deploy-pages:'));
+  assert.doesNotMatch(job, /tailscale|id-token|secrets\.TS_/, 'CI needs no tailnet identity');
+});
+
+test('the deployment listener cannot be talked into running anything', async () => {
+  const listener = await read('../deploy/listen.mjs');
+
+  // The topic is public by design, so the message is data, never a command.
+  assert.match(listener, /\^deploy \[0-9a-f\]\{40\}\$/);
+  assert.match(listener, /spawn\('systemctl', \['--user', 'start', 'avalon-update\.service'\]/);
+  assert.doesNotMatch(listener, /shell:\s*true|\bexec\(|execSync/, 'no shell may see a message');
+});
+
+test('the update gate asks the server before anything is replaced', async () => {
+  const gate = await read('../deploy/gate.sh');
+  const update = await read('../deploy/update.sh');
+
+  assert.match(gate, /api\/health\/update/);
+  assert.match(gate, /409\)[^\n]*exit 75/, '409 is the only busy answer');
+  assert.match(gate, /AVALON_FORCE/);
+
+  // The checkout itself changes what open browsers are served, so the gate has
+  // to run before it, not merely before the restart.
+  assert.ok(update.indexOf('gate.sh') < update.indexOf('git reset --hard --quiet "$target"'),
+    'update.sh must consult the gate before moving the working tree');
+  assert.match(update, /systemctl --user restart avalon/);
 });
