@@ -332,6 +332,9 @@ function referenceContent() {
   );
 }
 
+/** Each night step is a fresh screen, so the middle pane starts at the top again. */
+export function paneKey() { return String(app.view.night?.index ?? ''); }
+
 export function panes() {
   const byPhase = { reveal: paneReveal, night: paneNight, day: paneDay, vote: paneVote, over: paneOver };
   return byPhase[app.view.phase]();

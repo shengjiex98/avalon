@@ -331,3 +331,37 @@ test('the history reads as sentences, not keys, in both languages', () => {
   assert.match(zh.text, /队伍通过（5–0）/);
   assertNoRawKeys(zh, 'Chinese history');
 });
+
+// Every click redraws the whole view. These guard the things a redraw used to
+// throw away: where the middle pane was scrolled to, and whether the player
+// had the journal open.
+
+test('the middle pane keeps its scroll position across a redraw', () => {
+  const game = newGame();
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  const view = show(game, 'p2');
+
+  view.byClass('phase-area')[0].scrollTo_(180);
+  render();
+  assert.equal(view.byClass('phase-area')[0].scrollTop, 180);
+
+  // A new phase is new content, so it starts at the top again.
+  for (const p of game.players) g.castVote(game, p.id, true);
+  app.view = g.viewFor(game, 'p2');
+  render();
+  assert.equal(view.byClass('phase-area')[0].scrollTop, 0);
+});
+
+test('the journal stays open across a redraw', () => {
+  const game = newGame();
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  const view = show(game, 'p2');
+
+  const journal = view.byClass('journal')[0];
+  assert.equal(journal.open, false);
+  journal.open = true;
+  journal.dispatch('toggle', { target: journal });
+
+  render();
+  assert.equal(view.byClass('journal')[0].open, true, 'a redraw must not shut the log');
+});

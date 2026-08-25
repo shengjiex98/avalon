@@ -537,3 +537,20 @@ test('the whole werewolf game reads in Chinese', () => {
   assert.match(day.text, /张三 的牌是狼人。/);
   assertNoRawKeys(day, 'Chinese day');
 });
+
+test('each night step starts the middle pane at the top again', () => {
+  // The night never changes phase or round, so without a per-step key the
+  // pane would carry one step's scroll offset into the next.
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  const view = show(game, 'p1');
+  assert.equal(game.phase, 'night');
+
+  view.byClass('phase-area')[0].scrollTo_(140);
+  show(game, 'p1');
+  assert.equal(view.byClass('phase-area')[0].scrollTop, 140, 'a redraw within a step holds its place');
+
+  clock = game.stepEndsAt;
+  w.tick(game, clock);
+  show(game, 'p1');
+  assert.equal(view.byClass('phase-area')[0].scrollTop, 0, 'a new step is new content');
+});

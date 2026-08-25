@@ -14,6 +14,9 @@ export const minPlayers = 5;
 export const rulesKey = 'rules.body';
 export const taglineKey = 'app.tagline';
 
+/** Each round is a fresh screen, so the middle pane starts at the top again. */
+export function paneKey() { return String(app.view.round); }
+
 /** The role toggles the host sets before starting. */
 export function lobbyOptions() {
   const v = app.view;

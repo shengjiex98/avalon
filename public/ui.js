@@ -17,7 +17,7 @@ export function h(tag, props = {}, ...children) {
     if (key === 'class') node.className = value;
     else if (key === 'text') node.textContent = value;
     else if (key.startsWith('on')) node.addEventListener(key.slice(2).toLowerCase(), value);
-    else if (key === 'disabled' || key === 'checked' || key === 'hidden') node[key] = Boolean(value);
+    else if (key === 'disabled' || key === 'checked' || key === 'hidden' || key === 'open') node[key] = Boolean(value);
     else node.setAttribute(key, value);
   }
   for (const child of children.flat()) {
