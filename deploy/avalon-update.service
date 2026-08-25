@@ -1,0 +1,18 @@
+# Reconcile this host with origin/main. Paired with avalon-update.timer.
+#
+# Deployments normally arrive from CI the moment a commit lands. This is the
+# safety net for the times CI cannot reach the host at all -- a reboot, a
+# dropped tailnet -- which would otherwise leave the server stale indefinitely.
+
+[Unit]
+Description=Update the Avalon server from origin/main
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/avalon/deploy/update.sh
+
+# Exit 75 means a game was in progress. That is a healthy outcome, not a
+# failure: the next hourly run tries again.
+SuccessExitStatus=75

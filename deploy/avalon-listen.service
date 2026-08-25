@@ -1,0 +1,28 @@
+# Install without copying, so the unit stays version-controlled:
+#   systemctl --user link  %h/avalon/deploy/avalon-listen.service
+#   systemctl --user enable --now avalon-listen
+#
+# NTFY_TOPIC (and optionally NTFY_SERVER) come from ~/.config/avalon.env,
+# which is deliberately outside the repo.
+
+[Unit]
+Description=Wait for Avalon deployment triggers
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/avalon
+EnvironmentFile=%h/.config/avalon.env
+ExecStart=%h/.local/bin/node %h/avalon/deploy/listen.mjs
+
+# The subscription is a long-lived HTTP stream; it ends whenever the network
+# hiccups, which is normal rather than a fault. Reconnecting is the whole job.
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
