@@ -323,7 +323,8 @@ test('a lone werewolf may look at one centre card, or decline', () => {
 
   const cards = dom.fixtures.view.byClass('centre-card');
   assert.equal(cards.length, 3);
-  assert.ok(cards.every((c) => c.text.includes('?')), 'the centre stays face down');
+  assert.ok(cards.every((c) => c.className.includes('card-back')), 'the centre uses illustrated card backs');
+  assert.ok(cards.every((c) => !c.text.includes('?')), 'the card art replaces the question marks');
 
   assert.equal(labelled(view, /^Confirm$/)[0].disabled, true);
   cards[1].dispatch('click');
@@ -333,6 +334,17 @@ test('a lone werewolf may look at one centre card, or decline', () => {
   dom.calls.length = 0;
   labelled(dom.fixtures.view, /Do nothing/)[0].dispatch('click');
   assert.equal(dom.calls.find((c) => c.path.endsWith('/action')).body.action.skip, true);
+});
+
+test('a lone werewolf sees the inspected centre card as a card front', () => {
+  const game = dealt(['werewolf', 'villager', 'seer', 'werewolf', 'robber', 'troublemaker']);
+  stepTo(game, 'werewolf');
+  w.submitNight(game, 'p0', { centre: 1 });
+
+  const view = show(game, 'p0');
+  assert.equal(view.byClass('role-card-front').length, 1);
+  assert.equal(view.byClass('role-card-name')[0].text, 'Robber');
+  assert.match(view.text, /Centre card 2 was Robber/);
 });
 
 test('the seer chooses between one player and two centre cards', () => {
@@ -360,6 +372,22 @@ test('the seer chooses between one player and two centre cards', () => {
   assert.match(dom.fixtures.view.text, /Selected 2\/2/);
 });
 
+test('the seer sees inspected roles as card fronts', () => {
+  const playerGame = dealt(['seer', 'werewolf', 'villager', 'robber', 'troublemaker', 'tanner']);
+  stepTo(playerGame, 'seer');
+  w.submitNight(playerGame, 'p0', { mode: 'player', target: 'p1' });
+  let view = show(playerGame, 'p0');
+  assert.equal(view.byClass('role-card-front').length, 1);
+  assert.equal(view.byClass('role-card-name')[0].text, 'Werewolf');
+
+  const centreGame = dealt(['seer', 'werewolf', 'villager', 'robber', 'troublemaker', 'tanner']);
+  stepTo(centreGame, 'seer');
+  w.submitNight(centreGame, 'p0', { mode: 'centre', centres: [0, 2] });
+  view = show(centreGame, 'p0');
+  assert.equal(view.byClass('role-card-front').length, 2);
+  assert.deepEqual(view.byClass('role-card-name').map((n) => n.text), ['Robber', 'Tanner']);
+});
+
 test('the troublemaker must pick two players, neither of them themselves', () => {
   const game = dealt(['troublemaker', 'werewolf', 'villager', 'seer', 'robber', 'tanner']);
   stepTo(game, 'troublemaker');
@@ -380,6 +408,8 @@ test('the drunk is not offered a way out', () => {
   const view = show(game, 'p0');
   assert.match(view.text, /You will not see it/);
   assert.equal(labelled(view, /Do nothing/).length, 0, 'the Drunk must swap');
+  assert.ok(view.byClass('centre-card').every((c) => c.className.includes('card-back')),
+    'the Drunk only sees card backs');
 });
 
 test('a redraw paints the time actually left, not the step\'s full length', () => {

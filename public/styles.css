@@ -582,11 +582,48 @@ input[type=text]:focus { outline-color: var(--gold); }
 .rules { border-radius: 5px; border: 1px solid #a78743; background: #101a35; box-shadow: inset 0 0 0 3px #080f22; }
 
 .centre-card {
-  border-radius: 5px; border-color: #70613f;
-  background: repeating-linear-gradient(45deg, #142348 0 5px, #0e1935 5px 10px);
+  position: relative; overflow: hidden; border-radius: 7px; border-color: #9d7b39;
   box-shadow: inset 0 0 0 2px #070d1d;
 }
-.centre-card.selected { border-color: var(--gold); background: #23375f; }
+.centre-card.card-back {
+  background: #071126 url('./art/card-back.webp') center / cover no-repeat;
+}
+.centre-card.card-back::after {
+  content: ""; position: absolute; inset: 3px; border: 1px solid rgba(255,226,142,.34);
+  border-radius: 4px; pointer-events: none;
+}
+.centre-card.selected {
+  border-color: #fff0ad; box-shadow: inset 0 0 0 2px #070d1d, 0 0 0 2px var(--gold),
+              0 0 18px rgba(240,201,107,.48);
+}
+.centre-n {
+  position: absolute; z-index: 2; top: 5px; left: 5px; display: grid; place-items: center;
+  width: 20px; height: 20px; border-radius: 50%; color: #fff0b8; background: rgba(3,8,20,.82);
+  border: 1px solid #b89142; font: 700 10px Georgia, serif;
+}
+.role-card-front {
+  width: min(112px, 100%); aspect-ratio: 3 / 4; padding: 8px 5px 7px; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid #d5ad55; border-radius: 7px; color: #fff0ba;
+  background: radial-gradient(circle at 50% 35%, #263c70, #101938 68%, #080e22);
+  box-shadow: inset 0 0 0 2px #070d1d, inset 0 0 0 3px rgba(240,201,107,.2),
+              0 4px 10px rgba(0,0,0,.35);
+}
+.role-card-front .role-portrait { width: 72px; height: 72px; }
+.role-card-name {
+  max-width: 100%; overflow: hidden; text-align: center; text-overflow: ellipsis;
+  font: 700 12px/1.1 Georgia, "Songti SC", serif;
+}
+.role-card-caption {
+  max-width: 100%; color: var(--muted); font-size: 9px; line-height: 1.1;
+  text-align: center; text-transform: uppercase; letter-spacing: .06em;
+}
+.centre-card.card-front { padding: 0; border: 0; background: none; box-shadow: none; }
+.centre-card.card-front > .role-card-front { width: 100%; height: 100%; }
+.inspected-finding { display: grid; gap: 8px; padding: 10px; }
+.inspected-finding > p { margin: 0; text-align: center; }
+.inspected-cards { display: flex; justify-content: center; gap: 10px; }
+.inspected-cards .role-card-front { flex: 0 1 112px; }
 .night .announce { color: #fff0bd; font-family: Georgia, "Songti SC", serif; font-size: 19px; }
 .clock-num { color: #fff2b0; font-family: Georgia, serif; text-shadow: 0 0 18px rgba(240,201,107,.45); }
 .bar { background: #050a19; border: 1px solid #574c36; height: 7px; }
