@@ -103,8 +103,11 @@ test('the update health check permits lobbies but blocks active games', async ()
     rooms.get(code).game.phase = 'over';
     assert.equal((await fetch(base + '/api/health/update')).status, 409, 'results remain protected while players read them');
 
-    clock += 5 * 60 * 1000;
-    assert.equal((await fetch(base + '/api/health/update')).status, 200, 'an untouched result stops blocking after the grace period');
+    clock += 2 * 60 * 1000;
+    assert.equal((await fetch(base + '/api/health/update')).status, 409, 'a result this fresh is still protected');
+
+    clock += 1 * 60 * 1000;   // three minutes since the room was last touched
+    assert.equal((await fetch(base + '/api/health/update')).status, 200, 'an untouched result stops blocking');
 
     rooms.get(code).game.phase = 'lobby';
     assert.equal((await fetch(base + '/api/health/update')).status, 200);
