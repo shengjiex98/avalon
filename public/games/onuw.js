@@ -19,6 +19,7 @@ let clockTimer = null;
 let spokenStep = null;
 let announcementAudio = null;
 let announcementQueue = [];
+let announcementGeneration = 0;
 
 const AUDIO_ROOT = new URL('../audio/onuw/', import.meta.url);
 
@@ -31,15 +32,26 @@ function audioPlayer() {
   return announcementAudio;
 }
 
-function stopAnnouncements() {
+function stopAnnouncements({ discardPlayer = false } = {}) {
+  announcementGeneration += 1;
   announcementQueue = [];
   if (!announcementAudio) return;
-  announcementAudio.pause();
-  announcementAudio.removeAttribute?.('src');
-  announcementAudio.load?.();
+  const audio = announcementAudio;
+  if (discardPlayer) {
+    // A source cancelled during a language change can still dispatch a late
+    // media event. Detach it completely so that event cannot advance the new
+    // language's queue or restart a call after the night has moved on.
+    audio.onended = null;
+    audio.onerror = null;
+    announcementAudio = null;
+  }
+  audio.pause();
+  audio.removeAttribute?.('src');
+  audio.load?.();
 }
 
-function playNextAnnouncement() {
+function playNextAnnouncement(generation = announcementGeneration) {
+  if (generation !== announcementGeneration) return;
   const audio = audioPlayer();
   if (!audio || app?.muted || !announcementQueue.length) return stopAnnouncements();
   audio.src = announcementQueue.shift();
@@ -47,7 +59,9 @@ function playNextAnnouncement() {
   // Autoplay policies can still refuse playback when a player has not touched
   // the page. The written call remains visible, and a rejection must never
   // interrupt the game frame that delivered it.
-  started?.catch?.(() => { announcementQueue = []; });
+  started?.catch?.(() => {
+    if (generation === announcementGeneration) stopAnnouncements();
+  });
 }
 
 const announcementUrl = (lang, phase, key) =>
@@ -60,9 +74,12 @@ const announcementUrl = (lang, phase, key) =>
 function unlockAnnouncements() {
   const audio = audioPlayer();
   if (!audio || announcementQueue.length || !audio.paused) return;
-  audio.src = new URL('unlock.wav', AUDIO_ROOT).href;
+  const generation = announcementGeneration;
+  const unlockUrl = new URL('unlock.wav', AUDIO_ROOT).href;
+  audio.src = unlockUrl;
   const started = audio.play();
   started?.then?.(() => {
+    if (generation !== announcementGeneration || audio !== announcementAudio || audio.src !== unlockUrl) return;
     audio.pause();
     audio.currentTime = 0;
   }).catch?.(() => {});
@@ -123,6 +140,14 @@ function announce(night) {
   stopAnnouncements();
   announcementQueue = clips;
   playNextAnnouncement();
+}
+
+/** Cancel the old language immediately and call only the current step again. */
+export function onLanguageChange() {
+  stopAnnouncements({ discardPlayer: true });
+  spokenStep = null;
+  const night = app.view?.night;
+  if (night) announce(night);
 }
 
 /**

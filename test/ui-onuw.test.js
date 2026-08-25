@@ -382,6 +382,24 @@ test('the drunk is not offered a way out', () => {
   assert.equal(labelled(view, /Do nothing/).length, 0, 'the Drunk must swap');
 });
 
+test('the language toggle replaces the active night recording', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  app.muted = false;
+  show(game, 'p0', 'zh');
+  onuwUi.onView();
+  const chinese = dom.AudioStub.instances.at(-1);
+  assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
+
+  dom.fixtures.langToggle.dispatch('click');
+  const english = dom.AudioStub.instances.at(-1);
+  assert.equal(chinese.paused, true);
+  assert.match(english.src, /audio\/onuw\/en\/wake-seer\.mp3$/);
+
+  app.view = { ...app.view, night: null };
+  onuwUi.onView();
+});
+
 test('a redraw paints the time actually left, not the step\'s full length', () => {
   // Tapping mute redraws the pane. It used to reinstate the countdown from the
   // last server frame, so the clock jumped back to full for a moment.
