@@ -96,7 +96,14 @@ function roleContent() {
     v.knowledge.length
       ? h('div', { class: 'players' }, v.knowledge.map((k) => h('div', { class: 'player' },
           h('span', { class: 'name', text: nameOf(k.playerId) }),
-          h('span', { class: `tag ${k.hint === 'evil' ? 'evil' : ''}`, text: T(`know.${k.hint}`) }),
+          // "Evil" is the sigil above, not a word; a hint that names two roles
+          // has nothing to draw and stays as text.
+          k.hint === 'evil'
+            ? h('span', {
+                class: 'faction-sigil mini evil', text: '☾', role: 'img',
+                title: T('know.evil'), 'aria-label': T('know.evil'),
+              })
+            : h('span', { class: 'tag', text: T(`know.${k.hint}`) }),
         )))
       : h('p', { class: 'muted', text: T('know.nothing') }),
   );
@@ -165,10 +172,10 @@ function paneBoard() {
         return h('div', { class: 'player' },
           h('span', { class: 'name', text: p.name }),
           h('span', {
-            class: `tag ${approved ? 'ok' : 'evil'}`,
+            class: `tag verdict ${approved ? 'ok' : 'evil'}`, role: 'img',
             title: T(approved ? 'vote.approve' : 'vote.reject'),
             'aria-label': T(approved ? 'vote.approve' : 'vote.reject'),
-            text: T(approved ? 'vote.approve' : 'vote.reject'),
+            text: approved ? '✓' : '✕',
           }),
         );
       })),
@@ -226,12 +233,12 @@ function paneVote() {
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.vote') }),
     h('p', { text: T('vote.team', { names: namesOf(v.team) }) }),
-    playerList({ tags: (p) => [
-      p.onTeam ? h('span', { class: 'tag team', text: T('phase.quest') }) : null,
-      // During voting, reveal only that a choice is locked in. The actual
-      // approve/reject token appears for everyone once the vote resolves.
-      p.hasVoted ? h('span', { class: 'tag status-glyph', title: T('vote.voted'), text: T('vote.voted') }) : null,
-    ].filter(Boolean) }),
+    // The proposed team already wears the sword the list draws for it. During
+    // voting, reveal only that a choice is locked in — the tick or cross
+    // appears for everyone once the vote resolves.
+    playerList({ tags: (p) => (p.hasVoted
+      ? [h('span', { class: 'tag ok status-glyph', title: T('vote.voted'), text: '◆' })]
+      : []) }),
     voted
       ? h('p', { class: 'muted', text: T('vote.cast', { names: waitingNames() }) })
       : h('div', { class: 'stack' },
@@ -298,7 +305,7 @@ function paneOver() {
       rolePortrait(p.role, { small: true }),
       h('span', { class: 'seat', text: p.seat + 1 }),
       h('span', { class: 'name', text: p.name }),
-      h('span', { class: 'tag', text: T(`role.${p.role}`) }),
+      h('span', { class: `tag ${sideOfRole(p.role)}`, text: T(`role.${p.role}`) }),
       h('span', {
         class: `faction-sigil mini ${sideOfRole(p.role)}`,
         title: T(`side.${sideOfRole(p.role)}`),

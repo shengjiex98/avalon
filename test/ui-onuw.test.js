@@ -188,7 +188,7 @@ test('players inspect their card and mark ready before the countdown appears', (
   view = show(game, 'p0');
   assert.match(view.text, /Ready\. Waiting for: 张三, Cai/);
   assert.equal(labelled(view, /^Ready$/).length, 0);
-  assert.equal(view.byClass('tag').filter((tag) => tag.text === '✓').length, 1);
+  assert.equal(view.byClass('tag').filter((tag) => tag.text === '◆').length, 1);
 
   w.confirmRole(game, 'p1', { now });
   w.confirmRole(game, 'p2', { now });
@@ -214,7 +214,7 @@ test('the night screen never says who is awake or acting', () => {
   stepTo(game, 'seer');
   for (const p of game.players) {
     const view = show(game, p.id);
-    assert.ok(!/Still acting|Waiting for|✓/.test(view.text), `${p.name}'s screen names someone`);
+    assert.ok(!/Still acting|Waiting for|◆/.test(view.text), `${p.name}'s screen names someone`);
   }
 });
 
@@ -510,8 +510,12 @@ test('the end screen explains the night and the verdict', () => {
   assert.match(view.text, /Village win/);
   assert.match(view.text, /Killed: Cai/);
   assert.match(view.text, /Cai robbed 张三/, 'the night is reconstructed');
-  assert.match(view.text, /dealt Robber/);
-  assert.match(view.text, /ended Werewolf/);
+  // The seat reads as symbols; the sentence stays on as the accessible name.
+  const cai = view.byClass('player').find((row) => row.byClass('name')[0]?.text === 'Cai');
+  const card = cai.byClass('tag')[0];
+  assert.match(card.text, /Robber\s*→\s*Werewolf/, 'the card that arrived, and the one that stayed');
+  assert.equal(card.getAttribute('aria-label'), 'dealt Robber → ended Werewolf');
+  assert.match(cai.byClass('tag')[1].text, /☞\s*Ann/, 'and who they pointed at');
   // The centre is finally face up.
   assert.ok(view.byClass('centre-card').every((c) => !c.text.includes('?')));
   assertNoRawKeys(view, 'end screen');

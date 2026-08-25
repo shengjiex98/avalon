@@ -141,12 +141,19 @@ button.player:disabled { cursor: default; }
   color: var(--muted); white-space: nowrap; max-width: 100%;
   overflow: hidden; text-overflow: ellipsis;
 }
-.tag.leader { border-color: var(--gold); color: var(--gold); }
+.tag.leader, .tag.gold { border-color: var(--gold); color: var(--gold); }
 .tag.team { border-color: var(--good); color: var(--good); }
 .tag.evil { border-color: var(--evil); color: var(--evil); }
 .tag.good { border-color: var(--good); color: var(--good); }
 .tag.you { border-color: var(--text); color: var(--text); }
 .tag.ok { border-color: var(--ok); color: var(--ok); }
+/* A resolved vote is a tick or a cross, sized to be read down a column. */
+.tag.verdict { font-size: 13px; padding: 1px 8px; }
+/* A card that changed hands during the night: what it was, an arrow, what it
+   became. The card it ended on carries the chip's colour; the rest recedes. */
+.tag .was, .tag .arrow { color: var(--muted); }
+.tag .arrow { margin-right: 4px; }
+.tag .was + .arrow { margin: 0 4px; }
 
 .board { display: flex; gap: 8px; justify-content: space-between; }
 .quest {
@@ -175,6 +182,9 @@ button.player:disabled { cursor: default; }
 .side-evil { color: var(--evil); }
 
 .log { max-height: 240px; overflow-y: auto; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
+/* The end screen's account of the night is content, not a journal to scroll:
+   an inner scroller there is the one thing a squeezed card can collapse. */
+.night-log { max-height: none; overflow: visible; }
 .log div { padding-bottom: 6px; border-bottom: 1px dashed rgba(255,255,255,.06); }
 
 .banner { border-radius: 12px; padding: 14px 16px; font-weight: 600; }
@@ -472,7 +482,7 @@ input[type=text]:focus { outline-color: var(--gold); }
 .tag {
   padding: 2px 6px; border-radius: 3px; font-size: 10px; background: rgba(4,9,22,.55);
 }
-.tag.leader { color: var(--gold); border-color: var(--gold); }
+.tag.leader, .tag.gold { color: var(--gold); border-color: var(--gold); }
 .tag.team, .tag.good { color: #7ce2ff; border-color: #4eb6d8; }
 .tag.evil { color: #ff9aa5; border-color: #d65566; }
 .tag.ok { color: #8ff0b7; border-color: #68cf9a; }
