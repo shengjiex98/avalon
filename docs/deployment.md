@@ -135,6 +135,8 @@ for up to date. A server that is down or reports no commit is left alone, so an
 unreadable commit cannot turn the hourly timer into an hourly restart. If the tests fail it
 restores the previous commit, so a bad `main` cannot take the server down. The
 checkout it manages is deploy-only: it discards local edits without warning.
+See [developing on the server host](#developing-on-the-server-host) for how to
+work on the same machine anyway.
 
 ### Repository configuration
 
@@ -154,6 +156,30 @@ systemctl --user enable --now avalon-listen
 Because `API_BASE` doubles as the health URL, the server has to be reachable
 from the internet for CI to confirm a deployment. That is already true here via
 `tailscale funnel`; a tailnet-only server would need a different proof.
+
+### Developing on the server host
+
+`~/avalon` belongs to the updater. A deployment can land seconds after a commit
+reaches `main`, and the hourly timer runs whether or not anyone is watching, so
+uncommitted work left there is discarded without warning.
+
+Give development its own directory instead:
+
+```bash
+git worktree add ~/avalon-dev -b some-feature
+```
+
+One clone, one object store, shared history, and a working tree the updater
+never touches. Git also refuses to check out a branch that is already active in
+another worktree, which rules out the sharper version of this failure: if the
+deployment checkout is sitting on a feature branch when a reset lands, that
+branch is moved instead, and the running server ends up serving code from a
+commit its own tree no longer points at.
+
+Keep `~/avalon` as the primary worktree -- the systemd units address it by path
+-- and create the development one alongside. A second full clone works too, with
+stronger isolation and a second remote to keep in step; at this size the
+worktree is less to think about.
 
 ### Hourly fallback
 
