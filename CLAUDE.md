@@ -5,6 +5,21 @@ deployment checkout, verification, and the constraints to know before writing
 code. Read it first; everything there applies here. This file adds only what is
 specific to Claude Code.
 
+## Merging
+
+Open a PR and merge it. Do not stall on whether a game is in progress, and do
+not ask the user to pick a safe moment: `deploy/update.sh` gates the deployment
+itself, rolls back a commit whose tests fail, and retries hourly, as
+[AGENTS.md](AGENTS.md) describes. Low friction is the intended design, not a
+corner being cut.
+
+One mechanical snag when the session is in a worktree: `gh pr merge
+--delete-branch` ends in `fatal: 'main' is already checked out at ...`, because
+gh tries to switch the *deployment* checkout back to `main`. The merge itself
+has already gone through at that point — confirm with `gh pr view <n> --json
+state` rather than retrying, and drop the remote branch with `gh api -X DELETE
+repos/<owner>/<repo>/git/refs/heads/<branch>`.
+
 ## Worktrees
 
 On the game server host, `~/avalon` is a live deployment that
