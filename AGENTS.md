@@ -63,3 +63,13 @@ briefly disagree during every release.
 **Pushing to `main` deploys.** There is no separate release step. A merge
 reaches the live server in seconds, so `main` is expected to be deployable at
 all times.
+
+**Merge without waiting for a quiet moment.** The protection is server-side and
+automatic, so do not check `activeGames` before merging, and do not hold a merge
+back until a game ends. `deploy/update.sh` runs `deploy/gate.sh` *before* it
+touches the working tree: a game in progress exits 75, publishes `busy`, and
+leaves the deployment exactly where it was, and the hourly timer retries until
+the table is free. It then runs the full test suite on the target commit and
+resets back to the previous one if the tests fail or the Node version is not
+v24. A merge is recoverable in a way that a hand-run `systemctl restart` is not
+— that is what the `activeGames` check above is for, and it does not apply here. Open the PR, merge it, and let the host sort out the timing.
