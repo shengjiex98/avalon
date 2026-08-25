@@ -75,6 +75,38 @@ test('advertises one API protocol to the supported Pages client', async () => {
   });
 });
 
+test('the update health check permits lobbies but blocks active games', async () => {
+  const rooms = new Rooms();
+  const code = rooms.create('avalon');
+
+  await withServer(async (base) => {
+    const lobby = await fetch(base + '/api/health/update');
+    assert.equal(lobby.status, 200);
+    const lobbyHealth = await lobby.json();
+    assert.equal(lobbyHealth.rooms, 1);
+    assert.equal(lobbyHealth.activeGames, 0);
+    assert.equal(lobbyHealth.updateSafe, true);
+
+    rooms.get(code).game.phase = 'team';
+
+    const live = await fetch(base + '/api/health');
+    assert.equal(live.status, 200, 'an active game must not make liveness fail');
+    assert.equal((await live.json()).updateSafe, false);
+
+    const blocked = await fetch(base + '/api/health/update');
+    assert.equal(blocked.status, 409);
+    const blockedHealth = await blocked.json();
+    assert.equal(blockedHealth.activeGames, 1);
+    assert.equal(blockedHealth.updateSafe, false);
+
+    rooms.get(code).game.phase = 'over';
+    assert.equal((await fetch(base + '/api/health/update')).status, 409, 'results remain protected until play again');
+
+    rooms.get(code).game.phase = 'lobby';
+    assert.equal((await fetch(base + '/api/health/update')).status, 200);
+  }, { rooms });
+});
+
 test('serves pre-generated announcement audio with the right media type', async () => {
   await withServer(async (base) => {
     const res = await fetch(base + '/audio/onuw/zh/wake-seer.mp3');

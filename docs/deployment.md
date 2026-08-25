@@ -23,7 +23,10 @@ minute and offer to reload after a new deployment.
 State is stored in memory. Restarting the process ends games in progress, and
 rooms idle for six hours are removed. There is no database or state to back up.
 
-Use `/api/health` as the container or service liveness check.
+Keep `/api/health` as the container or service liveness check. Immediately
+before an automatic update, call `/api/health/update`. A `409` response means a
+game is active and the updater should retry later. Lobby rooms do not block an
+update.
 
 SSE response buffering must be disabled for `/api/rooms/*/events`. For nginx,
 use `proxy_buffering off;`; otherwise clients will not receive room updates

@@ -50,6 +50,15 @@ export class Rooms {
     return this.rooms.has(String(code || '').toUpperCase());
   }
 
+  /** Rooms outside the lobby contain a game session that a restart would lose. */
+  activeGameCount() {
+    let count = 0;
+    for (const room of this.rooms.values()) {
+      if (room.game.phase !== 'lobby') count += 1;
+    }
+    return count;
+  }
+
   subscribe(code, playerId, send) {
     const room = this.get(code);
     const sub = { playerId, send };
