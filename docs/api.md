@@ -48,6 +48,7 @@ Automatic deployment systems should use `/api/health` for ordinary liveness
 checks and call `/api/health/update` immediately before replacing the process.
 A `409` response means at least one game has started and deployment should be
 retried later. Rooms that are still in the lobby never block an update. A
-finished game blocks only while its result is fresh: five minutes after the
+finished game blocks only while its result is fresh: three minutes after the
 last interaction with the room, the results screen stops holding up a
-deployment.
+deployment. The window runs from the last interaction rather than from the
+final move, so a table still reading its result keeps renewing it.

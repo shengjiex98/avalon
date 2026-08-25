@@ -5,7 +5,7 @@ import { DEFAULT_GAME, GAMES, gameFor } from './games/index.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
 const IDLE_MS = 6 * 60 * 60 * 1000; // rooms vanish six hours after the last touch
-const OVER_GRACE_MS = 5 * 60 * 1000; // finished games stay protected while players read results
+const OVER_GRACE_MS = 3 * 60 * 1000; // finished games stay protected while players read results
 
 export class Rooms {
   constructor({ now = Date.now } = {}) {
@@ -55,6 +55,8 @@ export class Rooms {
    * Rooms holding something a restart would lose: a game in play, or one that
    * just finished and whose result is still on screen. A lobby costs nothing to
    * recreate, and a result nobody has touched for a few minutes is abandoned.
+   * The window runs from the last touch, not from the final move, so a table
+   * still reading its result keeps renewing it.
    */
   activeGameCount() {
     let count = 0;
