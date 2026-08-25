@@ -17,7 +17,22 @@ export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 
 port_override="${PORT:-}"                          # an explicit PORT wins over the host file
 [ -f "$HOME/.config/avalon.env" ] && . "$HOME/.config/avalon.env"
-[ -n "$port_override" ] && { PORT="$port_override"; export PORT; }
+[ -n "$port_override" ] && PORT="$port_override"
+PORT="${PORT:-8420}"; export PORT
+
+# What the live process is serving, which is not always what the working tree
+# says: a tree moved by anything other than this script leaves the old code
+# running, and comparing only the tree would call that "already current" and
+# never restart. Empty when the server is down or is not a git checkout -- both
+# cases deliberately do nothing here, so an unreadable commit cannot turn the
+# hourly timer into an hourly restart.
+running_commit() {
+  node -e '
+    fetch(`http://127.0.0.1:${process.env.PORT}/api/health`)
+      .then((r) => r.json()).then((h) => console.log(h.commit ?? ""))
+      .catch(() => console.log(""));
+  ' 2>/dev/null || true
+}
 
 # Report progress to whoever triggered this. Deliberately incapable of failing
 # the deployment: an unreachable notifier turns one problem into two, and the
@@ -31,7 +46,14 @@ publish() {
 git fetch --quiet origin main
 previous=$(git rev-parse HEAD)
 target=$(git rev-parse origin/main)
-[ "$previous" = "$target" ] && exit 0
+running=$(running_commit)
+
+# Nothing to do only when the tree *and* the process are both on the target.
+if [ "$previous" = "$target" ]; then
+  [ -z "$running" ] && exit 0            # cannot tell; leave a healthy server alone
+  [ "$running" = "$target" ] && exit 0
+  echo "tree is current but $running is running; restarting" >&2
+fi
 
 # Before touching the working tree, not merely before restarting: static files
 # are read from disk per request and /version.json is derived from their mtimes,
@@ -43,18 +65,20 @@ if [ "$gate" -eq 75 ]; then
 fi
 [ "$gate" -eq 0 ] || exit "$gate"   # a broken gate is not a game in progress
 
-git reset --hard --quiet "$target"
+# Only when the tree actually has to move: an unconditional reset would discard
+# a working tree that is already correct, for no gain.
+[ "$previous" = "$target" ] || git reset --hard --quiet "$target"
 
 case "$(node -v)" in
   v24.*) ;;
   *) echo "unexpected node $(node -v); staying on $previous" >&2
-     git reset --hard --quiet "$previous"
+     [ "$previous" = "$target" ] || git reset --hard --quiet "$previous"
      publish "failed $target node"
      exit 1 ;;
 esac
 
 if ! node --test "test/**/*.test.js" >/dev/null 2>&1; then
-  git reset --hard --quiet "$previous"
+  [ "$previous" = "$target" ] || git reset --hard --quiet "$previous"
   echo "tests failed on $target; stayed on $previous" >&2
   publish "failed $target tests"
   exit 1

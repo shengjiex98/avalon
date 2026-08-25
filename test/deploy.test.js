@@ -106,6 +106,21 @@ test('the deployment listener cannot be talked into running anything', async () 
   assert.doesNotMatch(listener, /shell:\s*true|\bexec\(|execSync/, 'no shell may see a message');
 });
 
+test('a current tree with stale code running still gets restarted', async () => {
+  const update = await read('../deploy/update.sh');
+
+  // Comparing only the tree calls a stale process "already current" and never
+  // restarts it -- the tree can move without this script (a manual pull, or a
+  // checkout whose restart failed).
+  assert.match(update, /running=\$\(running_commit\)/);
+  assert.match(update, /api\/health/);
+  assert.match(update, /\[ -z "\$running" \] && exit 0/, 'an unknown commit must not force a restart');
+
+  // A reset when the tree is already right buys nothing and destroys anything
+  // uncommitted sitting in it.
+  assert.match(update, /\[ "\$previous" = "\$target" \] \|\| git reset --hard --quiet "\$target"/);
+});
+
 test('the update gate asks the server before anything is replaced', async () => {
   const gate = await read('../deploy/gate.sh');
   const update = await read('../deploy/update.sh');

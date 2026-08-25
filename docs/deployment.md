@@ -127,7 +127,12 @@ deployed, so it stays usable if the server later ships as a container image.
 `AVALON_FORCE=1` skips it, for when a restart cannot wait.
 
 `deploy/update.sh` gates first, then fast-forwards the checkout, checks the Node
-major version, runs the tests, and restarts the service. If the tests fail it
+major version, runs the tests, and restarts the service. It compares the commit
+the *running server* reports as well as the one in the working tree, so a tree
+moved by anything other than this script -- a manual pull, or a checkout whose
+restart failed -- still gets the process restarted rather than being mistaken
+for up to date. A server that is down or reports no commit is left alone, so an
+unreadable commit cannot turn the hourly timer into an hourly restart. If the tests fail it
 restores the previous commit, so a bad `main` cannot take the server down. The
 checkout it manages is deploy-only: it discards local edits without warning.
 
