@@ -515,9 +515,12 @@ input[type=text]:focus { outline-color: var(--gold); }
 /* Panels size to their own content; the last one absorbs whatever space is
    left, so a short pane still fills the screen. A percentage min-height
    instead clamps a panel to the space left over, and its content spills
-   out over the panel below. */
+   out over the panel below. The panel that grows packs its rows at the top,
+   or the leftover height is shared out among them and every button and row
+   inside comes out oversized. */
 .phase-area > * { flex: 0 0 auto; }
 .phase-area > :last-child { flex-grow: 1; }
+.phase-area > .card { align-content: start; }
 .phase-area .row { flex-wrap: nowrap; }
 .phase-area .banner + p { margin-top: 7px; }
 .game-utility { flex: 0 0 auto; }
