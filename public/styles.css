@@ -387,7 +387,7 @@ body::before {
   display: flex; flex-direction: column; gap: 8px;
 }
 .phase-area, .lobby-scroll { min-height: 0; flex: 1 1 auto; overflow-y: auto; scrollbar-width: thin; }
-.phase-area { display: grid; align-content: start; gap: 8px; }
+.phase-area { display: flex; flex-direction: column; gap: 8px; }
 .lobby-scroll { display: grid; align-content: start; gap: 9px; padding: 1px; }
 
 .card {
@@ -512,7 +512,12 @@ input[type=text]:focus { outline-color: var(--gold); }
 .pip { width: 9px; height: 9px; border-radius: 1px; transform: rotate(45deg); }
 .banner { padding: 9px 12px; border-radius: 4px; }
 
-.phase-area > .card { min-height: 100%; }
+/* Panels size to their own content; the last one absorbs whatever space is
+   left, so a short pane still fills the screen. A percentage min-height
+   instead clamps a panel to the space left over, and its content spills
+   out over the panel below. */
+.phase-area > * { flex: 0 0 auto; }
+.phase-area > :last-child { flex-grow: 1; }
 .phase-area .row { flex-wrap: nowrap; }
 .phase-area .banner + p { margin-top: 7px; }
 .game-utility { flex: 0 0 auto; }
