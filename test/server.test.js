@@ -146,11 +146,20 @@ test('a room round-trips create, join and reconnect', async () => {
   await withServer(async (base) => {
     const { code } = await (await post(base, '/api/rooms')).json();
     assert.match(code, /^[A-Z2-9]{4}$/);
-    assert.deepEqual(await (await fetch(`${base}/api/rooms/${code}`)).json(), { exists: true });
-    assert.deepEqual(await (await fetch(`${base}/api/rooms/ZZZZ`)).json(), { exists: false });
+    assert.deepEqual(await (await fetch(`${base}/api/rooms/${code}`)).json(), { exists: true, seated: false });
+    assert.deepEqual(await (await fetch(`${base}/api/rooms/ZZZZ`)).json(), { exists: false, seated: false });
 
     const first = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
     assert.ok(first.playerId);
+
+    // What a dropped browser asks before it reopens its stream: the room is
+    // here and so is my seat, so reconnecting is worth trying.
+    const seated = `${base}/api/rooms/${code}?playerId=${first.playerId}`;
+    assert.deepEqual(await (await fetch(seated)).json(), { exists: true, seated: true });
+    assert.deepEqual(
+      await (await fetch(`${base}/api/rooms/${code}?playerId=someone-else`)).json(),
+      { exists: true, seated: false },
+    );
 
     // Rejoining with the stored id keeps one seat, not two.
     const again = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann', playerId: first.playerId })).json();

@@ -41,6 +41,16 @@ SSE response buffering must be disabled for `/api/rooms/*/events`. For nginx,
 use `proxy_buffering off;`; otherwise clients will not receive room updates
 promptly.
 
+What a restart looks like in an open browser: the stream drops, the banner says
+the connection was lost, and the client retries with a backoff -- asking
+`/api/rooms/:code?playerId=` each time, so it can tell a server that is still
+booting from a room the restart did not restore. A restored room reconnects
+without anyone touching the page, and a room that is gone says so once and
+returns to the home screen rather than promising a reconnection that cannot
+happen. Reloading for a new client build keeps the seat: the room code lives in
+the URL fragment and in `localStorage`, and only the server saying the seat is
+gone gives it up.
+
 ## Remote players and HTTPS
 
 Use HTTPS when players connect remotely. Common options are:

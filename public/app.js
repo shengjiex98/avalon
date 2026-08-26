@@ -6,6 +6,8 @@ import { DEFAULT_GAME, GAME_IDS, gameFor } from './games/index.js';
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
 const VERSION_CHECK_MS = 60_000;
+const RETRY_STEPS = 6;              // 0.5s, 1s, 2s … 16s, then 16s for as long as it takes
+const PROBE_RETRY_MS = 15_000;
 const API_PROTOCOL = 1;
 const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 
@@ -26,6 +28,7 @@ const app = {
   seerMode: 'player',
   muted: Boolean(localStorage.getItem('avalon.muted')),
   everConnected: false,   // distinguishes "connecting" from "dropped"
+  rejoining: false,       // holding a seat from a previous page, not a fresh join
   testMode: Boolean(localStorage.getItem('avalon.test')),
   seats: [],              // every seat this device holds, for testing alone
   stepEndsAt: 0,
@@ -56,6 +59,10 @@ const store = {
   playerFor: (code) => localStorage.getItem(`avalon.player.${code}`),
   setPlayer: (code, id) => localStorage.setItem(`avalon.player.${code}`, id),
   clearPlayer: (code) => localStorage.removeItem(`avalon.player.${code}`),
+  // The room the last screen was in. The URL fragment says the same thing, but
+  // it is the one part of the session a reload can arrive without.
+  get room() { return localStorage.getItem('avalon.room'); },
+  set room(code) { code ? localStorage.setItem('avalon.room', code) : localStorage.removeItem('avalon.room'); },
 };
 
 function resolveServer() {
@@ -79,6 +86,8 @@ function normaliseServer(raw) {
 }
 
 async function probeServer() {
+  clearTimeout(probeTimer);
+  probeTimer = null;
   app.serverStatus = 'checking';
   app.serverProtocol = null;
   try {
@@ -93,6 +102,27 @@ async function probeServer() {
   return app.serverStatus;
 }
 
+let probeTimer = null;
+
+/**
+ * A server that is down during a deployment used to strand the client on the
+ * "which server?" card until someone reloaded. Keep asking instead, quietly,
+ * and pick the session back up the moment it answers.
+ */
+function watchServer() {
+  clearTimeout(probeTimer);
+  probeTimer = null;
+  if (app.serverStatus !== 'unreachable') return;
+  probeTimer = setTimeout(async () => {
+    probeTimer = null;
+    if (app.serverStatus !== 'unreachable') return;
+    if (await probeServer() === 'ready' && app.code && !app.connected) void recover();
+    safeRender();
+    watchServer();
+  }, PROBE_RETRY_MS);
+  probeTimer?.unref?.();
+}
+
 // ---------------------------------------------------------------- transport
 
 async function api(path, options = {}) {
@@ -100,6 +130,7 @@ async function api(path, options = {}) {
   try {
     res = await fetch(app.server + path, {
       method: options.body ? 'POST' : 'GET',
+      cache: 'no-store',
       headers: options.body ? { 'content-type': 'application/json' } : undefined,
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
@@ -122,6 +153,9 @@ function send(type, extra = {}) {
 }
 
 function connect() {
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  lastAttempt = Date.now();
   app.source?.close();
   const source = new EventSource(`${app.server}/api/rooms/${app.code}/events?playerId=${encodeURIComponent(app.playerId)}`);
   app.source = source;
@@ -151,12 +185,115 @@ function connect() {
     render();
   };
   source.onerror = () => {
-    app.connected = false;
+    if (app.source !== source) return;      // a stream we already replaced is not news
     source.close();
-    render();
-    app.retry = Math.min(app.retry + 1, 6);
-    setTimeout(connect, 500 * 2 ** (app.retry - 1));
+    app.connected = false;
+    // Arm the retry before painting. A game panel that throws while drawing the
+    // dropped state must not be what ends the reconnect loop: that is the
+    // difference between a deployment restart the players never notice and a
+    // "connection lost" banner that stays up until everyone reloads.
+    scheduleReconnect();
+    safeRender();
   };
+}
+
+let reconnectTimer = null;
+let recovering = false;
+let lastAttempt = 0;
+
+/** The redraw is best-effort everywhere reconnection depends on it. */
+function safeRender() {
+  try { render(); } catch (err) { console.error(err); }
+}
+
+function scheduleReconnect(delay) {
+  if (reconnectTimer || !app.code) return;
+  app.retry = Math.min(app.retry + 1, RETRY_STEPS);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void recover();
+  }, delay ?? 500 * 2 ** (app.retry - 1));
+  reconnectTimer?.unref?.();
+}
+
+/**
+ * One attempt at getting back into the room. Reopening the stream is only the
+ * right move while the room and the seat are both still there; after a restart
+ * that started empty they are not, and every blind attempt failed identically,
+ * forever, behind a banner that promised it was reconnecting. So ask first, and
+ * act on the answer: wait out a server that is still down, re-take a seat the
+ * server no longer knows about, and say so plainly when the room itself is gone.
+ */
+async function recover() {
+  if (recovering || !app.code || app.connected) return;
+  recovering = true;
+  const code = app.code;
+  try {
+    let status;
+    try {
+      status = await api(`/api/rooms/${code}?playerId=${encodeURIComponent(app.playerId)}`);
+    } catch (err) {
+      if (err.key === 'network') {
+        scheduleReconnect();               // still unreachable: keep the seat and wait
+        return safeRender();
+      }
+      status = {};                         // an older server has no answer; just try the stream
+    }
+    if (app.code !== code) return;         // the player moved on while we were asking
+
+    if (status.exists === false) return dropRoom('room.gone');
+    if (status.seated === false && !(await retakeSeat(code))) return;
+    if (app.code !== code) return;
+    connect();
+    safeRender();
+  } catch (err) {
+    console.error(err);
+    scheduleReconnect();
+  } finally {
+    recovering = false;
+  }
+}
+
+/** Sit back down in a room the server still has but no longer seats us in. */
+async function retakeSeat(code) {
+  try {
+    await api(`/api/rooms/${code}/join`, {
+      body: { name: store.nameFor(code, app.playerId), playerId: app.playerId },
+    });
+    return true;
+  } catch (err) {
+    if (err.key === 'network') { scheduleReconnect(); safeRender(); return false; }
+    dropRoom('room.seatLost');
+    return false;
+  }
+}
+
+/** Wake up on any sign of life: a phone suspends timers, and a backoff with it. */
+function wake() {
+  if (!app.code || app.connected) return;
+  if (globalThis.document?.visibilityState === 'hidden') return;
+  if (Date.now() - lastAttempt < 1000) return;   // an attempt is already in flight
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  app.retry = 0;
+  scheduleReconnect(0);
+}
+
+/** Let go of a room, either because it ended or because the player said so. */
+function dropRoom(reasonKey) {
+  const code = app.code;
+  clearTimeout(reconnectTimer);
+  reconnectTimer = null;
+  app.source?.close();
+  app.source = null; app.view = null; app.playerId = null;
+  app.infoPopup = null; app.seats = []; app.retry = 0;
+  app.connected = false; app.everConnected = false; app.rejoining = false;
+  if (code) { store.clearPlayer(code); store.clearSeats(code); }
+  store.room = null;
+  app.code = null;
+  location.hash = '';
+  safeRender();
+  if (reasonKey) toast(T(reasonKey, { code }));
 }
 
 // ---------------------------------------------------------------- entry
@@ -176,7 +313,9 @@ async function joinRoom(code, name) {
     });
     app.code = code;
     app.playerId = res.playerId;
+    app.rejoining = false;
     store.setPlayer(code, res.playerId);
+    store.room = code;
     rememberSeat(code, res.playerId, name);
     location.hash = `#/${code}`;
     connect();
@@ -202,19 +341,7 @@ function readName() {
 }
 
 function leaveRoom() {
-  send('leave').finally(() => {
-    app.source?.close();
-    store.clearPlayer(app.code);
-    app.source = null; app.view = null; app.playerId = null;
-    app.infoPopup = null;
-    store.clearSeats(app.code);
-    app.seats = [];
-    location.hash = '';
-    app.code = null;
-    app.connected = false;
-    app.everConnected = false;
-    render();
-  });
+  send('leave').finally(() => dropRoom());
 }
 
 // ---------------------------------------------------------------- render
@@ -239,7 +366,8 @@ function render() {
 
   const view = el('view');
   scrollPanes = [];
-  view.replaceChildren(...(app.code && app.view ? screenGame() : screenHome()), paneTestMode());
+  const screen = app.code ? (app.view ? screenGame() : screenRejoining()) : screenHome();
+  view.replaceChildren(...screen, paneTestMode());
   restoreScroll();
 }
 
@@ -408,6 +536,23 @@ function screenHome() {
   ].filter(Boolean);
 }
 
+/**
+ * We hold a seat but have no frame to draw yet -- a reload, or a server that is
+ * still coming back. The join form used to sit here, which read as being thrown
+ * out of the room; this says what is actually happening, and keeps the way out
+ * for a player who would rather not wait.
+ */
+function screenRejoining() {
+  return [h('div', { class: 'card stack' },
+    h('h2', { text: T(app.rejoining ? 'room.rejoining' : 'room.joining', { code: app.code }) }),
+    h('p', { class: 'muted', text: T('room.rejoiningHint') }),
+    h('button', {
+      class: 'btn ghost', id: 'forgetRoom', type: 'button',
+      onclick: () => dropRoom(),
+    }, T('room.forget')),
+  )];
+}
+
 function paneServer() {
   const submit = async () => {
     const value = normaliseServer(el('serverInput').value);
@@ -416,6 +561,8 @@ function paneServer() {
     store.server = value;
     render();
     await probeServer();
+    if (app.serverStatus === 'ready' && app.code && !app.connected) void recover();
+    watchServer();
     render();
   };
 
@@ -657,28 +804,60 @@ export async function main() {
   window.addEventListener('hashchange', () => {
     if (!app.code) render();
   });
+  // Anything that suggests the world came back: retry now rather than sitting
+  // out the rest of a backoff the browser may have frozen anyway.
+  window.addEventListener('online', wake);
+  window.addEventListener('focus', wake);
+  globalThis.document?.addEventListener?.('visibilitychange', wake);
   startUpdateChecks();
 
   app.server = resolveServer();
   render();
   await probeServer();
+  watchServer();
 
-  const code = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
+  const code = roomOnLoad();
   const playerId = code && store.playerFor(code);
-  if (app.serverStatus === 'ready' && code && playerId) {
+  if (app.serverStatus !== 'incompatible' && code && playerId) {
     app.code = code;
     app.playerId = playerId;
     app.seats = store.seatsFor(code);
-    try {
-      await api(`/api/rooms/${code}/join`, { body: { name: store.nameFor(code, playerId), playerId } });
-      connect();
-    } catch {
-      store.clearPlayer(code);
-      app.code = null;
-      app.playerId = null;
-    }
+    app.rejoining = true;
+    store.room = code;
+    location.hash = `#/${code}`;   // a reload that lost the fragment keeps the room
+    render();
+    if (app.serverStatus === 'ready') await rejoin(code, playerId);
+    else scheduleReconnect(0);     // the server is down; the loop will catch it coming back
   }
   render();
+}
+
+/**
+ * The room this browser was in. The fragment is the shared, linkable answer;
+ * the stored one covers a reload that arrives without it, which is how an
+ * update-and-reload could drop a player back onto the join form mid-game.
+ */
+function roomOnLoad() {
+  const fromHash = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
+  if (fromHash) return fromHash;
+  const remembered = (store.room ?? '').toUpperCase();
+  return /^[A-Z0-9]{4,8}$/.test(remembered) && store.playerFor(remembered) ? remembered : undefined;
+}
+
+/**
+ * Take the seat back after a reload. Only an answer from the server that the
+ * seat is really gone gives it up: a room that is merely unreachable for a
+ * moment must not cost a player their place in a running game, because nothing
+ * would let them back in afterwards.
+ */
+async function rejoin(code, playerId) {
+  try {
+    await api(`/api/rooms/${code}/join`, { body: { name: store.nameFor(code, playerId), playerId } });
+    connect();
+  } catch (err) {
+    if (err.key === 'network' || err.key === 'serverError') scheduleReconnect(0);
+    else dropRoom(err.key === 'noSuchRoom' ? 'room.gone' : 'room.seatLost');
+  }
 }
 
 export { app, render };

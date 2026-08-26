@@ -7,7 +7,7 @@ The browser uses JSON actions and one server-sent event stream per player.
 | `GET` | `/api/health` | Liveness, client protocol compatibility, and the commit being served. |
 | `GET` | `/api/health/update` | Deployment gate; returns `409` while a game is outside its lobby. |
 | `POST` | `/api/rooms` | Create a room and return `{code}`. |
-| `GET` | `/api/rooms/:code` | Return `{exists}`. |
+| `GET` | `/api/rooms/:code` | Return `{exists, seated}`; pass `?playerId=` to ask about a seat. |
 | `POST` | `/api/rooms/:code/join` | Send `{name, playerId?}` and receive `{playerId}`. |
 | `GET` | `/api/rooms/:code/events?playerId=` | Open an SSE stream of filtered views. |
 | `POST` | `/api/rooms/:code/action` | Send `{type, playerId, …}`. |
@@ -31,6 +31,17 @@ Errors use this shape:
 
 The server sends a translation key rather than a sentence so each browser can
 show the error in its selected language.
+
+## Reconnecting
+
+`GET /api/rooms/:code?playerId=` is what a browser asks after its event stream
+drops, before it reopens one. `exists` says whether the room is still on the
+server and `seated` whether that player is still in it, which is what separates
+the three outcomes a restart can produce: reopen the stream, take the seat again
+with `POST /join`, or stop and tell the player the room has ended. Reopening a
+stream blindly cannot tell them apart, so a restart that began with no snapshot
+leaves every client retrying a room that will never answer. The probe does not
+renew the room's six-hour idle clock, so polling cannot keep a dead room alive.
 
 ## Protocol compatibility
 
