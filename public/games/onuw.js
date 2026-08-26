@@ -175,6 +175,38 @@ export function formatParams(params) {
 
 const line = (entry) => T(entry.key, formatParams(entry.params));
 
+/** A role shown as an actual card, rather than reducing the reveal to prose. */
+function cardFront(role, caption) {
+  return h('span', { class: 'role-card-front' },
+    caption ? h('span', { class: 'role-card-caption', text: caption }) : null,
+    rolePortrait(role),
+    h('span', { class: 'role-card-name', text: roleName(role) }),
+  );
+}
+
+/** Turn knowledge gained by looking at a card into the card(s) that were seen. */
+function finding(entry) {
+  const p = entry.params;
+  let cards = [];
+  if (entry.key === 'onuw.info.sawCentre') {
+    cards = [cardFront(p.role, T('onuw.centreCard', { n: p.index }))];
+  } else if (entry.key === 'onuw.info.sawPlayer') {
+    cards = [cardFront(p.role, p.name)];
+  } else if (entry.key === 'onuw.info.sawTwoCentre') {
+    cards = [
+      cardFront(p.roleA, T('onuw.centreCard', { n: p.a })),
+      cardFront(p.roleB, T('onuw.centreCard', { n: p.b })),
+    ];
+  } else if (entry.key === 'onuw.info.robbed' || entry.key === 'onuw.info.insomniac') {
+    cards = [cardFront(p.role)];
+  }
+  if (!cards.length) return h('p', { class: 'finding', text: line(entry) });
+  return h('div', { class: 'finding inspected-finding' },
+    h('div', { class: 'inspected-cards' }, cards),
+    h('p', { text: line(entry) }),
+  );
+}
+
 // ---------------------------------------------------------------- lobby
 
 export function lobbyOptions() {
@@ -239,7 +271,7 @@ function cardContent() {
       ),
     ),
     h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
-    ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
+    ...v.info.map(finding),
   );
 }
 
@@ -248,7 +280,7 @@ function paneInfo() {
   if (!v.info.length) return null;
   return h('div', { class: 'card stack' },
     h('h2', { text: T('onuw.info.title') }),
-    ...v.info.map((entry) => h('p', { text: line(entry) })),
+    ...v.info.map(finding),
   );
 }
 
@@ -257,12 +289,12 @@ function centreRow({ pickable = false, picked = [], onpick } = {}) {
   const v = app.view;
   const count = v.centreCount ?? 3;
   return h('div', { class: 'centre' }, [...Array(count).keys()].map((i) => {
-    const label = v.centre ? roleName(v.centre[i]) : '?';
+    const role = v.centre?.[i];
     const props = {
-      class: `centre-card ${picked.includes(i) ? 'selected' : ''}`,
+      class: `centre-card ${role ? 'card-front' : 'card-back'} ${picked.includes(i) ? 'selected' : ''}`,
       title: T('onuw.centreCard', { n: i + 1 }),
     };
-    const inner = [h('span', { class: 'centre-n', text: i + 1 }), h('span', { class: 'centre-face', text: label })];
+    const inner = [h('span', { class: 'centre-n', text: i + 1 }), role ? cardFront(role) : null];
     return pickable
       ? h('button', { ...props, type: 'button', onclick: () => onpick(i) }, inner)
       : h('div', props, inner);
@@ -401,7 +433,7 @@ function paneNight() {
     awake
       ? h('div', { class: 'stack' },
           h('p', { class: 'yourturn', text: T('onuw.night.yourTurn') }),
-          ...v.info.map((entry) => h('p', { class: 'finding', text: line(entry) })),
+          ...v.info.map(finding),
           ...(v.you.action ? actionBody(v.you.action) : []),
         )
       : h('p', { class: 'muted', text: T('onuw.night.keepEyesShut') }),
