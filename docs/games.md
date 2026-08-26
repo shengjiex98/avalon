@@ -21,7 +21,8 @@ Avalon supports 5–10 players.
 - Quest four requires two Fail cards with seven or more players.
 - Evil wins after three failed quests.
 - After three successful quests, the Assassin can still win for evil by
-  identifying Merlin.
+  identifying Merlin. Any player but the Assassin is a legal target; naming
+  anyone other than Merlin hands the game to good.
 - **Play again** returns the same players to the lobby and deals new roles.
 
 Hidden information is filtered on the server. Merlin does not see Mordred;
@@ -64,6 +65,37 @@ After the night, players discuss and vote at the same time. The player or
 players with the most votes die. If every player receives exactly one vote,
 nobody dies. A player's final team is determined by the card they hold at the
 end of the night, not the card originally dealt to them.
+
+The vote is then scored:
+
+- The Tanner wins by dying, and a dead Tanner denies the werewolf team the win.
+- The village wins if at least one werewolf dies.
+- If every werewolf card ended up in the center, the village wins when nobody
+  dies, and the Minion wins when anyone other than the Minion dies.
+- Otherwise the werewolf team wins.
+- Any other ending has no winner: with no werewolf and no Minion in play, a
+  table that hangs someone loses together.
+
+### House rules
+
+House rules are variants the host controls in the lobby, next to the optional
+roles. They change only how the vote is scored, and a table's choice carries
+into the next deal. A game shows the ones in force in its reference panel.
+
+**Decisive vote.** On unless the host switches it off. With every werewolf card
+in the center, the Minion leads the pack. Killing the Minion is a village win,
+whoever else dies in the same vote, and killing anyone else is a werewolf-team
+win whether or not a Minion was dealt. A dead Tanner still outranks both, and a
+table holding a werewolf card is scored exactly as the printed rules say. The
+two endings this replaces are the game's flattest: by the book, hanging the
+lone Minion wins for nobody, and so does hanging an innocent with no Minion in
+play. Killing nobody is untouched — with no werewolf in play that is still a
+village win, Minion in play or not. A lone Minion is told at night that the
+hunt is now for him.
+
+A room restored from a snapshot older than a house rule keeps playing without
+it: a table that never agreed to a variant does not have one switched on
+underneath it by a deployment.
 
 The Doppelgänger is intentionally unsupported. Its action depends on a copied
 role and night information, which does not fit the shared fixed-step model.

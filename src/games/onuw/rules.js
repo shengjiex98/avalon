@@ -25,6 +25,35 @@ export const ROLES = {
 };
 
 export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional);
+
+/**
+ * House rules: printed rules some tables prefer to play differently. Each maps
+ * to how a new table plays unless the host says otherwise. They change how the
+ * vote is scored, never what is dealt — so a house rule can never make a deck
+ * impossible.
+ *
+ * `decisiveVote` is the common table fix for the game's flattest ending. By
+ * the book, a table holding no werewolf card at all must kill nobody: hang the
+ * Minion and nobody wins, hang anyone else with no Minion in play and nobody
+ * wins either. This rule promotes the Minion to head of an absent pack, so
+ * catching him is the village's win and hanging an innocent is the werewolf
+ * side's. It is on by default because those two endings reward nobody for the
+ * argument that produced them.
+ */
+export const HOUSE_RULES = { decisiveVote: true };
+export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
+
+/** How a table plays before anybody touches the switches. */
+export const defaultHouseRules = () => ({ ...HOUSE_RULES });
+
+/**
+ * No house rules at all. This is what a game whose state predates a rule falls
+ * back to: a table that never agreed to a variant keeps the scoring it started
+ * under, even when the server it is restored onto now offers one.
+ */
+export const noHouseRules = () =>
+  Object.fromEntries(HOUSE_RULE_KEYS.map((rule) => [rule, false]));
+
 export const NIGHT_ORDER = Object.keys(ROLES)
   .filter((r) => ROLES[r].wake)
   .sort((a, b) => ROLES[a].wake - ROLES[b].wake);
@@ -115,25 +144,45 @@ export function defaultOptions(playerCount) {
 }
 
 /**
- * Who wins, given the final cards and who died.
+ * Who wins, given the final cards, who died, and the house rules in force.
  *
  * The rulebook conditions this implements, in order:
  *  - the Tanner wins if the Tanner dies;
  *  - the village wins if at least one werewolf dies;
  *  - with no werewolf among the players, the village wins if nobody dies;
- *  - otherwise the werewolf team wins, unless the Tanner died.
+ *  - otherwise the werewolf team wins, unless the Tanner died — and with every
+ *    werewolf card in the centre that falls to the Minion, who takes it only if
+ *    the table lynched somebody other than him.
+ *
+ * Every other ending has no winner at all: a table that hangs an innocent with
+ * no werewolf and no Minion in play has simply lost together.
+ *
+ * Under `decisiveVote` the third and fourth conditions change: with every
+ * werewolf card in the centre the Minion *is* the pack, so his death is the
+ * village's win however many die with him, and any other death hands the
+ * werewolf side the win whether or not a Minion was dealt. Nothing else moves
+ * — the Tanner still outranks both, and a table with a werewolf in it scores
+ * exactly as it does by the book.
  */
-export function decideWinners(finalRoles, dead) {
+export function decideWinners(finalRoles, dead, house = {}) {
   const roleOf = (id) => finalRoles[id];
-  const wolvesInPlay = Object.keys(finalRoles).filter((id) => roleOf(id) === 'werewolf');
-  const wolfDied = [...dead].some((id) => roleOf(id) === 'werewolf');
-  const tannerDied = [...dead].some((id) => roleOf(id) === 'tanner');
+  const inPlay = (role) => Object.keys(finalRoles).filter((id) => roleOf(id) === role);
+  const died = (role) => [...dead].some((id) => roleOf(id) === role);
+  const wolvesInPlay = inPlay('werewolf');
+  const tannerDied = died('tanner');
+  // Who the village has to catch. Only a decisive vote ever promotes anybody.
+  const pack = house.decisiveVote && wolvesInPlay.length === 0 ? 'minion' : 'werewolf';
 
   const winners = new Set();
   if (tannerDied) winners.add('tanner');
-  if (wolfDied) winners.add('village');
+  if (died(pack)) winners.add('village');
   else if (wolvesInPlay.length === 0 && dead.size === 0) winners.add('village');
-  else if (wolvesInPlay.length > 0 && !tannerDied) winners.add('werewolf');
+  else if (tannerDied) { /* the Tanner's death costs the werewolf team the win */ }
+  else if (wolvesInPlay.length > 0) winners.add('werewolf');
+  else if (house.decisiveVote) winners.add('werewolf');   // an innocent hanged: the village lost
+  else if (inPlay('minion').length && [...dead].some((id) => roleOf(id) !== 'minion')) {
+    winners.add('werewolf');
+  }
   return winners;
 }
 
