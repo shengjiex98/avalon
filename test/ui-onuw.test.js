@@ -512,14 +512,18 @@ test('the morning tells each player only what they learned', () => {
   finishNight(game);
 
   const seer = show(game, 'p0');
-  assert.match(seer.text, /张三 had Werewolf/);
+  assert.ok(!/张三 had Werewolf/.test(seer.text), 'the open screen gives nothing away');
   assert.match(seer.text, /Start the vote/, 'the host opens the vote when talking is done');
   assertNoRawKeys(seer, 'day, seer');
+  seer.byId('cardToggle').dispatch('click');
+  assert.match(dom.fixtures.view.text, /张三 had Werewolf/, 'the reading waits behind the card button');
 
   const robber = show(game, 'p2');
-  assert.match(robber.text, /You robbed 张三 and are now Werewolf/);
-  assert.ok(!/张三 had Werewolf/.test(robber.text), "the robber does not see the seer's reading");
   assert.equal(labelled(robber, /Start the vote/).length, 0, 'only the host starts it');
+  robber.byId('cardToggle').dispatch('click');
+  const robberCard = dom.fixtures.view;
+  assert.match(robberCard.text, /You robbed 张三 and are now Werewolf/);
+  assert.ok(!/张三 had Werewolf/.test(robberCard.text), "the robber does not see the seer's reading");
 });
 
 test('voting points at one player and never at yourself', () => {
@@ -605,8 +609,10 @@ test('the whole werewolf game reads in Chinese', () => {
   w.submitNight(game, 'p2', { target: 'p1' });
   finishNight(game);
   const day = show(game, 'p0', 'zh');
-  assert.match(day.text, /张三 的牌是狼人。/);
   assertNoRawKeys(day, 'Chinese day');
+  day.byId('cardToggle').dispatch('click');
+  assert.match(dom.fixtures.view.text, /张三 的牌是狼人。/);
+  assertNoRawKeys(dom.fixtures.view, 'Chinese card popup');
 });
 
 test('each night step starts the middle pane at the top again', () => {

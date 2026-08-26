@@ -271,15 +271,9 @@ function cardContent() {
       ),
     ),
     h('p', { class: 'muted', text: T(`onuw.roleDesc.${v.you.role}`) }),
-    ...v.info.map(finding),
-  );
-}
-
-function paneInfo() {
-  const v = app.view;
-  if (!v.info.length) return null;
-  return h('div', { class: 'card stack' },
-    h('h2', { text: T('onuw.info.title') }),
+    // What the night taught you lives here too, behind the same button. On
+    // the screens everyone can see over your shoulder, nothing gives you away.
+    v.info.length ? h('h3', { text: T('onuw.info.title') }) : null,
     ...v.info.map(finding),
   );
 }
@@ -553,7 +547,6 @@ function paneDay() {
   const v = app.view;
   const isHost = v.you.id === v.hostId;
   return [
-    paneInfo(),
     h('div', { class: 'card stack' },
       h('h2', { text: T('onuw.day.title') }),
       h('p', { class: 'muted', text: T('onuw.day.hint') }),
@@ -563,14 +556,13 @@ function paneDay() {
         ? h('button', { class: 'btn primary wide', onclick: () => send('startVote') }, T('onuw.day.startVote'))
         : h('p', { class: 'muted', text: T('onuw.day.waitingHost') }),
     ),
-  ].filter(Boolean);
+  ];
 }
 
 function paneVote() {
   const v = app.view;
   const me = v.players.find((p) => p.id === v.you.id);
   return [
-    paneInfo(),
     h('div', { class: 'card stack' },
       h('h2', { text: T('onuw.phase.vote') }),
       me?.voted
@@ -587,7 +579,7 @@ function paneVote() {
         onclick: () => send('vote', { target: app.selection[0] }),
       }, T('onuw.night.confirm')),
     ),
-  ].filter(Boolean);
+  ];
 }
 
 function paneOver() {

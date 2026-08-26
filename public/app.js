@@ -441,22 +441,25 @@ function screenGame() {
   const game = bindGame(v.gameId);
   const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
   const paneKey = `${v.gameId}:${v.phase}:${game.paneKey?.() ?? ''}`;
+  const reset = canReset ? h('div', { class: 'row game-utility' },
+    h('button', {
+      class: 'btn ghost grow', id: 'resetGame', type: 'button',
+      onclick: () => {
+        if (window.confirm(T('game.resetConfirm'))) send('reset');
+      },
+    }, T('game.reset')),
+  ) : null;
+
+  // One scroller holds the whole game: the info buttons, whatever the game
+  // puts above its phase panel, the phase panel itself, and the reset row.
+  // Splitting them meant a tall header — Avalon's board once it carries a
+  // vote tally — squeezed the panel below it and spilled over the journal.
   const content = v.phase === 'lobby'
     ? scrollPane(`lobby:${paneKey}`, { class: 'lobby-scroll' }, ...paneLobby(game))
-    : [
-        ...game.header_(),
-        scrollPane(`phase:${paneKey}`, { class: 'phase-area' }, ...game.panes()),
-      ];
+    : scrollPane(`phase:${paneKey}`, { class: 'phase-area' },
+        ...game.header_(), ...game.panes(), reset);
   return [h('section', { class: `game-screen game-${v.gameId} phase-${v.phase}` },
     content,
-    canReset ? h('div', { class: 'row game-utility' },
-      h('button', {
-        class: 'btn ghost grow', id: 'resetGame', type: 'button',
-        onclick: () => {
-          if (window.confirm(T('game.resetConfirm'))) send('reset');
-        },
-      }, T('game.reset')),
-    ) : null,
     paneLog(),
   )];
 }
