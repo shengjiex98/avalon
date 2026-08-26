@@ -512,15 +512,11 @@ input[type=text]:focus { outline-color: var(--gold); }
 .pip { width: 9px; height: 9px; border-radius: 1px; transform: rotate(45deg); }
 .banner { padding: 9px 12px; border-radius: 4px; }
 
-/* Panels size to their own content; the last one absorbs whatever space is
-   left, so a short pane still fills the screen. A percentage min-height
-   instead clamps a panel to the space left over, and its content spills
-   out over the panel below. The panel that grows packs its rows at the top,
-   or the leftover height is shared out among them and every button and row
-   inside comes out oversized. */
+/* Every panel keeps its own content height and the pane scrolls. Stretching
+   one to fill the pane costs more than it looks: the leftover height is
+   shared out among its rows, and every button and player row inside comes
+   out oversized. */
 .phase-area > * { flex: 0 0 auto; }
-.phase-area > :last-child { flex-grow: 1; }
-.phase-area > .card { align-content: start; }
 .phase-area .row { flex-wrap: nowrap; }
 .phase-area .banner + p { margin-top: 7px; }
 .game-utility { flex: 0 0 auto; }
@@ -535,10 +531,14 @@ input[type=text]:focus { outline-color: var(--gold); }
 .journal-count { margin-left: auto; display: grid; place-items: center; min-width: 20px; height: 18px;
   color: var(--muted); border: 1px solid #61553e; font: 10px ui-monospace, monospace; }
 .journal[open] {
-  position: absolute; z-index: 20; left: 0; right: 0; bottom: 0; max-height: 58%;
+  position: absolute; z-index: 20; left: 0; right: 0; bottom: 0;
   box-shadow: 0 -12px 40px rgba(0,0,0,.72), inset 0 0 0 2px #080f22;
 }
-.journal[open] .log { max-height: calc(58dvh - 45px); padding: 0 11px 11px; }
+/* The list is the only thing here with a cap, and it scrolls once it hits it.
+   Capping the drawer as well only clipped the overflow the list was ready to
+   scroll to — `details` lays its content out through a shadow slot, so the
+   drawer cannot hand a height down to the list the way a flex parent would. */
+.journal[open] .log { max-height: min(44dvh, 420px); padding: 0 11px 11px; }
 .journal[open] summary { border-bottom: 1px solid #675637; }
 
 .role-portrait {
