@@ -121,19 +121,29 @@ export function defaultOptions(playerCount) {
  *  - the Tanner wins if the Tanner dies;
  *  - the village wins if at least one werewolf dies;
  *  - with no werewolf among the players, the village wins if nobody dies;
- *  - otherwise the werewolf team wins, unless the Tanner died.
+ *  - otherwise the werewolf team wins, unless the Tanner died — and with every
+ *    werewolf card in the centre that falls to the Minion, who takes it only if
+ *    the table lynched somebody other than him.
+ *
+ * Every other ending has no winner at all: a table that hangs an innocent with
+ * no werewolf and no Minion in play has simply lost together.
  */
 export function decideWinners(finalRoles, dead) {
   const roleOf = (id) => finalRoles[id];
-  const wolvesInPlay = Object.keys(finalRoles).filter((id) => roleOf(id) === 'werewolf');
-  const wolfDied = [...dead].some((id) => roleOf(id) === 'werewolf');
-  const tannerDied = [...dead].some((id) => roleOf(id) === 'tanner');
+  const inPlay = (role) => Object.keys(finalRoles).filter((id) => roleOf(id) === role);
+  const died = (role) => [...dead].some((id) => roleOf(id) === role);
+  const wolvesInPlay = inPlay('werewolf');
+  const tannerDied = died('tanner');
 
   const winners = new Set();
   if (tannerDied) winners.add('tanner');
-  if (wolfDied) winners.add('village');
+  if (died('werewolf')) winners.add('village');
   else if (wolvesInPlay.length === 0 && dead.size === 0) winners.add('village');
-  else if (wolvesInPlay.length > 0 && !tannerDied) winners.add('werewolf');
+  else if (tannerDied) { /* the Tanner's death costs the werewolf team the win */ }
+  else if (wolvesInPlay.length > 0) winners.add('werewolf');
+  else if (inPlay('minion').length && [...dead].some((id) => roleOf(id) !== 'minion')) {
+    winners.add('werewolf');
+  }
   return winners;
 }
 

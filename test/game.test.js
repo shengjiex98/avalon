@@ -175,11 +175,25 @@ test('the assassin steals the win by naming Merlin', () => {
   const otherEvil = evilIds(game).find((id) => id !== assassin);
 
   assert.throws(() => g.assassinate(game, merlin, merlin), { key: 'assassinOnly' });
-  assert.throws(() => g.assassinate(game, assassin, otherEvil), { key: 'targetMustBeGood' });
+  assert.throws(() => g.assassinate(game, assassin, assassin), { key: 'cannotTargetSelf' });
+  assert.ok(otherEvil, 'five players put a second evil at the table');
 
   g.assassinate(game, assassin, merlin);
   assert.equal(game.winner, 'evil');
   assert.equal(game.winReason, 'win.merlinSlain');
+});
+
+test('naming Oberon is a legal miss, not a rejected pick', () => {
+  // Oberon is invisible to his own side, so bouncing the pick would tell the
+  // Assassin exactly who is not Merlin and let him shoot again.
+  const game = setup(7, { oberon: true });
+  runQuest(game); runQuest(game); runQuest(game);
+  const assassin = game.players.find((p) => game.roles[p.id] === 'assassin').id;
+  const oberon = game.players.find((p) => game.roles[p.id] === 'oberon').id;
+
+  g.assassinate(game, assassin, oberon);
+  assert.equal(game.winner, 'good');
+  assert.equal(game.winReason, 'win.threeSuccesses');
 });
 
 test('good keeps the win when the assassin misses', () => {
