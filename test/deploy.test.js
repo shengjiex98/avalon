@@ -151,6 +151,13 @@ async function askGate({ running, target, updateStatus = 409, down = false, forc
   try {
     const gate = fileURLToPath(new URL('../deploy/gate.sh', import.meta.url));
     const env = { ...process.env, HOME: home, PORT: String(port) };
+    // update.sh exports TARGET_STATE_VERSION for the gate and then runs these
+    // tests in the same environment, so the cases that mean "not declared"
+    // have to unset it rather than merely decline to set it. AVALON_FORCE gets
+    // the same treatment: inheriting either one silently inverts the answer
+    // this helper exists to check.
+    delete env.TARGET_STATE_VERSION;
+    delete env.AVALON_FORCE;
     if (target !== undefined) env.TARGET_STATE_VERSION = String(target);
     if (force) env.AVALON_FORCE = '1';
     // Async, not spawnSync: the stub above is served by this very event loop,
