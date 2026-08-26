@@ -165,15 +165,32 @@ const roleName = (role) => T(`onuw.role.${role}`);
 const WOLF_ROLES = new Set(['werewolf', 'minion']);
 const teamTag = (role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
 
+/**
+ * Centre cards are lettered rather than numbered, so "centre card 2" can never
+ * be read as a seat. The server keeps counting them 1, 2, 3: the label is
+ * presentation, exactly like role names, so a game already in flight — and a
+ * snapshot restored from before this — reads as A, B, C too.
+ */
+const centreLabel = (n) => (Number.isInteger(n) && n >= 1 && n <= 26 ? String.fromCharCode(64 + n) : n);
+
+/** Which of an entry's params hold a centre card rather than a player name. */
+const CENTRE_PARAMS = {
+  'onuw.info.sawCentre': ['index'],
+  'onuw.info.sawTwoCentre': ['a', 'b'],
+  'onuw.info.drunk': ['index'],
+  'onuw.swap.drunk': ['index'],
+};
+
 /** Role keys arrive raw from the server so each client can name them itself. */
-export function formatParams(params) {
+export function formatParams(params, key) {
   const out = { ...params };
-  for (const key of ['role', 'roleA', 'roleB']) if (out[key]) out[key] = roleName(out[key]);
+  for (const k of ['role', 'roleA', 'roleB']) if (out[k]) out[k] = roleName(out[k]);
+  for (const k of CENTRE_PARAMS[key] ?? []) out[k] = centreLabel(out[k]);
   if (out.winner) out.winner = out.winner === 'nobody' ? T('onuw.over.nobodyWins') : T(`onuw.team.${out.winner}`);
   return out;
 }
 
-const line = (entry) => T(entry.key, formatParams(entry.params));
+const line = (entry) => T(entry.key, formatParams(entry.params, entry.key));
 
 /** A role shown as an actual card, rather than reducing the reveal to prose. */
 function cardFront(role, caption) {
@@ -189,13 +206,13 @@ function finding(entry) {
   const p = entry.params;
   let cards = [];
   if (entry.key === 'onuw.info.sawCentre') {
-    cards = [cardFront(p.role, T('onuw.centreCard', { n: p.index }))];
+    cards = [cardFront(p.role, T('onuw.centreCard', { n: centreLabel(p.index) }))];
   } else if (entry.key === 'onuw.info.sawPlayer') {
     cards = [cardFront(p.role, p.name)];
   } else if (entry.key === 'onuw.info.sawTwoCentre') {
     cards = [
-      cardFront(p.roleA, T('onuw.centreCard', { n: p.a })),
-      cardFront(p.roleB, T('onuw.centreCard', { n: p.b })),
+      cardFront(p.roleA, T('onuw.centreCard', { n: centreLabel(p.a) })),
+      cardFront(p.roleB, T('onuw.centreCard', { n: centreLabel(p.b) })),
     ];
   } else if (entry.key === 'onuw.info.robbed' || entry.key === 'onuw.info.insomniac') {
     cards = [cardFront(p.role)];
@@ -286,9 +303,9 @@ function centreRow({ pickable = false, picked = [], onpick } = {}) {
     const role = v.centre?.[i];
     const props = {
       class: `centre-card ${role ? 'card-front' : 'card-back'} ${picked.includes(i) ? 'selected' : ''}`,
-      title: T('onuw.centreCard', { n: i + 1 }),
+      title: T('onuw.centreCard', { n: centreLabel(i + 1) }),
     };
-    const inner = [h('span', { class: 'centre-n', text: i + 1 }), role ? cardFront(role) : null];
+    const inner = [h('span', { class: 'centre-n', text: centreLabel(i + 1) }), role ? cardFront(role) : null];
     return pickable
       ? h('button', { ...props, type: 'button', onclick: () => onpick(i) }, inner)
       : h('div', props, inner);

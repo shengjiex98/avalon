@@ -323,6 +323,8 @@ test('a lone werewolf may look at one centre card, or decline', () => {
 
   const cards = dom.fixtures.view.byClass('centre-card');
   assert.equal(cards.length, 3);
+  assert.deepEqual(dom.fixtures.view.byClass('centre-n').map((n) => n.text), ['A', 'B', 'C'],
+    'lettered, so a centre card is never mistaken for a seat');
   assert.ok(cards.every((c) => c.className.includes('card-back')), 'the centre uses illustrated card backs');
   assert.ok(cards.every((c) => !c.text.includes('?')), 'the card art replaces the question marks');
 
@@ -344,7 +346,8 @@ test('a lone werewolf sees the inspected centre card as a card front', () => {
   const view = show(game, 'p0');
   assert.equal(view.byClass('role-card-front').length, 1);
   assert.equal(view.byClass('role-card-name')[0].text, 'Robber');
-  assert.match(view.text, /Centre card 2 was Robber/);
+  assert.match(view.text, /Centre card B was Robber/);
+  assert.equal(view.byClass('role-card-caption')[0].text, 'Centre card B');
 });
 
 test('the seer chooses between one player and two centre cards', () => {
@@ -400,6 +403,18 @@ test('the troublemaker must pick two players, neither of them themselves', () =>
   assert.equal(labelled(dom.fixtures.view, /^Confirm$/)[0].disabled, true, 'one is not enough');
   dom.fixtures.view.byClass('player').filter((n) => n.tagName === 'BUTTON')[2].dispatch('click');
   assert.equal(labelled(dom.fixtures.view, /^Confirm$/)[0].disabled, false);
+});
+
+test('the drunk trades with a lettered card, and the night log says which', () => {
+  const game = dealt(['drunk', 'werewolf', 'villager', 'seer', 'robber', 'tanner']);
+  stepTo(game, 'drunk');
+  w.submitNight(game, 'p0', { centre: 2 });
+  assert.match(show(game, 'p0').text, /You took centre card C/);
+
+  finishNight(game);
+  w.startVote(game, 'p0');
+  for (const [voter, target] of [['p0', 'p1'], ['p1', 'p2'], ['p2', 'p1']]) w.castVote(game, voter, target);
+  assert.match(show(game, 'p0').text, /Ann swapped with centre card C/);
 });
 
 test('the drunk is not offered a way out', () => {

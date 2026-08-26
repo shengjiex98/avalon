@@ -560,17 +560,17 @@ function paneLog() {
       h('span', { class: 'journal-count', text: entries.length }),
     ),
     scrollPane('log', { class: 'log' }, entries.map((e) => h('div', {
-      text: T(e.key, formatParams(e.params)),
+      text: T(e.key, formatParams(e.params, e.key)),
     }))),
   );
 }
 
-function formatParams(params) {
+function formatParams(params, entryKey) {
   const out = { ...params };
   for (const [key, value] of Object.entries(out)) if (Array.isArray(value)) out[key] = joinNames(value);
   if (out.game) out.game = T(`game.${out.game}`);
   const game = gameFor(app.view?.gameId);
-  if (game.formatParams) return game.formatParams(out);
+  if (game.formatParams) return game.formatParams(out, entryKey);
   if (out.winner) out.winner = T(`side.${out.winner}`);
   return out;
 }
