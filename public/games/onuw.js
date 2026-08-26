@@ -27,27 +27,20 @@ function audioPlayer() {
   if (announcementAudio || typeof Audio === 'undefined') return announcementAudio;
   announcementAudio = new Audio();
   announcementAudio.preload = 'auto';
-  announcementAudio.onended = playNextAnnouncement;
-  announcementAudio.onerror = playNextAnnouncement;
+  // Event handlers receive an Event argument. Keep it out of the queue runner,
+  // whose optional argument is the generation this playback belongs to.
+  announcementAudio.onended = () => playNextAnnouncement();
+  announcementAudio.onerror = () => playNextAnnouncement();
   return announcementAudio;
 }
 
-function stopAnnouncements({ discardPlayer = false } = {}) {
+function stopAnnouncements() {
   announcementGeneration += 1;
   announcementQueue = [];
   if (!announcementAudio) return;
-  const audio = announcementAudio;
-  if (discardPlayer) {
-    // A source cancelled during a language change can still dispatch a late
-    // media event. Detach it completely so that event cannot advance the new
-    // language's queue or restart a call after the night has moved on.
-    audio.onended = null;
-    audio.onerror = null;
-    announcementAudio = null;
-  }
-  audio.pause();
-  audio.removeAttribute?.('src');
-  audio.load?.();
+  announcementAudio.pause();
+  announcementAudio.removeAttribute?.('src');
+  announcementAudio.load?.();
 }
 
 function playNextAnnouncement(generation = announcementGeneration) {
@@ -140,14 +133,6 @@ function announce(night) {
   stopAnnouncements();
   announcementQueue = clips;
   playNextAnnouncement();
-}
-
-/** Cancel the old language immediately and call only the current step again. */
-export function onLanguageChange() {
-  stopAnnouncements({ discardPlayer: true });
-  spokenStep = null;
-  const night = app.view?.night;
-  if (night) announce(night);
 }
 
 /**

@@ -196,7 +196,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     pause() { this.paused = true; }
     load() {}
     removeAttribute(name) { if (name === 'src') this.src = ''; }
-    finish() { this.paused = true; this.onended?.(); }
+    finish() { this.paused = true; this.onended?.({ type: 'ended', target: this }); }
   }
 
   Object.assign(globalThis, {

@@ -648,7 +648,6 @@ export async function main() {
   el('langToggle').addEventListener('click', () => {
     app.lang = app.lang === 'en' ? 'zh' : 'en';
     localStorage.setItem('avalon.lang', app.lang);
-    if (app.view) bindGame(app.view.gameId).onLanguageChange?.();
     render();
   });
 

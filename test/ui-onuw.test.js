@@ -382,7 +382,7 @@ test('the drunk is not offered a way out', () => {
   assert.equal(labelled(view, /Do nothing/).length, 0, 'the Drunk must swap');
 });
 
-test('the language toggle replaces the active night recording', () => {
+test('the language toggle leaves the active night recording alone', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');
   app.muted = false;
@@ -392,9 +392,8 @@ test('the language toggle replaces the active night recording', () => {
   assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
 
   dom.fixtures.langToggle.dispatch('click');
-  const english = dom.AudioStub.instances.at(-1);
-  assert.equal(chinese.paused, true);
-  assert.match(english.src, /audio\/onuw\/en\/wake-seer\.mp3$/);
+  assert.equal(chinese.paused, false);
+  assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
 
   app.view = { ...app.view, night: null };
   onuwUi.onView();

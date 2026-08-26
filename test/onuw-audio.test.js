@@ -50,30 +50,25 @@ test('muting cancels an in-progress recording', () => {
   onuw.onView();
 });
 
-test('switching languages discards old audio and restarts only the current call', () => {
+test('switching languages leaves the current call alone and applies next step', () => {
   app.lang = 'zh';
   app.muted = false;
-  app.view.night = { index: 1, key: 'seer', msLeft: 10_000, msTotal: 10_000 };
+  app.view.night = { index: 0, key: 'werewolf', msLeft: 10_000, msTotal: 10_000 };
   onuw.onView();
-  const chinese = dom.AudioStub.instances.at(-1);
-  assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
+  const audio = dom.AudioStub.instances.at(-1);
+  assert.match(audio.src, /audio\/onuw\/zh\/wake-werewolf\.mp3$/);
 
   app.lang = 'en';
-  onuw.onLanguageChange();
-  const english = dom.AudioStub.instances.at(-1);
-  assert.notEqual(english, chinese, 'late events from the old source are isolated');
-  assert.equal(chinese.paused, true);
-  assert.equal(chinese.src, '');
-  assert.match(english.src, /audio\/onuw\/en\/wake-seer\.mp3$/);
-  assert.doesNotMatch(english.src, /sleep-werewolf/, 'the current step is not replayed as a transition');
+  assert.equal(audio.paused, false);
+  assert.match(audio.src, /audio\/onuw\/zh\/wake-werewolf\.mp3$/);
 
-  chinese.finish();
-  assert.match(english.src, /audio\/onuw\/en\/wake-seer\.mp3$/, 'an old completion cannot advance the new queue');
+  app.view.night = { index: 1, key: 'seer', msLeft: 10_000, msTotal: 10_000 };
+  onuw.onView();
+  assert.match(audio.src, /audio\/onuw\/en\/sleep-werewolf\.mp3$/);
+  audio.finish();
+  assert.match(audio.src, /audio\/onuw\/en\/wake-seer\.mp3$/);
 
   app.view.night = null;
   onuw.onView();
-  assert.equal(english.paused, true);
-  assert.equal(english.src, '');
-  english.finish();
-  assert.equal(english.src, '', 'a late completion cannot restart audio after night');
+  assert.equal(audio.paused, true);
 });
