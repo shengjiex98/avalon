@@ -47,6 +47,11 @@ stream blindly cannot tell them apart, so a restart that began with no snapshot
 leaves every client retrying a room that will never answer. The probe does not
 renew the room's six-hour idle clock, so polling cannot keep a dead room alive.
 
+The same question backs the home screen's rejoin offer. A browser that arrives
+without a room in its URL, but with a remembered seat, asks before mentioning
+it: a room that has ended leaves no trace on the home screen, and a server that
+will not answer produces no offer rather than a false one.
+
 ## Protocol compatibility
 
 The current client protocol is `1`. `/api/health` reports it, and the optional

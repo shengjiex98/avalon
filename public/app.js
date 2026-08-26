@@ -31,6 +31,7 @@ const app = {
   rejoining: false,       // holding a seat from a previous page, not a fresh join
   testMode: Boolean(localStorage.getItem('avalon.test')),
   seats: [],              // every seat this device holds, for testing alone
+  heldSeat: null,         // { code, playerId } this device holds but is not sitting in
   stepEndsAt: 0,
   clockStep: null,   // which night step stepEndsAt was anchored to
   infoPopup: null,   // shared overlay state; hidden until explicitly opened
@@ -59,8 +60,9 @@ const store = {
   playerFor: (code) => localStorage.getItem(`avalon.player.${code}`),
   setPlayer: (code, id) => localStorage.setItem(`avalon.player.${code}`, id),
   clearPlayer: (code) => localStorage.removeItem(`avalon.player.${code}`),
-  // The room the last screen was in. The URL fragment says the same thing, but
-  // it is the one part of the session a reload can arrive without.
+  // The room this device last held a seat in. The URL fragment is what puts a
+  // player *in* a room; this is only how the home screen knows there is a seat
+  // worth offering back when the fragment is gone.
   get room() { return localStorage.getItem('avalon.room'); },
   set room(code) { code ? localStorage.setItem('avalon.room', code) : localStorage.removeItem('avalon.room'); },
 };
@@ -116,7 +118,10 @@ function watchServer() {
   probeTimer = setTimeout(async () => {
     probeTimer = null;
     if (app.serverStatus !== 'unreachable') return;
-    if (await probeServer() === 'ready' && app.code && !app.connected) void recover();
+    if (await probeServer() === 'ready') {
+      if (app.code && !app.connected) void recover();
+      else if (!app.code && !app.heldSeat) await offerHeldSeat();
+    }
     safeRender();
     watchServer();
   }, PROBE_RETRY_MS);
@@ -279,17 +284,30 @@ function wake() {
   scheduleReconnect(0);
 }
 
-/** Let go of a room, either because it ended or because the player said so. */
-function dropRoom(reasonKey) {
+/**
+ * Let go of a room, either because it ended or because the player said so.
+ * `keepSeat` is the difference between a seat that is gone and a device that
+ * walked away from one that is not: once a game is running the server keeps the
+ * seat either way, so throwing the id away is what makes a mis-tap permanent.
+ * Hold on to it and the home screen can offer it back.
+ */
+function dropRoom(reasonKey, { keepSeat = false } = {}) {
   const code = app.code;
+  const playerId = app.playerId;
   clearTimeout(reconnectTimer);
   reconnectTimer = null;
   app.source?.close();
   app.source = null; app.view = null; app.playerId = null;
   app.infoPopup = null; app.seats = []; app.retry = 0;
   app.connected = false; app.everConnected = false; app.rejoining = false;
-  if (code) { store.clearPlayer(code); store.clearSeats(code); }
-  store.room = null;
+  if (keepSeat && code && playerId) {
+    store.room = code;
+    app.heldSeat = { code, playerId };
+  } else {
+    if (code) { store.clearPlayer(code); store.clearSeats(code); }
+    store.room = null;
+    app.heldSeat = null;
+  }
   app.code = null;
   location.hash = '';
   safeRender();
@@ -314,6 +332,7 @@ async function joinRoom(code, name) {
     app.code = code;
     app.playerId = res.playerId;
     app.rejoining = false;
+    app.heldSeat = null;
     store.setPlayer(code, res.playerId);
     store.room = code;
     rememberSeat(code, res.playerId, name);
@@ -340,8 +359,27 @@ function readName() {
   return name;
 }
 
+/**
+ * Leave from this device. In the lobby that gives the seat up for good. Once a
+ * game is running the server refuses to remove anyone — roles are dealt and
+ * quest sizes come from the head count, so a vanishing player would break the
+ * rules for everyone still playing — and the refusal is fine: the seat stays
+ * where the game needs it and only this device stops watching. Either way the
+ * player gets out, which is the point. An exit that needs the server to agree
+ * is no exit at all when the server is what went wrong.
+ */
 function leaveRoom() {
-  send('leave').finally(() => dropRoom());
+  const midGame = Boolean(app.view) && app.view.phase !== 'lobby';
+  if (midGame) {
+    const isHost = app.view.you?.id === app.view.hostId;
+    if (!window.confirm(T(isHost ? 'game.leaveConfirmHost' : 'game.leaveConfirm'))) return;
+  }
+  const asked = app.code
+    ? api(`/api/rooms/${app.code}/action`, { body: { type: 'leave', playerId: app.playerId } })
+    : Promise.resolve();
+  asked
+    .catch(() => {})   // a mid-game refusal is expected, and a dead server is not a reason to stay
+    .finally(() => dropRoom(midGame ? 'room.left' : null, { keepSeat: midGame }));
 }
 
 // ---------------------------------------------------------------- render
@@ -498,6 +536,7 @@ function screenHome() {
   // sit inside the "create a room" card, which made joining look like it
   // needed no name at all.
   return [
+    app.heldSeat ? paneHeldSeat() : null,
     h('div', { class: 'card stack' },
       h('p', { class: 'muted', text: invited ? T('home.invited', { code: invited }) : T(gameFor(app.gameId).taglineKey) }),
       h('label', {}, T('home.name'),
@@ -537,6 +576,30 @@ function screenHome() {
 }
 
 /**
+ * The way back into a room this browser is not on screen in: a reload that
+ * arrived without the fragment, a home-screen shortcut that opens the bare URL,
+ * or a game the player walked out of. It is an offer rather than a redirect,
+ * which means it also has to be refusable — being able to say no is the whole
+ * reason a bare URL is now a way out.
+ */
+function paneHeldSeat() {
+  const { code, playerId } = app.heldSeat;
+  return h('div', { class: 'card stack held-seat' },
+    h('p', { text: T('home.heldSeat', { code }) }),
+    h('div', { class: 'row' },
+      h('button', {
+        class: 'btn primary grow', id: 'rejoinSeat', type: 'button',
+        onclick: () => { void enterRoom(code, playerId); },
+      }, T('home.rejoin')),
+      h('button', {
+        class: 'btn ghost', id: 'forgetSeat', type: 'button',
+        onclick: () => { dismissSeat(code); render(); },
+      }, T('home.forget')),
+    ),
+  );
+}
+
+/**
  * We hold a seat but have no frame to draw yet -- a reload, or a server that is
  * still coming back. The join form used to sit here, which read as being thrown
  * out of the room; this says what is actually happening, and keeps the way out
@@ -548,7 +611,7 @@ function screenRejoining() {
     h('p', { class: 'muted', text: T('room.rejoiningHint') }),
     h('button', {
       class: 'btn ghost', id: 'forgetRoom', type: 'button',
-      onclick: () => dropRoom(),
+      onclick: () => dropRoom(null, { keepSeat: true }),
     }, T('room.forget')),
   )];
 }
@@ -588,23 +651,29 @@ function screenGame() {
   const game = bindGame(v.gameId);
   const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
   const paneKey = `${v.gameId}:${v.phase}:${game.paneKey?.() ?? ''}`;
-  const reset = canReset ? h('div', { class: 'row game-utility' },
-    h('button', {
+  // The host can end the game for the table; anyone can walk away from it. The
+  // second one used to exist only in the lobby, which left a player who had
+  // given up on a game with nowhere to go but the browser's address bar.
+  const utility = h('div', { class: 'row game-utility' },
+    canReset ? h('button', {
       class: 'btn ghost grow', id: 'resetGame', type: 'button',
       onclick: () => {
         if (window.confirm(T('game.resetConfirm'))) send('reset');
       },
-    }, T('game.reset')),
-  ) : null;
+    }, T('game.reset')) : null,
+    h('button', {
+      class: 'btn ghost grow', id: 'leaveGame', type: 'button', onclick: leaveRoom,
+    }, T('game.leave')),
+  );
 
   // One scroller holds the whole game: the info buttons, whatever the game
-  // puts above its phase panel, the phase panel itself, and the reset row.
+  // puts above its phase panel, the phase panel itself, and the utility row.
   // Splitting them meant a tall header — Avalon's board once it carries a
   // vote tally — squeezed the panel below it and spilled over the journal.
   const content = v.phase === 'lobby'
     ? scrollPane(`lobby:${paneKey}`, { class: 'lobby-scroll' }, ...paneLobby(game))
     : scrollPane(`phase:${paneKey}`, { class: 'phase-area' },
-        ...game.header_(), ...game.panes(), reset);
+        ...game.header_(), ...game.panes(), utility);
   return [h('section', { class: `game-screen game-${v.gameId} phase-${v.phase}` },
     content,
     paneLog(),
@@ -816,32 +885,73 @@ export async function main() {
   await probeServer();
   watchServer();
 
-  const code = roomOnLoad();
+  const code = roomFromHash();
   const playerId = code && store.playerFor(code);
-  if (app.serverStatus !== 'incompatible' && code && playerId) {
-    app.code = code;
-    app.playerId = playerId;
-    app.seats = store.seatsFor(code);
-    app.rejoining = true;
-    store.room = code;
-    location.hash = `#/${code}`;   // a reload that lost the fragment keeps the room
-    render();
-    if (app.serverStatus === 'ready') await rejoin(code, playerId);
-    else scheduleReconnect(0);     // the server is down; the loop will catch it coming back
-  }
+  if (app.serverStatus !== 'incompatible' && code && playerId) await enterRoom(code, playerId);
+  else if (app.serverStatus === 'ready') await offerHeldSeat();
   render();
 }
 
 /**
- * The room this browser was in. The fragment is the shared, linkable answer;
- * the stored one covers a reload that arrives without it, which is how an
- * update-and-reload could drop a player back onto the join form mid-game.
+ * The room in the address bar, and nothing else. A remembered room used to
+ * stand in for a missing fragment, so a player who cleared the URL to get out
+ * of a game they had abandoned landed straight back in it — with no way out
+ * short of clearing site data. The URL is the only thing that puts anyone in a
+ * room now; storage gets to make an offer.
  */
-function roomOnLoad() {
-  const fromHash = (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
-  if (fromHash) return fromHash;
-  const remembered = (store.room ?? '').toUpperCase();
-  return /^[A-Z0-9]{4,8}$/.test(remembered) && store.playerFor(remembered) ? remembered : undefined;
+function roomFromHash() {
+  return (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
+}
+
+/** Sit down in a room this browser already holds a seat in. */
+async function enterRoom(code, playerId) {
+  app.heldSeat = null;
+  app.code = code;
+  app.playerId = playerId;
+  app.seats = store.seatsFor(code);
+  app.rejoining = true;
+  store.room = code;
+  location.hash = `#/${code}`;   // the offer arrives without one; a reload can too
+  render();
+  if (app.serverStatus === 'ready') await rejoin(code, playerId);
+  else scheduleReconnect(0);     // the server is down; the loop will catch it coming back
+  render();
+}
+
+/**
+ * A seat this browser holds in a room it did not arrive in. Ask whether it is
+ * still real before mentioning it: a room that ended hours ago should leave no
+ * trace on the home screen. A server that will not answer is not an answer, so
+ * the seat is kept and simply not offered this time round.
+ */
+async function offerHeldSeat() {
+  const code = (store.room ?? '').toUpperCase();
+  const playerId = /^[A-Z0-9]{4,8}$/.test(code) ? store.playerFor(code) : null;
+  if (!playerId) {
+    if (code) store.room = null;   // a room with no seat behind it is just noise
+    return;
+  }
+  const status = await api(`/api/rooms/${code}?playerId=${encodeURIComponent(playerId)}`).catch(() => ({}));
+  if (status.seated) app.heldSeat = { code, playerId };
+  else if (status.exists === false || status.seated === false) forgetSeat(code);
+}
+
+/**
+ * Stop offering a seat, without throwing it away. What the player refused is
+ * the offer, not the room: the id stays, so following the room's link back
+ * still lands them in their own seat rather than at a join form that will not
+ * have them. Nothing asks again until they ask for it.
+ */
+function dismissSeat(code) {
+  if ((store.room ?? '').toUpperCase() === code) store.room = null;
+  if (app.heldSeat?.code === code) app.heldSeat = null;
+}
+
+/** Drop every trace of a seat the server has told us is gone. */
+function forgetSeat(code) {
+  store.clearPlayer(code);
+  store.clearSeats(code);
+  dismissSeat(code);
 }
 
 /**

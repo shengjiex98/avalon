@@ -1,14 +1,18 @@
 // Reloading for a new client build, mid-game. The page comes back with nothing
-// but localStorage and a URL, and it has to land in the same room: dropping the
-// player onto the join form is worse than it looks, because a game that has
-// started will not let a stranger in, and the seat is only recoverable while
-// the browser still remembers its id.
+// but localStorage and a URL, and the seat has to survive it: a game that has
+// started will not let a stranger in, so a player thrown onto the join form is
+// out of that game for good.
+//
+// A reload that kept its fragment goes straight back in. One that lost it is
+// offered the seat instead of being put back in the room, because the same
+// bare URL is what a player types to get *out* of a game they have abandoned.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
 
-// A reload that arrived without the fragment: the room is remembered anyway.
+// A reload that arrived without the fragment: the seat is remembered, and
+// offered rather than taken.
 const dom = installDom({ href: 'https://shengjiex98.github.io/avalon/', hash: '' });
 dom.storage.set('avalon.room', 'WXYZ');
 dom.storage.set('avalon.player.WXYZ', 'me');
@@ -36,21 +40,50 @@ const frame = () => ({
   night: null, pace: 'normal', nightScript: [], nightSeconds: 30,
 });
 
-test('a reload lands back in the room, not on the join form', async () => {
+test('a bare URL offers the remembered seat instead of entering the room', async () => {
+  assert.equal(app.code, null, 'a bare URL is a bare URL');
+  assert.deepEqual(app.heldSeat, { code: 'WXYZ', playerId: 'me' });
+  assert.equal(dom.location.hash, '', 'and the URL is left as the player typed it');
+  assert.equal(dom.calls.some((c) => c.path === '/api/rooms/WXYZ/join'), false, 'no seat taken');
+  assert.match(dom.fixtures.view.text, /You still have a seat in room WXYZ/);
+});
+
+test('accepting the offer puts the player back in the game', async () => {
+  dom.fixtures.view.byId('rejoinSeat').dispatch('click');
+  await tick();
+
   assert.equal(app.code, 'WXYZ');
   assert.equal(app.playerId, 'me');
+  assert.equal(app.heldSeat, null, 'the offer is spent');
   assert.equal(dom.location.hash, '#/WXYZ', 'the room is put back in the URL');
 
   const rejoin = dom.calls.find((c) => c.path === '/api/rooms/WXYZ/join');
   assert.ok(rejoin, 'it takes its seat again');
   assert.equal(rejoin.body.playerId, 'me');
   assert.equal(dom.fixtures.view.byId('nameInput'), null, 'no join form');
-  assert.match(dom.fixtures.view.text, /Rejoining room WXYZ/);
 
   dom.EventSourceStub.last.onmessage({ data: JSON.stringify(frame()) });
   assert.equal(app.view.phase, 'quest');
   assert.match(dom.fixtures.view.text, /Play a card/, 'the game is back on screen');
   assert.equal(dom.fixtures.conn.hidden, true);
+});
+
+test('a reload that kept its fragment goes straight back in', async () => {
+  app.source?.close();
+  app.code = null; app.view = null; app.playerId = null; app.connected = false;
+  app.everConnected = false; app.retry = 0; app.heldSeat = null;
+  dom.location.hash = '#/WXYZ';
+  dom.storage.set('avalon.player.WXYZ', 'me');
+
+  await client.main();
+  await tick();
+
+  assert.equal(app.code, 'WXYZ', 'no offer to accept: the URL said which room');
+  assert.equal(app.heldSeat, null);
+  assert.match(dom.fixtures.view.text, /Rejoining room WXYZ/);
+
+  dom.EventSourceStub.last.onmessage({ data: JSON.stringify(frame()) });
+  assert.match(dom.fixtures.view.text, /Play a card/);
 });
 
 test('a server that is still restarting does not cost the player their seat', async () => {
