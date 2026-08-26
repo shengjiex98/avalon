@@ -67,9 +67,11 @@ all times.
 
 **Merge without waiting for a quiet moment.** The protection is server-side and
 automatic, so do not check `activeGames` before merging or hold a merge until a
-game ends. When running and target `STATE_VERSION` values match,
-`deploy/update.sh` restarts immediately and restores live rooms. Otherwise it
-runs `deploy/gate.sh` *before* touching the working tree: a game in progress
-exits 75, publishes `busy`, and leaves the deployment exactly where it was for
-the hourly retry. It then tests the target and rolls back if tests fail or Node
-is not v24. Open the PR, merge it, and let the host sort out the timing.
+game ends. `deploy/gate.sh` decides whether the running process may be replaced,
+and `deploy/update.sh` asks it *before* touching the working tree. When running
+and target `STATE_VERSION` values match the restart is lossless and happens
+immediately, live rooms and all. Otherwise a game in progress exits 75,
+publishes `busy`, and leaves the deployment exactly where it was for the hourly
+retry. The updater then tests the target and rolls back if the tests fail; a
+host that is not on Node v24 is refused before anything moves. Open the PR,
+merge it, and let the host sort out the timing.
