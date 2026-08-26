@@ -141,16 +141,27 @@ clears. State-compatible deployments restart immediately and restore the game.
 If the hour runs out, the run fails and **nothing** is published, leaving client
 and server together on the older commit; re-run it from the Actions tab.
 
-`deploy/gate.sh` is what answers "is a game in progress", by calling
-`/api/health/update` on localhost. It knows nothing about how the server is
-deployed, so it stays usable if the server later ships as a container image.
-`AVALON_FORCE=1` skips it, for when a restart cannot wait.
+`deploy/gate.sh` answers one question -- *may the running process be replaced
+right now?* -- and it is the only place that knows what makes a replacement
+safe. It says yes when the running and target `STATE_VERSION` values are both
+known and equal, because the snapshot then restores every room, so a game in
+progress is no reason to wait. Otherwise the rooms would be lost and it asks
+`/api/health/update` on localhost: `409` means a game is in progress and the
+gate exits 75. An unknown version on either side is not equal, so it fails
+closed through that check.
 
-`deploy/update.sh` reads the running and target `STATE_VERSION` values before it
-touches the checkout. Known-equal versions bypass the live-game gate; every
-unknown or unequal case fails closed through the gate first. It then
-fast-forwards the checkout, checks the Node major version, runs the tests, and
-restarts the service. It compares the commit the *running server* reports as
+The target version arrives as `TARGET_STATE_VERSION`, never as a commit:
+nothing in the gate knows about git, so an image-based deployment can pass a
+label or a build arg and keep using it unchanged. `AVALON_FORCE=1` skips the
+question entirely, for when a restart cannot wait. A server that does not
+answer within five seconds is treated as down -- nothing to protect.
+
+`deploy/update.sh` is the mechanism around that decision. It resolves the
+target's `STATE_VERSION` from the commit, checks the Node major version, and
+asks the gate -- all before it touches the checkout, because static files are
+read from disk per request and `/version.json` is derived from their mtimes, so
+moving the tree already changes what open browsers are served. It then
+fast-forwards the checkout, runs the tests, and restarts the service. It compares the commit the *running server* reports as
 well as the one in the working tree, so a tree moved by anything other than
 this script -- a manual pull, or a checkout whose restart failed -- still gets
 the process restarted rather than being mistaken for up to date. A server that

@@ -13,7 +13,7 @@ separate game modules.
 
 ```text
 .github/            Tests and the GitHub Pages client deployment.
-deploy/             systemd user unit for the game server.
+deploy/             systemd units, the deployment gate, and the updater.
 docs/               Design, operations, and reference documentation.
 src/lobby.js        Shared joining, hosting, and logging behavior.
 src/rooms.js        Room registry, SSE fan-out, timers, snapshots, and idle expiry.

@@ -3,8 +3,11 @@
 // pipeline that keeps the two on the same commit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
 import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
@@ -112,9 +115,10 @@ test('a current tree with stale code running still gets restarted', async () => 
   // Comparing only the tree calls a stale process "already current" and never
   // restarts it -- the tree can move without this script (a manual pull, or a
   // checkout whose restart failed).
-  assert.match(update, /health=\$\(running_health\)/);
-  assert.match(update, /running=.*sed -n '1p'/);
-  assert.match(update, /api\/health/);
+  const lib = await read('../deploy/lib.sh');
+  assert.match(update, /running=\$\(avalon_health \| sed -n '1p'\)/);
+  assert.match(lib, /api\/health/);
+  assert.match(lib, /h\.commit \?\? ""/);
   assert.match(update, /\[ -z "\$running" \] && exit 0/, 'an unknown commit must not force a restart');
 
   // A reset when the tree is already right buys nothing and destroys anything
@@ -122,36 +126,96 @@ test('a current tree with stale code running still gets restarted', async () => 
   assert.match(update, /\[ "\$previous" = "\$target" \] \|\| git reset --hard --quiet "\$target"/);
 });
 
-test('the update gate asks the server before anything is replaced', async () => {
-  const gate = await read('../deploy/gate.sh');
-  const update = await read('../deploy/update.sh');
+/**
+ * Run deploy/gate.sh against a stub server. The gate is the one place that
+ * decides whether the running process may be replaced, so it is worth asking
+ * it rather than reading it: these are exit codes, not greps.
+ */
+async function askGate({ running, target, updateStatus = 409, down = false, force = false }) {
+  const home = await mkdtemp(join(tmpdir(), 'avalon-gate-home-'));   // no ~/.config/avalon.env
+  const server = createServer((req, res) => {
+    if (req.url === '/api/health') {
+      const body = { ok: true, service: 'avalon' };
+      if (running !== undefined) body.stateVersion = running;
+      body.commit = 'f'.repeat(40);
+      res.writeHead(200, { 'content-type': 'application/json' });
+      return res.end(JSON.stringify(body));
+    }
+    res.writeHead(updateStatus, { 'content-type': 'application/json' });
+    res.end('{}');
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const port = server.address().port;
+  if (down) await new Promise((r) => server.close(r));   // nothing listening at all
 
-  assert.match(gate, /api\/health\/update/);
-  assert.match(gate, /409\)[^\n]*exit 75/, '409 is the only busy answer');
-  assert.match(gate, /AVALON_FORCE/);
+  try {
+    const gate = fileURLToPath(new URL('../deploy/gate.sh', import.meta.url));
+    const env = { ...process.env, HOME: home, PORT: String(port) };
+    if (target !== undefined) env.TARGET_STATE_VERSION = String(target);
+    if (force) env.AVALON_FORCE = '1';
+    // Async, not spawnSync: the stub above is served by this very event loop,
+    // so blocking it would deadlock against the gate's own health request.
+    return await new Promise((resolve) => {
+      const child = spawn('sh', [gate], { env });
+      let stderr = '';
+      child.stderr.on('data', (b) => { stderr += b; });
+      child.on('close', (code) => resolve({ code, stderr }));
+    });
+  } finally {
+    if (!down) await new Promise((r) => server.close(r));
+  }
+}
 
-  // The checkout itself changes what open browsers are served, so the gate has
-  // to run before it, not merely before the restart.
-  assert.ok(update.indexOf('gate.sh') < update.indexOf('git reset --hard --quiet "$target"'),
-    'update.sh must consult the gate before moving the working tree');
-  assert.match(update, /systemctl --user restart avalon/);
+test('a lossless restart is allowed even mid-game', async () => {
+  const { code, stderr } = await askGate({ running: 1, target: 1, updateStatus: 409 });
+  assert.equal(code, 0, 'matching state versions restore every room');
+  assert.match(stderr, /restart-compatible/);
 });
 
-test('only known-equal state versions bypass the update gate', async () => {
+test('an incompatible restart waits for the table to clear', async () => {
+  assert.equal((await askGate({ running: 1, target: 2, updateStatus: 409 })).code, 75);
+  assert.equal((await askGate({ running: 1, target: 2, updateStatus: 200 })).code, 0,
+    'no game in progress, nothing to lose');
+});
+
+test('an unknown state version on either side fails closed', async () => {
+  assert.equal((await askGate({ running: 1, updateStatus: 409 })).code, 75,
+    'a target that does not declare one is not known to match');
+  assert.equal((await askGate({ running: undefined, target: 1, updateStatus: 409 })).code, 75,
+    'a server too old to report one is not known to match either');
+});
+
+test('a server that is not running is nothing to protect', async () => {
+  assert.equal((await askGate({ running: 1, target: 2, down: true })).code, 0);
+});
+
+test('AVALON_FORCE skips the question entirely', async () => {
+  const { code, stderr } = await askGate({ running: 1, target: 2, updateStatus: 409, force: true });
+  assert.equal(code, 0);
+  assert.match(stderr, /forced/);
+});
+
+test('the gate is asked before anything is replaced', async () => {
   const update = await read('../deploy/update.sh');
-  const unit = await read('../deploy/avalon.service');
+  const gate = await read('../deploy/gate.sh');
 
-  assert.match(update, /h\.stateVersion \?\? ""/);
-  assert.match(update, /target:src\/state-version\.js/);
-  assert.ok(update.includes("sed -n 's/.*STATE_VERSION = \\([0-9][0-9]*\\).*/\\1/p'"));
-  assert.match(update,
-    /if \[ -n "\$running_sv" \] && \[ -n "\$target_sv" \] && \[ "\$running_sv" = "\$target_sv" \]; then/);
-
-  const comparison = update.indexOf('if [ -n "$running_sv" ]');
-  const fallback = update.indexOf('else', comparison);
-  const gate = update.indexOf('gate.sh', fallback);
+  // The checkout itself changes what open browsers are served, so both the
+  // host check and the gate have to run before it, not merely before the
+  // restart. A node version this host cannot run is not worth moving for.
+  const node = update.indexOf('case "$(node -v)"');
+  const asked = update.indexOf('"$here/gate.sh"');
   const reset = update.indexOf('git reset --hard --quiet "$target"');
-  assert.ok(comparison < fallback && fallback < gate && gate < reset,
-    'every unknown or unequal version must gate before checkout');
+  assert.ok(node !== -1 && asked !== -1 && reset !== -1);
+  assert.ok(node < asked && asked < reset,
+    'check the runtime, then the gate, then move the working tree');
+
+  // The gate cannot answer without knowing what is being deployed, and it must
+  // learn it as a version rather than a commit: nothing in it knows about git.
+  assert.match(update, /TARGET_STATE_VERSION=\$\(git show "\$target:src\/state-version\.js"/);
+  assert.match(update, /export TARGET_STATE_VERSION/);
+  assert.doesNotMatch(gate, /\bgit\b/, 'the gate stays usable for an image deployment');
+  assert.match(update, /systemctl --user restart avalon/);
+
+  const unit = await read('../deploy/avalon.service');
   assert.match(unit, /StateDirectory=avalon/);
 });
