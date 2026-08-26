@@ -127,8 +127,17 @@ async function api(rooms, req, res, url) {
   const code = parts[2].toUpperCase();
   const tail = parts[3];
 
+  // What a reconnecting browser asks after its stream drops: is the room still
+  // here, and is my seat still in it? A restart that lost the snapshot answers
+  // both, so the client can stop retrying instead of saying "reconnecting"
+  // forever. Looking rather than getting: a probe must not renew a room's life.
   if (req.method === 'GET' && !tail) {
-    return json(res, 200, { exists: rooms.has(code) });
+    const room = rooms.peek(code);
+    const playerId = url.searchParams.get('playerId');
+    return json(res, 200, {
+      exists: Boolean(room),
+      seated: Boolean(room && playerId && room.game.players.some((p) => p.id === playerId)),
+    });
   }
 
   if (req.method === 'GET' && tail === 'events') {

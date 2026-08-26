@@ -30,6 +30,12 @@ The suite does not need network access or a browser.
 - **ui-game / ui-onuw:** every phase of both games, rendered from real engine
   views in both languages, including countdown redraw regressions.
 - **ui-connect:** cold joins, reconnection, and failures inside game view hooks.
+- **ui-reconnect:** what a deployment restart does to an open game -- recovering
+  when the room survived, re-taking a seat it did not, ending cleanly when the
+  room is gone, and waking on `online`/`focus` rather than sitting out a backoff.
+- **ui-reload:** reloading for a new client build mid-game, including a reload
+  that arrives without the URL fragment and one that lands while the server is
+  still restarting.
 - **ui-testmode:** adding and switching seats through normal join and event
   paths, including rejected joins.
 - **deploy:** Node-hosted and GitHub Pages entry points, frontend version

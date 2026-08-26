@@ -146,6 +146,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
   const calls = [];
   const state = {
     health: true,
+    offline: false,        // when true every request fails the way a dead server does
     protocol: 1,
     frontendVersion: 'dev',
     confirmResult: true,
@@ -156,6 +157,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
   const fetchStub = async (url, options = {}) => {
     const path = String(url).replace(/^https?:\/\/[^/]+/, '');
     calls.push({ path, method: options.method ?? 'GET', body: options.body ? JSON.parse(options.body) : null });
+    if (state.offline) throw new TypeError('fetch failed');   // the server is down
     if (path === '/api/health') {
       if (!state.health) throw new TypeError('fetch failed');
       return jsonResponse({ ok: true, service: 'avalon', protocol: state.protocol });
@@ -199,10 +201,24 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     finish() { this.paused = true; this.onended?.({ type: 'ended', target: this }); }
   }
 
+  // Page-level listeners, so a test can raise the events a phone raises when it
+  // comes back: 'online', 'focus', 'visibilitychange'.
+  const pageListeners = new Map();
+  const addPageListener = (type, fn) => {
+    if (!pageListeners.has(type)) pageListeners.set(type, []);
+    pageListeners.get(type).push(fn);
+  };
+  const fire = (type, event = {}) => {
+    for (const fn of pageListeners.get(type) ?? []) fn({ type, ...event });
+  };
+
+  document.addEventListener = addPageListener;
+  document.visibilityState = 'visible';
+
   Object.assign(globalThis, {
     document,
     window: {
-      addEventListener() {},
+      addEventListener: addPageListener,
       confirm(message) {
         state.confirmations.push(String(message));
         return state.confirmResult;
@@ -215,7 +231,10 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     Audio: AudioStub,
   });
 
-  return { root, fixtures, document, localStorage, location, calls, state, EventSourceStub, AudioStub, storage };
+  return {
+    root, fixtures, document, localStorage, location, calls, state,
+    EventSourceStub, AudioStub, storage, fire,
+  };
 }
 
 export { Element, TextNode };

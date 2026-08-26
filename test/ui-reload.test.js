@@ -1,0 +1,97 @@
+// Reloading for a new client build, mid-game. The page comes back with nothing
+// but localStorage and a URL, and it has to land in the same room: dropping the
+// player onto the join form is worse than it looks, because a game that has
+// started will not let a stranger in, and the seat is only recoverable while
+// the browser still remembers its id.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import { installDom } from './dom-shim.js';
+
+// A reload that arrived without the fragment: the room is remembered anyway.
+const dom = installDom({ href: 'https://shengjiex98.github.io/avalon/', hash: '' });
+dom.storage.set('avalon.room', 'WXYZ');
+dom.storage.set('avalon.player.WXYZ', 'me');
+dom.storage.set('avalon.name', 'Ann');
+dom.storage.set('avalon.seats.WXYZ', JSON.stringify([{ id: 'me', name: 'Ann' }]));
+dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'me', code: 'WXYZ' });
+dom.state.responses.set('/api/rooms/WXYZ?playerId=me', { exists: true, seated: true });
+
+const client = await import('../public/app.js');
+await client.ready;
+const { app } = client;
+
+const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
+
+const frame = () => ({
+  code: 'WXYZ', gameId: 'avalon', phase: 'quest', version: 9, hostId: 'me',
+  me: { id: 'me', name: 'Ann' },
+  you: { id: 'me', name: 'Ann', role: 'merlin', team: 'good', awake: false, action: null, acted: false, voted: false },
+  players: [{ id: 'me', name: 'Ann', seat: 0, isLeader: true, onTeam: true }],
+  options: {}, optionRoom: 1, deck: {}, centreCount: 3, centre: null,
+  round: 1, rejects: 0, maxRejects: 5, teamSize: 2, failsRequired: 1,
+  boardSizes: [2, 3, 2, 3, 3], team: ['me'], quests: [], lastVote: null,
+  knowledge: [], info: [], swaps: [], votes: [], dead: [], winners: [],
+  waitingFor: ['me'], evilCount: 2, log: [],
+  night: null, pace: 'normal', nightScript: [], nightSeconds: 30,
+});
+
+test('a reload lands back in the room, not on the join form', async () => {
+  assert.equal(app.code, 'WXYZ');
+  assert.equal(app.playerId, 'me');
+  assert.equal(dom.location.hash, '#/WXYZ', 'the room is put back in the URL');
+
+  const rejoin = dom.calls.find((c) => c.path === '/api/rooms/WXYZ/join');
+  assert.ok(rejoin, 'it takes its seat again');
+  assert.equal(rejoin.body.playerId, 'me');
+  assert.equal(dom.fixtures.view.byId('nameInput'), null, 'no join form');
+  assert.match(dom.fixtures.view.text, /Rejoining room WXYZ/);
+
+  dom.EventSourceStub.last.onmessage({ data: JSON.stringify(frame()) });
+  assert.equal(app.view.phase, 'quest');
+  assert.match(dom.fixtures.view.text, /Play a card/, 'the game is back on screen');
+  assert.equal(dom.fixtures.conn.hidden, true);
+});
+
+test('a server that is still restarting does not cost the player their seat', async () => {
+  // The Pages client is deployed right behind the server, so a reload can land
+  // in the gap. Giving the seat up there is unrecoverable mid-game.
+  app.source?.close();
+  app.code = null; app.view = null; app.playerId = null; app.connected = false;
+  app.everConnected = false; app.retry = 0;
+  dom.location.hash = '#/WXYZ';
+  dom.storage.set('avalon.player.WXYZ', 'me');
+  dom.state.offline = true;
+
+  await client.main();
+
+  assert.equal(app.serverStatus, 'unreachable');
+  assert.equal(app.code, 'WXYZ', 'the room is still held');
+  assert.equal(dom.localStorage.getItem('avalon.player.WXYZ'), 'me', 'and so is the seat');
+  assert.match(dom.fixtures.view.text, /Rejoining room WXYZ/);
+
+  dom.state.offline = false;      // the new process finishes booting
+  await tick(700);
+  const stream = dom.EventSourceStub.last;
+  stream.onmessage({ data: JSON.stringify(frame()) });
+  assert.equal(app.connected, true, 'and the game comes back by itself');
+  assert.match(dom.fixtures.view.text, /Play a card/);
+});
+
+test('a room the server no longer has ends cleanly', async () => {
+  app.source?.close();
+  app.code = null; app.view = null; app.playerId = null; app.connected = false;
+  app.everConnected = false; app.retry = 0;
+  dom.location.hash = '#/WXYZ';
+  dom.storage.set('avalon.player.WXYZ', 'me');
+  dom.state.responses.delete('/api/rooms/WXYZ/join');   // the server answers noSuchRoom
+
+  await client.main();
+  await tick();
+
+  assert.equal(app.code, null);
+  assert.equal(dom.localStorage.getItem('avalon.player.WXYZ'), null);
+  assert.equal(dom.localStorage.getItem('avalon.room'), null);
+  assert.match(dom.fixtures.toast.text, /no longer on the server/);
+  assert.match(dom.fixtures.view.text, /Create a new room/);
+});

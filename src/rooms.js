@@ -84,6 +84,11 @@ export class Rooms {
     return this.rooms.has(String(code || '').toUpperCase());
   }
 
+  /** Read a room without renewing its idle clock, and without throwing. */
+  peek(code) {
+    return this.rooms.get(String(code || '').toUpperCase());
+  }
+
   /**
    * Rooms an incompatible restart would lose: a game in play, or one that just
    * finished and whose result is still on screen. A lobby costs nothing to
