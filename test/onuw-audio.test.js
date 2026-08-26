@@ -49,3 +49,26 @@ test('muting cancels an in-progress recording', () => {
   app.view.night = null;
   onuw.onView();
 });
+
+test('switching languages leaves the current call alone and applies next step', () => {
+  app.lang = 'zh';
+  app.muted = false;
+  app.view.night = { index: 0, key: 'werewolf', msLeft: 10_000, msTotal: 10_000 };
+  onuw.onView();
+  const audio = dom.AudioStub.instances.at(-1);
+  assert.match(audio.src, /audio\/onuw\/zh\/wake-werewolf\.mp3$/);
+
+  app.lang = 'en';
+  assert.equal(audio.paused, false);
+  assert.match(audio.src, /audio\/onuw\/zh\/wake-werewolf\.mp3$/);
+
+  app.view.night = { index: 1, key: 'seer', msLeft: 10_000, msTotal: 10_000 };
+  onuw.onView();
+  assert.match(audio.src, /audio\/onuw\/en\/sleep-werewolf\.mp3$/);
+  audio.finish();
+  assert.match(audio.src, /audio\/onuw\/en\/wake-seer\.mp3$/);
+
+  app.view.night = null;
+  onuw.onView();
+  assert.equal(audio.paused, true);
+});

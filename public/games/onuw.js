@@ -19,6 +19,7 @@ let clockTimer = null;
 let spokenStep = null;
 let announcementAudio = null;
 let announcementQueue = [];
+let announcementGeneration = 0;
 
 const AUDIO_ROOT = new URL('../audio/onuw/', import.meta.url);
 
@@ -26,12 +27,15 @@ function audioPlayer() {
   if (announcementAudio || typeof Audio === 'undefined') return announcementAudio;
   announcementAudio = new Audio();
   announcementAudio.preload = 'auto';
-  announcementAudio.onended = playNextAnnouncement;
-  announcementAudio.onerror = playNextAnnouncement;
+  // Event handlers receive an Event argument. Keep it out of the queue runner,
+  // whose optional argument is the generation this playback belongs to.
+  announcementAudio.onended = () => playNextAnnouncement();
+  announcementAudio.onerror = () => playNextAnnouncement();
   return announcementAudio;
 }
 
 function stopAnnouncements() {
+  announcementGeneration += 1;
   announcementQueue = [];
   if (!announcementAudio) return;
   announcementAudio.pause();
@@ -39,7 +43,8 @@ function stopAnnouncements() {
   announcementAudio.load?.();
 }
 
-function playNextAnnouncement() {
+function playNextAnnouncement(generation = announcementGeneration) {
+  if (generation !== announcementGeneration) return;
   const audio = audioPlayer();
   if (!audio || app?.muted || !announcementQueue.length) return stopAnnouncements();
   audio.src = announcementQueue.shift();
@@ -47,7 +52,9 @@ function playNextAnnouncement() {
   // Autoplay policies can still refuse playback when a player has not touched
   // the page. The written call remains visible, and a rejection must never
   // interrupt the game frame that delivered it.
-  started?.catch?.(() => { announcementQueue = []; });
+  started?.catch?.(() => {
+    if (generation === announcementGeneration) stopAnnouncements();
+  });
 }
 
 const announcementUrl = (lang, phase, key) =>
@@ -60,9 +67,12 @@ const announcementUrl = (lang, phase, key) =>
 function unlockAnnouncements() {
   const audio = audioPlayer();
   if (!audio || announcementQueue.length || !audio.paused) return;
-  audio.src = new URL('unlock.wav', AUDIO_ROOT).href;
+  const generation = announcementGeneration;
+  const unlockUrl = new URL('unlock.wav', AUDIO_ROOT).href;
+  audio.src = unlockUrl;
   const started = audio.play();
   started?.then?.(() => {
+    if (generation !== announcementGeneration || audio !== announcementAudio || audio.src !== unlockUrl) return;
     audio.pause();
     audio.currentTime = 0;
   }).catch?.(() => {});
