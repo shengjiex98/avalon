@@ -352,6 +352,22 @@ test('with every werewolf in the centre, the village must kill nobody', () => {
   assert.deepEqual([...decideWinners(roles, new Set(['p0']))], []);
 });
 
+test('with no werewolf at the table the minion wins by getting somebody hanged', () => {
+  const roles = { p0: 'minion', p1: 'villager', p2: 'seer' };
+  // Nobody dies: the pack never existed, so the village is safe.
+  assert.deepEqual([...decideWinners(roles, new Set())], ['village']);
+  // An innocent hangs and the minion, alive or not, has done his job.
+  assert.deepEqual([...decideWinners(roles, new Set(['p1']))], ['werewolf']);
+  assert.deepEqual([...decideWinners(roles, new Set(['p0', 'p1']))], ['werewolf']);
+  // Only the minion hangs: he loses, and so does everyone else.
+  assert.deepEqual([...decideWinners(roles, new Set(['p0']))], []);
+});
+
+test('a tanner death still costs the minion the win', () => {
+  const roles = { p0: 'minion', p1: 'tanner', p2: 'seer' };
+  assert.deepEqual([...decideWinners(roles, new Set(['p1']))], ['tanner']);
+});
+
 test('the tanner wins by dying, and takes the werewolves down with him', () => {
   const roles = { p0: 'tanner', p1: 'werewolf', p2: 'villager' };
   assert.deepEqual([...decideWinners(roles, new Set(['p0']))], ['tanner']);

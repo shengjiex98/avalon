@@ -21,7 +21,8 @@ Avalon supports 5–10 players.
 - Quest four requires two Fail cards with seven or more players.
 - Evil wins after three failed quests.
 - After three successful quests, the Assassin can still win for evil by
-  identifying Merlin.
+  identifying Merlin. Any player but the Assassin is a legal target; naming
+  anyone other than Merlin hands the game to good.
 - **Play again** returns the same players to the lobby and deals new roles.
 
 Hidden information is filtered on the server. Merlin does not see Mordred;
@@ -64,6 +65,16 @@ After the night, players discuss and vote at the same time. The player or
 players with the most votes die. If every player receives exactly one vote,
 nobody dies. A player's final team is determined by the card they hold at the
 end of the night, not the card originally dealt to them.
+
+The vote is then scored:
+
+- The Tanner wins by dying, and a dead Tanner denies the werewolf team the win.
+- The village wins if at least one werewolf dies.
+- If every werewolf card ended up in the center, the village wins when nobody
+  dies, and the Minion wins when anyone other than the Minion dies.
+- Otherwise the werewolf team wins.
+- Any other ending has no winner: with no werewolf and no Minion in play, a
+  table that hangs someone loses together.
 
 The Doppelgänger is intentionally unsupported. Its action depends on a copied
 role and night information, which does not fit the shared fixed-step model.

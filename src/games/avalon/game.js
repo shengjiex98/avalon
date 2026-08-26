@@ -178,12 +178,19 @@ function resolveQuest(g) {
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
 }
 
+/**
+ * The Assassin names anyone but themselves. Only Merlin is a hit — naming
+ * another evil player is a legal, losing move, and has to stay legal: with
+ * Oberon at the table the Assassin cannot tell him from a Loyal Servant, so
+ * refusing the pick would answer that question for free and hand back the
+ * shot.
+ */
 export function assassinate(g, playerId, targetId) {
   require_(g.phase === 'assassin', 'wrongPhase');
   require_(g.roles[playerId] === 'assassin', 'assassinOnly');
   const target = playerById(g, targetId);
   require_(target, 'unknownMember');
-  require_(sideOf(g.roles[targetId]) === 'good', 'targetMustBeGood');
+  require_(targetId !== playerId, 'cannotTargetSelf');
 
   g.assassinTarget = targetId;
   const hit = g.roles[targetId] === 'merlin';
