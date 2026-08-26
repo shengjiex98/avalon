@@ -20,6 +20,9 @@ const STRINGS = {
     'home.joinRoom': 'Join room {code}',
     'home.invited': 'You have been invited to room {code}. Enter a name to join.',
     'home.rulesLink': 'How to play',
+    'home.heldSeat': 'You still have a seat in room {code}.',
+    'home.rejoin': 'Rejoin',
+    'home.forget': 'Not now',
 
     'server.checking': 'Connecting to the game server…',
     'server.title': 'Game server',
@@ -49,6 +52,9 @@ const STRINGS = {
 
     'game.reset': 'Reset game',
     'game.resetConfirm': 'Reset this game? The current game will end and everyone will return to the lobby.',
+    'game.leave': 'Leave game',
+    'game.leaveConfirm': 'Leave this game? The game carries on without you and your seat stays in it, so the others are not left short. You can come back from the home screen while the room lasts.',
+    'game.leaveConfirmHost': 'Leave this game? You are the host, so nobody left in the room will be able to reset it — use Reset game if you want to end it for everyone. Your seat stays in the game and you can come back from the home screen while the room lasts.',
     'avalon.ref.title': 'Roles in this game',
     'avalon.ref.inPlay': 'Role guide ({n} players)',
 
@@ -202,6 +208,7 @@ const STRINGS = {
     'room.forget': 'Leave this room',
     'room.gone': 'Room {code} is no longer on the server.',
     'room.seatLost': 'The server no longer has your seat in room {code}.',
+    'room.left': 'You left room {code}. Your seat is still there if you want it back.',
     'update.available': 'A new version of the game is available.',
     'update.reload': 'Reload',
 
@@ -410,6 +417,9 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'home.joinRoom': '加入房间 {code}',
     'home.invited': '有人邀请你加入房间 {code}，填写昵称即可加入。',
     'home.rulesLink': '玩法说明',
+    'home.heldSeat': '你在房间 {code} 中仍有座位。',
+    'home.rejoin': '重新加入',
+    'home.forget': '暂不加入',
 
     'server.checking': '正在连接游戏服务器……',
     'server.title': '游戏服务器',
@@ -439,6 +449,9 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
 
     'game.reset': '重置游戏',
     'game.resetConfirm': '确定要重置本局游戏吗？当前游戏将结束，所有玩家都会返回等待室。',
+    'game.leave': '离开游戏',
+    'game.leaveConfirm': '确定要离开本局游戏吗？游戏会继续进行，你的座位也会保留，其他玩家不会因此少人。只要房间还在，你可以从首页回来。',
+    'game.leaveConfirmHost': '确定要离开本局游戏吗？你是房主，离开后房间里的其他人将无法重置游戏——若想为所有人结束本局，请使用“重置游戏”。你的座位会保留，只要房间还在，你可以从首页回来。',
     'avalon.ref.title': '本局角色',
     'avalon.ref.inPlay': '角色说明（{n} 人）',
 
@@ -592,6 +605,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'room.forget': '离开该房间',
     'room.gone': '服务器上已没有房间 {code}。',
     'room.seatLost': '服务器上已没有你在房间 {code} 的座位。',
+    'room.left': '你已离开房间 {code}。座位仍为你保留，随时可以回来。',
     'update.available': '游戏有新版本可用。',
     'update.reload': '重新加载',
 

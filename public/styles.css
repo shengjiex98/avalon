@@ -224,6 +224,9 @@ button.player:disabled { cursor: default; }
 }
 
 /* "or" rule between the two ways into a game. */
+/* The seat this browser still holds: a notice on the home screen, not a form. */
+.held-seat { border-color: var(--gold); }
+
 .divider { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: 13px; }
 .divider::before, .divider::after { content: ""; flex: 1 1 auto; height: 1px; background: var(--line); }
 

@@ -56,6 +56,25 @@ games when the snapshot's `STATE_VERSION` matches the code. An incompatible or
 unreadable snapshot is discarded and the server starts empty. Rooms idle for
 six hours are still removed.
 
+## Rooms, seats, and the URL
+
+The URL fragment is the only thing that puts a browser into a room. What the
+browser stores — the room it last held a seat in, and the player id for that
+room — is an offer rather than a destination: a bare URL lands on the home
+screen, which asks the server whether that seat is still real and shows a
+rejoin card if it is. Clearing the address bar is therefore a way out of a game,
+and a fragment that simply went missing, as it does from a home-screen shortcut,
+still costs nobody their seat.
+
+Leaving is local. A room removes a player only while it is in its lobby: once
+roles are dealt the head count fixes the quest sizes and the deck, so the server
+refuses and the seat stays where the rules need it. A player who leaves mid-game
+stops watching, keeps the seat id, and is offered the way back until they refuse
+it or the room ends. Refusing stops the offer without discarding the id, so the
+room's own link still lands them in their own seat: nothing but the server
+saying the seat is gone throws one away, which is what keeps a mis-tap from
+ending someone's game.
+
 ## Client versions
 
 The Node-hosted client and server are deployed together. The optional GitHub
