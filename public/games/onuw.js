@@ -155,7 +155,15 @@ export const rulesKey = 'onuw.rules.body';
 export const taglineKey = 'onuw.tagline';
 
 const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
+/**
+ * House rules are variants, not cards, so they sit under their own heading and
+ * keep their description on screen: a table has to agree what one means before
+ * switching it on. Rendered only when the server offers them, so a newer client
+ * against an older server shows no switch it cannot actually throw.
+ */
+const HOUSE_RULES = ['decisiveVote'];
 const roleName = (role) => T(`onuw.role.${role}`);
+const houseRuleName = (rule) => T(`onuw.house.${rule}`);
 
 /**
  * How a card is coloured: red for the werewolf side, gold for the tanner, blue
@@ -242,11 +250,26 @@ export function lobbyOptions() {
     ),
   );
 
+  const houseToggle = (rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+    h('input', {
+      type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
+      onchange: (e) => send('options', { options: { houseRules: { [rule]: e.target.checked } } }),
+    }),
+    h('span', { class: 'house-rule-copy' },
+      h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
+      h('span', { class: 'house-rule-description', text: T(`onuw.houseDesc.${rule}`) }),
+    ),
+  );
+
   return h('div', { class: 'card stack' },
     h('h2', { text: T('lobby.roles') }),
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
     h('p', { class: 'option-room', text: T('onuw.optionRoom', { n: v.optionRoom }) }),
     h('div', { class: 'role-options' }, OPTIONS.map(toggle)),
+    ...(v.houseRules ? [
+      h('h3', { text: T('onuw.houseRules') }),
+      h('div', { class: 'house-rules' }, HOUSE_RULES.map(houseToggle)),
+    ] : []),
     h('h3', { text: T('onuw.pace') }),
     h('div', { class: 'row pace-picker' }, ['brisk', 'normal', 'relaxed'].map((pace) => h('button', {
       class: `btn grow ${v.pace === pace ? 'primary' : ''}`, id: `pace-${pace}`, disabled: !isHost,
@@ -367,6 +390,9 @@ function closeInfoPopup() {
   render();
 }
 
+/** The variants this table switched on, in the order they are listed. */
+const houseRulesInForce = () => HOUSE_RULES.filter((rule) => app.view.houseRules?.[rule]);
+
 /**
  * Which roles are in this game, what each of them does, and the order the
  * night runs in. All of it is public — the lobby agreed the deck — so having
@@ -376,6 +402,7 @@ function referenceContent() {
   const v = app.view;
   const deck = v.deck ?? {};
   const script = v.nightScript ?? [];
+  const inForce = houseRulesInForce();
 
   return h('div', { class: 'stack' },
       h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
@@ -390,6 +417,15 @@ function referenceContent() {
         text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
       }))),
       h('p', { class: 'muted', text: T('onuw.ref.note') }),
+      // The lobby agreed these too, and they decide the vote — so they stay
+      // within reach of the argument they are going to come up in.
+      ...(inForce.length ? [
+        h('h3', { text: T('onuw.houseRules') }),
+        h('div', { class: 'stack tight' }, inForce.map((rule) => h('div', { class: 'stack tight' },
+          h('div', { class: 'deck' }, h('span', { class: 'tag gold', text: houseRuleName(rule) })),
+          h('p', { class: 'muted', text: T(`onuw.houseDesc.${rule}`) }),
+        ))),
+      ] : []),
   );
 }
 

@@ -363,6 +363,102 @@ test('with no werewolf at the table the minion wins by getting somebody hanged',
   assert.deepEqual([...decideWinners(roles, new Set(['p0']))], []);
 });
 
+// ------------------------------------------------- house rule: decisive vote
+
+const DECISIVE = { decisiveVote: true };
+
+test('a decisive vote scores a table with a werewolf in it exactly as the book does', () => {
+  const roles = { p0: 'werewolf', p1: 'villager', p2: 'minion' };
+  for (const dead of [['p0'], ['p1'], ['p2'], ['p0', 'p1'], []]) {
+    assert.deepEqual(
+      [...decideWinners(roles, new Set(dead), DECISIVE)],
+      [...decideWinners(roles, new Set(dead))],
+      `dead: ${dead.join() || 'nobody'}`,
+    );
+  }
+});
+
+test('a decisive vote makes the lone minion the pack the village has to catch', () => {
+  const roles = { p0: 'minion', p1: 'villager', p2: 'seer' };
+  // Hanging him is the catch the book denies the village.
+  assert.deepEqual([...decideWinners(roles, new Set(['p0']), DECISIVE)], ['village']);
+  // And it stays the catch when the tie takes an innocent down with him.
+  assert.deepEqual([...decideWinners(roles, new Set(['p0', 'p1']), DECISIVE)], ['village']);
+  // Hanging only innocents is still his win, exactly as it is by the book.
+  assert.deepEqual([...decideWinners(roles, new Set(['p1']), DECISIVE)], ['werewolf']);
+  // Killing nobody was never wrong, and is not now.
+  assert.deepEqual([...decideWinners(roles, new Set(), DECISIVE)], ['village']);
+});
+
+test('a decisive vote leaves no ending without a winner', () => {
+  const roles = { p0: 'villager', p1: 'villager', p2: 'seer' };
+  assert.deepEqual([...decideWinners(roles, new Set(['p0']))], [], 'by the book, nobody wins');
+  assert.deepEqual([...decideWinners(roles, new Set(['p0']), DECISIVE)], ['werewolf']);
+  assert.deepEqual([...decideWinners(roles, new Set(), DECISIVE)], ['village']);
+});
+
+test('a decisive vote does not save the werewolf side from a dead tanner', () => {
+  const roles = { p0: 'minion', p1: 'tanner', p2: 'seer' };
+  assert.deepEqual([...decideWinners(roles, new Set(['p1']), DECISIVE)], ['tanner']);
+  assert.deepEqual([...decideWinners(roles, new Set(['p0', 'p1']), DECISIVE)].sort(), ['tanner', 'village']);
+
+  const noPack = { p0: 'villager', p1: 'tanner', p2: 'seer' };
+  assert.deepEqual([...decideWinners(noPack, new Set(['p1']), DECISIVE)], ['tanner']);
+});
+
+test('the host switches the house rule on, and the vote is scored by it', () => {
+  const game = w.createGame('TEST', { now });
+  ['Ann', 'Bo', 'Cai'].forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
+  assert.equal(game.houseRules.decisiveVote, false, 'variants are off until somebody asks');
+  assert.throws(() => w.setOptions(game, 'p1', { houseRules: { decisiveVote: true } }), { key: 'hostOnly' });
+  w.setOptions(game, 'p0', { houseRules: { decisiveVote: true } });
+  assert.equal(w.viewFor(game, 'p1', clock).houseRules.decisiveVote, true, 'the table can see it');
+
+  // No werewolf among the three players: the minion is the only enemy left.
+  const dealtGame = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  dealtGame.houseRules = { decisiveVote: true };
+  finishNight(dealtGame);
+  w.startVote(dealtGame, 'p0');
+  w.castVote(dealtGame, 'p1', 'p0');
+  w.castVote(dealtGame, 'p2', 'p0');
+  w.castVote(dealtGame, 'p0', 'p1');
+  assert.deepEqual(dealtGame.dead, ['p0']);
+  assert.deepEqual(dealtGame.winners, ['village'], 'the table caught the pack');
+});
+
+test('the house rule survives a game ending and the next deal', () => {
+  const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  game.houseRules = { decisiveVote: true };
+  finishNight(game);
+  w.startVote(game, 'p0');
+  for (const [voter, target] of [['p0', 'p1'], ['p1', 'p0'], ['p2', 'p0']]) w.castVote(game, voter, target);
+  w.resetToLobby(game, 'p0', { now });
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.houseRules.decisiveVote, true, 'the table agreed it, not that one game');
+});
+
+test('a room restored from before house rules existed simply plays without them', () => {
+  const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  delete game.houseRules;   // a snapshot taken by an older server
+  finishNight(game);
+  w.startVote(game, 'p0');
+  for (const [voter, target] of [['p1', 'p0'], ['p2', 'p0'], ['p0', 'p1']]) w.castVote(game, voter, target);
+  assert.deepEqual(game.winners, [], 'the book\u2019s ending, not the variant\u2019s');
+  assert.deepEqual(w.viewFor(game, 'p0', clock).houseRules, { decisiveVote: false });
+});
+
+test('a lone minion is told the decisive vote has made him the quarry', () => {
+  const plain = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  stepTo(plain, 'minion');
+  assert.ok(infoFor(plain, 'p0', 'onuw.info.minionAlone'));
+
+  const decisive = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  decisive.houseRules = { decisiveVote: true };
+  stepTo(decisive, 'minion');
+  assert.ok(infoFor(decisive, 'p0', 'onuw.info.minionIsPack'));
+  assert.equal(infoFor(decisive, 'p0', 'onuw.info.minionAlone'), undefined);
+});
+
 test('a tanner death still costs the minion the win', () => {
   const roles = { p0: 'minion', p1: 'tanner', p2: 'seer' };
   assert.deepEqual([...decideWinners(roles, new Set(['p1']))], ['tanner']);

@@ -76,6 +76,22 @@ The vote is then scored:
 - Any other ending has no winner: with no werewolf and no Minion in play, a
   table that hangs someone loses together.
 
+### House rules
+
+House rules are optional variants the host switches on in the lobby, next to
+the optional roles. They are off by default, change only how the vote is
+scored, and stay switched on when the table plays again. A game shows the ones
+in force in its reference panel.
+
+**Decisive vote.** With every werewolf card in the center, the Minion leads the
+pack. Killing the Minion is a village win, whoever else dies in the same vote,
+and killing anyone else is a werewolf-team win whether or not a Minion was
+dealt. A dead Tanner still outranks both, and a table holding a werewolf card
+is scored exactly as the printed rules say. The two endings this replaces are
+the game's flattest: by the book, hanging the lone Minion wins for nobody, and
+so does hanging an innocent with no Minion in play. A lone Minion is told at
+night that the hunt is now for him.
+
 The Doppelgänger is intentionally unsupported. Its action depends on a copied
 role and night information, which does not fit the shared fixed-step model.
 

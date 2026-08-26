@@ -19,9 +19,9 @@
 // role this model cannot represent honestly.
 
 import {
-  DEFAULT_PACE, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
-  buildDeck, decideWinners, defaultOptions, nightLength, nightScript, roomForOptions,
-  stepMillis, tallyVotes, teamOf,
+  DEFAULT_PACE, HOUSE_RULES, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
+  buildDeck, decideWinners, defaultHouseRules, defaultOptions, nightLength, nightScript,
+  roomForOptions, stepMillis, tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
@@ -33,6 +33,7 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     ...lobby.baseState(code, 'onuw', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
+    houseRules: defaultHouseRules(),   // variants, off until the host says otherwise
     pace: DEFAULT_PACE,
     script: [],              // this deck's night, decided when the cards are dealt
     step: -1,                // index into script
@@ -58,12 +59,26 @@ const nameOf = (g, id) => playerById(g, id)?.name ?? '?';
 /** The deck the lobby is currently describing. */
 const liveOptions = (g) => (g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
+/**
+ * The house rules in force. Defaulted rather than read straight off the game,
+ * so a room restored from a snapshot taken before a rule existed simply plays
+ * without it instead of scoring its vote against `undefined`.
+ */
+const houseRulesOf = (g) => ({ ...defaultHouseRules(), ...g.houseRules });
+
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
   if (options.pace !== undefined) {
     require_(options.pace in PACES, 'badPace');
     g.pace = options.pace;
+  }
+  if (options.houseRules) {
+    const rules = houseRulesOf(g);
+    for (const rule of HOUSE_RULES) {
+      if (rule in options.houseRules) rules[rule] = Boolean(options.houseRules[rule]);
+    }
+    g.houseRules = rules;
   }
   const next = { ...liveOptions(g) };
   for (const role of OPTIONAL_ROLES) if (role in options) next[role] = Boolean(options[role]);
@@ -146,9 +161,12 @@ export function staticKnowledge(g, playerId) {
       : { key: 'onuw.info.loneWolf', params: {} });
   } else if (role === 'minion') {
     const wolves = g.players.filter((p) => g.startRoles[p.id] === 'werewolf').map((p) => p.name);
+    // A decisive vote makes a pack of one out of a Minion with nobody to serve,
+    // so he is told: the hunt is for him now.
+    const alone = houseRulesOf(g).decisiveVote ? 'onuw.info.minionIsPack' : 'onuw.info.minionAlone';
     out.push(wolves.length
       ? { key: 'onuw.info.minionSees', params: { names: wolves } }
-      : { key: 'onuw.info.minionAlone', params: {} });
+      : { key: alone, params: {} });
   } else if (role === 'mason') {
     const masons = others((p) => g.startRoles[p.id] === 'mason');
     out.push(masons.length
@@ -343,7 +361,7 @@ function resolveVote(g) {
   }
 
   g.dead = [...dead];
-  g.winners = [...decideWinners(g.finalRoles, dead)];
+  g.winners = [...decideWinners(g.finalRoles, dead, houseRulesOf(g))];
   g.phase = 'over';
   logEvent(g, dead.size ? 'log.executed' : 'log.nobodyDied',
     { names: g.dead.map((id) => nameOf(g, id)) });
@@ -353,7 +371,8 @@ function resolveVote(g) {
 function rebuildLobby(g, { now = Date.now } = {}) {
   const keep = {
     code: g.code, players: g.players, hostId: g.hostId,
-    options: g.options, optionsTouched: g.optionsTouched, pace: g.pace,
+    options: g.options, optionsTouched: g.optionsTouched,
+    houseRules: houseRulesOf(g), pace: g.pace,
     seed: g.seed, rng: g.rng, actions: g.actions,
     ...(g.actionsDropped ? { actionsDropped: true } : {}),
   };
@@ -416,6 +435,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
       finalRole: over ? g.finalRoles[p.id] : undefined,
     })),
     options: { ...liveOptions(g) },
+    houseRules: houseRulesOf(g),
     optionRoom: roomForOptions(g.players.length),
     deck: g.phase === 'lobby'
       ? safeDeck(g)

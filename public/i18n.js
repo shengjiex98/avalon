@@ -274,6 +274,9 @@ const STRINGS = {
     'onuw.deckHint': 'Always three more cards than players. The extra three sit face down in the middle, and nobody knows what they are.',
     'onuw.deckTooBig': 'Too many roles for {n} players. Turn some off.',
     'onuw.optionRoom': '{n} optional cards fit at this table.',
+    'onuw.houseRules': 'House rules',
+    'onuw.house.decisiveVote': 'Decisive vote',
+    'onuw.houseDesc.decisiveVote': 'With every werewolf card in the centre, the Minion leads the pack: hanging the Minion wins it for the village, and hanging anyone else wins it for the werewolf side. No vote ends without a winner.',
     'onuw.centre': 'Centre',
     'onuw.centreCard': 'Centre card {n}',
 
@@ -336,6 +339,7 @@ const STRINGS = {
     'onuw.info.loneWolf': 'You are the only werewolf.',
     'onuw.info.minionSees': 'The werewolves are: {names}',
     'onuw.info.minionAlone': 'There are no werewolves among the players.',
+    'onuw.info.minionIsPack': 'There are no werewolves among the players \u2014 so under the decisive vote you are the pack. Do not get caught.',
     'onuw.info.masons': 'The other Mason: {names}',
     'onuw.info.masonAlone': 'The other Mason card is in the centre.',
     'onuw.info.sawCentre': 'Centre card {index} was {role}.',
@@ -378,7 +382,7 @@ const STRINGS = {
 
 At night, roles are woken one at a time in a fixed order: werewolves recognise each other, the Seer looks at a card, the Robber steals one, the Troublemaker swaps two others, the Drunk trades blindly with the middle, and the Insomniac checks what they ended up with. Each step runs on a countdown the whole table shares. Only roles in the deck are called — but a role is still called when its card is sitting in the centre.
 
-Then you argue. Then everyone points at once. Whoever collects the most fingers dies; if everyone gets exactly one vote, nobody does. The village wins if a werewolf dies. If no werewolf was dealt to a player at all, the village wins by killing nobody. The Tanner wins only by dying.
+Then you argue. Then everyone points at once. Whoever collects the most fingers dies; if everyone gets exactly one vote, nobody does. The village wins if a werewolf dies. If no werewolf was dealt to a player at all, the village wins by killing nobody. The Tanner wins only by dying. The host may switch on the decisive vote, a house rule that makes the Minion the pack when every werewolf card is in the centre, so no vote ends without a winner.
 
 You belong to whatever card you are holding at the end — not the one you were dealt.`,
 
@@ -658,6 +662,9 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'onuw.deckHint': '牌数永远比人数多三张，多出的三张面朝下放在场中央，没有人知道是什么。',
     'onuw.deckTooBig': '{n} 人放不下这么多角色，请关掉一些。',
     'onuw.optionRoom': '当前人数还能放 {n} 张可选角色牌。',
+    'onuw.houseRules': '规则变体',
+    'onuw.house.decisiveVote': '一票定胜负',
+    'onuw.houseDesc.decisiveVote': '若狼人牌全在中央，爪牙即为狼首：票数最多者是爪牙，好人阵营获胜；是其他人，则狼人阵营获胜。每局都分得出胜负。',
     'onuw.centre': '中央牌',
     'onuw.centreCard': '中央牌 {n}',
 
@@ -720,6 +727,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
     'onuw.info.loneWolf': '你是唯一的狼人。',
     'onuw.info.minionSees': '狼人是：{names}',
     'onuw.info.minionAlone': '玩家中没有狼人。',
+    'onuw.info.minionIsPack': '玩家中没有狼人 —— 在「一票定胜负」下，你就是那只狼。别被投出去。',
     'onuw.info.masons': '另一名守夜人：{names}',
     'onuw.info.masonAlone': '另一张守夜人牌在中央。',
     'onuw.info.sawCentre': '中央牌 {index} 是{role}。',
@@ -762,7 +770,7 @@ Evil wins by failing three quests. If good succeeds three times, the Assassin ge
 
 夜晚按固定顺序逐个叫醒：狼人互相确认，预言家查验，强盗抢牌，捣蛋鬼交换另外两人的牌，酒鬼与中央盲换，失眠者最后确认自己变成了什么。每一步有固定倒计时，全场同步、同时播报；只叫本局牌堆里有的角色，但某张牌即使进了中央，对应角色照样会被叫到。
 
-然后开始辩论，最后同时指认。得票最多的人出局；若每人恰好一票，则无人出局。只要死了一只狼，村民阵营获胜；若一开始就没有玩家拿到狼牌，则必须无人出局村民才算赢。皮匠只有在自己出局时才获胜。
+然后开始辩论，最后同时指认。得票最多的人出局；若每人恰好一票，则无人出局。只要死了一只狼，村民阵营获胜；若一开始就没有玩家拿到狼牌，则必须无人出局村民才算赢。皮匠只有在自己出局时才获胜。房主还可以开启规则变体「一票定胜负」：狼人牌全在中央时爪牙即为狼首，于是每一局都分得出胜负。
 
 你属于哪个阵营，取决于你**最后**手上的牌，而不是最初发到的牌。`,
 
