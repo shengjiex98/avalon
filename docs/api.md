@@ -42,13 +42,17 @@ The `commit` field reports the checkout this process started from, or `null`
 when the source is not a git checkout. A deployment pipeline compares it with
 the commit it published to confirm the server actually restarted.
 
+The `stateVersion` field reports the snapshot compatibility version. An
+updater may restart during a live game only when the running and target
+versions are both known and equal.
+
 ## Update gate
 
 Automatic deployment systems should use `/api/health` for ordinary liveness
-checks and call `/api/health/update` immediately before replacing the process.
-A `409` response means at least one game has started and deployment should be
-retried later. Rooms that are still in the lobby never block an update. A
-finished game blocks only while its result is fresh: three minutes after the
-last interaction with the room, the results screen stops holding up a
-deployment. The window runs from the last interaction rather than from the
-final move, so a table still reading its result keeps renewing it.
+and compare its `stateVersion` with the target code. Known-equal versions can
+restart directly because the snapshot is compatible. If either version is
+unknown or they differ, call `/api/health/update` before replacing the process.
+A `409` response means at least one game has started and that incompatible
+deployment should be retried later. Rooms still in the lobby never block an
+update. A finished game blocks only while its result is fresh: three minutes
+after the last interaction, the results screen stops holding up a deployment.

@@ -17,7 +17,10 @@ The suite does not need network access or a browser.
   center roles, fixed step timing, hidden actor state, forced Drunk swaps, win
   conditions, and card privacy.
 - **rooms:** timer-driven night steps, broadcasts, and timer cleanup when rooms
-  expire.
+  expire, plus action recording and persistence hooks.
+- **determinism:** seeded deals, seating, and leader selection.
+- **persistence:** JSON-state invariants, atomic snapshot round trips, restored
+  timers and idle age, and corrupt or incompatible snapshot handling.
 - **server:** real HTTP on an ephemeral port, including a complete five-player
   game over SSE.
 - **i18n-coverage:** every client key, server error, win reason, and log event
@@ -30,4 +33,5 @@ The suite does not need network access or a browser.
 - **ui-testmode:** adding and switching seats through normal join and event
   paths, including rejected joins.
 - **deploy:** Node-hosted and GitHub Pages entry points, frontend version
-  stamping, HTTPS backend selection, and protocol checks.
+  stamping, HTTPS backend selection, protocol checks, and state-compatible
+  update gating.

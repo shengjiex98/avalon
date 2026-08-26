@@ -26,7 +26,7 @@ function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus'], {
   game.script = nightScript(deck);
   game.info = {};
   game.swaps = [];
-  game.actions = {};
+  game.nightActions = {};
   if (ready) for (const p of game.players) w.confirmRole(game, p.id, { now });
   return game;
 }

@@ -23,8 +23,8 @@ export const GAMES = {
       vote: (g, id, body) => avalon.castVote(g, id, body.approve === true),
       card: (g, id, body) => avalon.playCard(g, id, body.success !== false),
       assassinate: (g, id, body) => avalon.assassinate(g, id, body.target),
-      reset: (g, id) => avalon.restartToLobby(g, id),
-      again: (g, id) => avalon.resetToLobby(g, id),
+      reset: (g, id, _body, context) => avalon.restartToLobby(g, id, context),
+      again: (g, id, _body, context) => avalon.resetToLobby(g, id, context),
     },
   },
 
@@ -40,13 +40,13 @@ export const GAMES = {
     tick: onuw.tick,
     actions: {
       options: (g, id, body) => onuw.setOptions(g, id, body.options ?? {}),
-      start: (g, id) => onuw.startGame(g, id),
-      confirm: (g, id) => onuw.confirmRole(g, id),
+      start: (g, id, _body, { now } = {}) => onuw.startGame(g, id, { now }),
+      confirm: (g, id, _body, { now } = {}) => onuw.confirmRole(g, id, { now }),
       night: (g, id, body) => onuw.submitNight(g, id, body.action ?? {}),
       startVote: (g, id) => onuw.startVote(g, id),
       vote: (g, id, body) => onuw.castVote(g, id, body.target),
-      reset: (g, id) => onuw.restartToLobby(g, id),
-      again: (g, id) => onuw.resetToLobby(g, id),
+      reset: (g, id, _body, context) => onuw.restartToLobby(g, id, context),
+      again: (g, id, _body, context) => onuw.resetToLobby(g, id, context),
     },
   },
 };

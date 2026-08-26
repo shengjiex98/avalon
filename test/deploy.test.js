@@ -112,7 +112,8 @@ test('a current tree with stale code running still gets restarted', async () => 
   // Comparing only the tree calls a stale process "already current" and never
   // restarts it -- the tree can move without this script (a manual pull, or a
   // checkout whose restart failed).
-  assert.match(update, /running=\$\(running_commit\)/);
+  assert.match(update, /health=\$\(running_health\)/);
+  assert.match(update, /running=.*sed -n '1p'/);
   assert.match(update, /api\/health/);
   assert.match(update, /\[ -z "\$running" \] && exit 0/, 'an unknown commit must not force a restart');
 
@@ -134,4 +135,23 @@ test('the update gate asks the server before anything is replaced', async () => 
   assert.ok(update.indexOf('gate.sh') < update.indexOf('git reset --hard --quiet "$target"'),
     'update.sh must consult the gate before moving the working tree');
   assert.match(update, /systemctl --user restart avalon/);
+});
+
+test('only known-equal state versions bypass the update gate', async () => {
+  const update = await read('../deploy/update.sh');
+  const unit = await read('../deploy/avalon.service');
+
+  assert.match(update, /h\.stateVersion \?\? ""/);
+  assert.match(update, /target:src\/state-version\.js/);
+  assert.ok(update.includes("sed -n 's/.*STATE_VERSION = \\([0-9][0-9]*\\).*/\\1/p'"));
+  assert.match(update,
+    /if \[ -n "\$running_sv" \] && \[ -n "\$target_sv" \] && \[ "\$running_sv" = "\$target_sv" \]; then/);
+
+  const comparison = update.indexOf('if [ -n "$running_sv" ]');
+  const fallback = update.indexOf('else', comparison);
+  const gate = update.indexOf('gate.sh', fallback);
+  const reset = update.indexOf('git reset --hard --quiet "$target"');
+  assert.ok(comparison < fallback && fallback < gate && gate < reset,
+    'every unknown or unequal version must gate before checkout');
+  assert.match(unit, /StateDirectory=avalon/);
 });

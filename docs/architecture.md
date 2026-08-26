@@ -16,7 +16,9 @@ separate game modules.
 deploy/             systemd user unit for the game server.
 docs/               Design, operations, and reference documentation.
 src/lobby.js        Shared joining, hosting, and logging behavior.
-src/rooms.js        Room registry, SSE fan-out, timers, and idle expiry.
+src/rooms.js        Room registry, SSE fan-out, timers, snapshots, and idle expiry.
+src/persistence.js  Atomic snapshot save and version-checked restore.
+src/state-version.js  Compatibility number for persisted room state.
 src/server.js       Static files, JSON endpoints, and SSE endpoints.
 src/games/index.js  Game registry used by the room layer.
 src/games/avalon/   Avalon rules and state machine.
@@ -41,12 +43,18 @@ game registries. The shared room layer does not need game-specific branches.
 
 ## State and events
 
-Room and game state is kept in memory. Each room broadcasts changes through an
-SSE stream, but the server first asks the active game for the view allowed for
-that player. Hidden roles and actions never need to be sent to other clients.
+Live room and game state is kept in memory. Every successful player input is
+recorded in that state, and randomness comes from a seeded stream whose current
+position is stored with the game. Neither the input record nor hidden game data
+is included in player views: each room asks its active game for the view allowed
+for that player before broadcasting through SSE.
 
-Rooms idle for six hours are removed. Restarting the process removes all rooms
-and games in progress.
+Mutations are debounced into an atomic JSON snapshot, with a final synchronous
+save on clean shutdown. Boot restores rooms before listening and reconstructs
+runtime-only clocks from their deadlines. A restart therefore preserves live
+games when the snapshot's `STATE_VERSION` matches the code. An incompatible or
+unreadable snapshot is discarded and the server starts empty. Rooms idle for
+six hours are still removed.
 
 ## Client versions
 

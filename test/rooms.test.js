@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { record } from '../src/lobby.js';
 import { Rooms } from '../src/rooms.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -88,4 +89,56 @@ test('a game with no clock schedules nothing', () => {
   const code = rooms.create('avalon');
   rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: 'p0', name: 'Ann' }));
   assert.equal(rooms.get(code).timer, null);
+});
+
+test('dispatch records successful player input in order but never exposes it', () => {
+  let clock = 100;
+  const rooms = new Rooms({ now: () => clock });
+  const code = rooms.create('avalon', { code: 'LOGS', seed: 7 });
+
+  rooms.dispatch(code, 'p0', { type: 'join', id: 'p0', name: 'Ann' });
+  clock = 200;
+  rooms.dispatch(code, 'p1', { type: 'join', id: 'p1', name: 'Bob' });
+  clock = 300;
+  rooms.dispatch(code, 'p0', { type: 'options', options: { percival: true } });
+  clock = 400;
+  rooms.setGame(code, 'p0', 'onuw');
+
+  const game = rooms.get(code).game;
+  assert.deepEqual(game.actions, [
+    { t: 'join', p: 'p0', b: { id: 'p0', name: 'Ann' }, at: 100 },
+    { t: 'join', p: 'p1', b: { id: 'p1', name: 'Bob' }, at: 200 },
+    { t: 'options', p: 'p0', b: { options: { percival: true } }, at: 300 },
+    { t: 'setGame', p: 'p0', b: { game: 'onuw' }, at: 400 },
+  ]);
+  assert.equal('actions' in gameFor(game.gameId).viewFor(game, 'p0'), false);
+
+  const before = game.actions.slice();
+  assert.throws(() => rooms.dispatch(code, 'p0', { type: 'confirm' }), { key: 'wrongPhase' });
+  assert.deepEqual(game.actions, before, 'rejected input is not replayable state');
+});
+
+test('the replay record is dropped whole rather than kept partially on overflow', () => {
+  const game = gameFor('avalon').create('CAP', { seed: 1 });
+  for (let i = 0; i <= 2000; i++) record(game, 'p0', { type: 'vote', approve: true }, i);
+  assert.deepEqual(game.actions, []);
+  assert.equal(game.actionsDropped, true);
+  record(game, 'p0', { type: 'vote', approve: false }, 2001);
+  assert.deepEqual(game.actions, []);
+});
+
+test('the persistence hook runs only after registry mutations', () => {
+  let clock = 10 * 60 * 60_000;
+  let mutations = 0;
+  const rooms = new Rooms({ now: () => clock, onMutate: () => { mutations += 1; } });
+  const code = rooms.create('avalon', { code: 'SAVE' });
+  assert.equal(mutations, 1);
+  rooms.dispatch(code, 'p0', { type: 'join', id: 'p0', name: 'Ann' });
+  assert.equal(mutations, 2);
+
+  rooms.rooms.get(code).touchedAt = 0;
+  rooms.sweep();
+  assert.equal(mutations, 3);
+  rooms.sweep();
+  assert.equal(mutations, 3, 'a no-op sweep does not write another snapshot');
 });
