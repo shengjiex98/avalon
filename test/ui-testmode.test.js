@@ -174,6 +174,74 @@ test('seats cannot be added once the game is running', async () => {
   assert.match(add.text, /only be added before the game starts/);
 });
 
+test('resetting sends the invented players home and keeps your own seat', async () => {
+  await inRoom();
+  // Each new seat is named from the table as the server last described it, so
+  // the frames matter: without them the second add would pick "Test 2" again.
+  const table = [{ id: 'p1', name: 'Ann' }];
+  for (const [id, name] of [['p2', 'Test 2'], ['p3', 'Test 3']]) {
+    dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: id, code: 'WXYZ' });
+    bottomOf(dom.fixtures.view).byId('testAdd').dispatch('click');
+    await new Promise((r) => setTimeout(r, 0));
+    table.push({ id, name });
+    dom.EventSourceStub.last.onmessage({ data: JSON.stringify(frame(table, 'p1')) });
+  }
+  assert.deepEqual(app.seats.map((seat) => seat.name), ['Ann', 'Test 2', 'Test 3']);
+
+  dom.state.responses.set('/api/rooms/WXYZ/action', { ok: true });
+  dom.calls.length = 0;
+  bottomOf(dom.fixtures.view).byId('testReset').dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  const left = dom.calls.filter((c) => c.path === '/api/rooms/WXYZ/action');
+  assert.deepEqual(left.map((c) => c.body.playerId), ['p2', 'p3'], 'each invented seat leaves');
+  assert.ok(left.every((c) => c.body.type === 'leave'), 'through the ordinary leave action');
+  assert.deepEqual(app.seats, [{ id: 'p1', name: 'Ann' }], 'the person at the keyboard stays');
+  assert.equal(dom.localStorage.getItem('avalon.seats.WXYZ'), '[{"id":"p1","name":"Ann"}]');
+  assert.equal(bottomOf(dom.fixtures.view).byClass('seat-chip').length, 1);
+});
+
+test('resetting from an invented seat puts you back in your own first', async () => {
+  await inRoom();
+  dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'p2', code: 'WXYZ' });
+  bottomOf(dom.fixtures.view).byId('testAdd').dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  bottomOf(dom.fixtures.view).byClass('seat-chip')[1].dispatch('click');
+  assert.equal(app.playerId, 'p2');
+
+  dom.state.responses.set('/api/rooms/WXYZ/action', { ok: true });
+  bottomOf(dom.fixtures.view).byId('testReset').dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  assert.equal(app.playerId, 'p1', 'never left watching through a seat that is gone');
+  assert.match(dom.EventSourceStub.last.url, /playerId=p1/);
+  assert.deepEqual(app.seats.map((seat) => seat.name), ['Ann']);
+});
+
+test('resetting is off with nothing to remove, and once the game is running', async () => {
+  await inRoom();
+  assert.equal(bottomOf(dom.fixtures.view).byId('testReset').disabled, true,
+    'one seat at the table is one seat this browser added');
+
+  dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'p2', code: 'WXYZ' });
+  bottomOf(dom.fixtures.view).byId('testAdd').dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(bottomOf(dom.fixtures.view).byId('testReset').disabled, false);
+
+  const table = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli'].map((name, i) => ({ id: `p${i + 1}`, name }));
+  dom.EventSourceStub.last.onmessage({
+    data: JSON.stringify({
+      ...frame(table, 'p1'),
+      phase: 'reveal',
+      you: { id: 'p1', name: 'Ann', role: 'merlin', side: 'good' },
+      teamSize: 2, failsRequired: 1, evilCount: 2,
+      boardSizes: [2, 3, 2, 3, 3].map((size) => ({ size, twoFails: false })),
+    }),
+  });
+  assert.equal(bottomOf(dom.fixtures.view).byId('testReset').disabled, true,
+    'lobby only, for the same reason adding is');
+});
+
 test('a room full error is reported rather than swallowed', async () => {
   await inRoom();
   dom.state.responses.delete('/api/rooms/WXYZ/join');   // the stub then 400s
