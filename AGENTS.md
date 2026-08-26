@@ -44,32 +44,32 @@ the server is Node standard library only, and the browser client is plain ES
 modules with no build step. Adding a dependency is a design decision, not an
 implementation detail — raise it rather than assuming it.
 
-**Room state lives in memory.** Restarting the server ends every game in
-progress; there is no database and nothing to recover from. This is why
-`deploy/gate.sh` exists and why the deployment refuses to restart while a game
-is being played. Before restarting the service by hand, check that nobody is
-mid-game:
+**Room state is memory-first and snapshotted.** The server saves rooms to a
+versioned JSON snapshot and restores them, timers included, when
+`STATE_VERSION` is unchanged. A missing, corrupt, or differently versioned
+snapshot starts empty and ends any game that was in progress. Before a manual
+restart involving changed code, inspect both activity and the running version:
 
 ```bash
-curl -s localhost:8420/api/health | jq '.activeGames'
+curl -s localhost:8420/api/health | jq '{activeGames, stateVersion}'
 ```
 
 **The browser and server negotiate on `API_PROTOCOL`.** It is declared in both
-`src/server.js` and `public/app.js` and the two must agree. Bump it only for a
-genuine wire-format break; within a version, server changes must stay backward
-compatible, because the client and server are deployed as separate steps and
-briefly disagree during every release.
+`src/server.js` and `public/app.js` and the two must agree. Deployments now land
+during live games, so compatibility applies to in-flight state, views, and
+actions, not only lobbies. Renaming or re-typing persisted game state bumps
+`STATE_VERSION`; changing a view or action so an old client cannot handle it
+bumps `API_PROTOCOL`. Within either version, changes stay backward compatible.
 
 **Pushing to `main` deploys.** There is no separate release step. A merge
 reaches the live server in seconds, so `main` is expected to be deployable at
 all times.
 
 **Merge without waiting for a quiet moment.** The protection is server-side and
-automatic, so do not check `activeGames` before merging, and do not hold a merge
-back until a game ends. `deploy/update.sh` runs `deploy/gate.sh` *before* it
-touches the working tree: a game in progress exits 75, publishes `busy`, and
-leaves the deployment exactly where it was, and the hourly timer retries until
-the table is free. It then runs the full test suite on the target commit and
-resets back to the previous one if the tests fail or the Node version is not
-v24. A merge is recoverable in a way that a hand-run `systemctl restart` is not
-— that is what the `activeGames` check above is for, and it does not apply here. Open the PR, merge it, and let the host sort out the timing.
+automatic, so do not check `activeGames` before merging or hold a merge until a
+game ends. When running and target `STATE_VERSION` values match,
+`deploy/update.sh` restarts immediately and restores live rooms. Otherwise it
+runs `deploy/gate.sh` *before* touching the working tree: a game in progress
+exits 75, publishes `busy`, and leaves the deployment exactly where it was for
+the hourly retry. It then tests the target and rolls back if tests fail or Node
+is not v24. Open the PR, merge it, and let the host sort out the timing.

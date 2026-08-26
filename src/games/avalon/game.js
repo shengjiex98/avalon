@@ -6,13 +6,13 @@ import {
   buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
-import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
+import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
 export const PHASES = ['lobby', 'reveal', 'team', 'vote', 'quest', 'assassin', 'over'];
 
-export function createGame(code, { now = Date.now } = {}) {
+export function createGame(code, { now = Date.now, seed } = {}) {
   return {
-    ...lobby.baseState(code, 'avalon', { now }),
+    ...lobby.baseState(code, 'avalon', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     roles: {},              // playerId -> role key
     round: 0,               // 0-based quest index
@@ -45,7 +45,7 @@ export function setOptions(g, playerId, options) {
   }
 }
 
-export function startGame(g, playerId, { shuffle = defaultShuffle } = {}) {
+export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list) } = {}) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
@@ -57,7 +57,7 @@ export function startGame(g, playerId, { shuffle = defaultShuffle } = {}) {
 
   g.phase = 'reveal';
   g.ready = {};
-  g.leaderIndex = Math.floor(Math.random() * g.players.length);
+  g.leaderIndex = randInt(g, g.players.length);
   logEvent(g, 'log.gameStarted', { count: g.players.length });
 }
 
@@ -198,25 +198,29 @@ function finish(g, winner, reason) {
   logEvent(g, 'log.gameOver', { winner });
 }
 
-function rebuildLobby(g) {
-  const keep = { code: g.code, players: g.players, hostId: g.hostId, options: g.options };
-  const fresh = createGame(g.code);
+function rebuildLobby(g, { now = Date.now } = {}) {
+  const keep = {
+    code: g.code, players: g.players, hostId: g.hostId, options: g.options,
+    seed: g.seed, rng: g.rng, actions: g.actions,
+    ...(g.actionsDropped ? { actionsDropped: true } : {}),
+  };
+  const fresh = createGame(g.code, { now, seed: g.seed });
   Object.assign(g, fresh, keep, { version: g.version });
   logEvent(g, 'log.newGame', {});
 }
 
 /** Back to the lobby after a completed game, with the same table. */
-export function resetToLobby(g, playerId) {
+export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase === 'over', 'gameInProgress');
-  rebuildLobby(g);
+  rebuildLobby(g, { now });
 }
 
 /** Let the host abandon an active game and immediately return to its lobby. */
-export function restartToLobby(g, playerId) {
+export function restartToLobby(g, playerId, { now = Date.now } = {}) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
-  rebuildLobby(g);
+  rebuildLobby(g, { now });
 }
 
 // ---------------------------------------------------------------- views

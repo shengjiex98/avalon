@@ -12,11 +12,13 @@ separate PRs in order; every step leaves `npm test` green and the game
 behaviorally unchanged (Part A changes *which* random numbers are drawn, never
 the distribution).
 
-**Relationship to [room-persistence-plan.md](room-persistence-plan.md):** the
-plans are independent, but Part A steps A1–A2 add fields to game state. If
-persistence has shipped, each such PR bumps `STATE_VERSION`; if not, there is
-nothing to bump. Part A's fields are plain JSON, so they ride in snapshots for
-free — which is the point: a snapshot then carries its own repro.
+**Status (2026-08-26):** Part A steps A1–A2 are implemented. A3 onward and all
+of Part B remain for later.
+
+**Relationship to room persistence:** the plans are independent, but Part A
+steps A1–A2 add fields to game state. Those fields are included in the initial
+`STATE_VERSION = 1` snapshot shape, so each snapshot carries its own seed and
+input record.
 
 Work in a worktree, not the deployment checkout (see [AGENTS.md](../AGENTS.md)).
 

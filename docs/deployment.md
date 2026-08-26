@@ -12,6 +12,8 @@ The server reads these environment variables:
 ```sh
 PORT=8420
 HOST=0.0.0.0
+# Optional override; normally supplied by systemd's StateDirectory.
+AVALON_STATE_FILE=/path/to/rooms.json
 ```
 
 Point a public URL or reverse proxy at that port and share the URL with
@@ -20,15 +22,20 @@ minute and offer to reload after a new deployment.
 
 ## Important operating behavior
 
-State is stored in memory. Restarting the process ends games in progress, and
-rooms idle for six hours are removed. There is no database or state to back up.
+Live state is held in memory and atomically snapshotted to `rooms.json`. The
+checked-in systemd unit stores it at `~/.local/state/avalon/rooms.json`; outside
+systemd the default is `$XDG_STATE_HOME/avalon/rooms.json` (or
+`~/.local/state/avalon/rooms.json`). `AVALON_STATE_FILE` overrides the path.
+Rooms idle for six hours are removed.
 
-Keep `/api/health` as the container or service liveness check. Immediately
-before an automatic update, call `/api/health/update`. A `409` response means a
-game is active and the updater should retry later. Lobby rooms do not block an
-update, and a finished game stops blocking three minutes after the last
-interaction with it -- interaction renews the window, so a table still reading
-its result keeps its room protected.
+Keep `/api/health` as the container or service liveness check. It reports both
+`activeGames` and `stateVersion`. A restart on code with the same state version
+restores live games, including their timers. A missing, corrupt, or differently
+versioned snapshot starts empty, so an updater must call `/api/health/update`
+before a restart whenever running and target state versions are not known to be
+equal. A `409` then means an incompatible update must wait. Lobby rooms do not
+block it, and a finished game stops blocking three minutes after the last
+interaction.
 
 SSE response buffering must be disabled for `/api/rooms/*/events`. For nginx,
 use `proxy_buffering off;`; otherwise clients will not receive room updates
@@ -52,6 +59,7 @@ repository:
 
 ```bash
 systemctl --user link ~/avalon/deploy/avalon.service
+systemctl --user daemon-reload
 systemctl --user enable --now avalon
 loginctl enable-linger "$USER"
 ```
@@ -114,28 +122,32 @@ commit so concurrent runs cannot read each other's results:
 | Message | Meaning | What CI does |
 | --- | --- | --- |
 | `deployed <sha>` | Restarted on the new commit | Confirms via health, then publishes the client |
-| `busy <sha>` | A game is in progress | Logs it and keeps waiting |
+| `busy <sha>` | A state-incompatible update found a game in progress | Logs it and keeps waiting |
 | `failed <sha> …` | Update failed and rolled back | Fails the run immediately |
 
-CI re-sends the trigger every five minutes for up to an hour, so a deployment
-refused mid-game lands as soon as the table clears. If the hour runs out, the
-run fails and **nothing** is published, leaving client and server together on
-the older commit; re-run it from the Actions tab.
+CI re-sends the trigger every five minutes for up to an hour, so a
+state-incompatible deployment refused mid-game lands as soon as the table
+clears. State-compatible deployments restart immediately and restore the game.
+If the hour runs out, the run fails and **nothing** is published, leaving client
+and server together on the older commit; re-run it from the Actions tab.
 
 `deploy/gate.sh` is what answers "is a game in progress", by calling
 `/api/health/update` on localhost. It knows nothing about how the server is
 deployed, so it stays usable if the server later ships as a container image.
 `AVALON_FORCE=1` skips it, for when a restart cannot wait.
 
-`deploy/update.sh` gates first, then fast-forwards the checkout, checks the Node
-major version, runs the tests, and restarts the service. It compares the commit
-the *running server* reports as well as the one in the working tree, so a tree
-moved by anything other than this script -- a manual pull, or a checkout whose
-restart failed -- still gets the process restarted rather than being mistaken
-for up to date. A server that is down or reports no commit is left alone, so an
-unreadable commit cannot turn the hourly timer into an hourly restart. If the tests fail it
-restores the previous commit, so a bad `main` cannot take the server down. The
-checkout it manages is deploy-only: it discards local edits without warning.
+`deploy/update.sh` reads the running and target `STATE_VERSION` values before it
+touches the checkout. Known-equal versions bypass the live-game gate; every
+unknown or unequal case fails closed through the gate first. It then
+fast-forwards the checkout, checks the Node major version, runs the tests, and
+restarts the service. It compares the commit the *running server* reports as
+well as the one in the working tree, so a tree moved by anything other than
+this script -- a manual pull, or a checkout whose restart failed -- still gets
+the process restarted rather than being mistaken for up to date. A server that
+is down or reports no commit is left alone, so an unreadable commit cannot turn
+the hourly timer into an hourly restart. If the tests fail it restores the
+previous commit, so a bad `main` cannot take the server down. The checkout it
+manages is deploy-only: it discards local edits without warning.
 See [developing on the server host](#developing-on-the-server-host) for how to
 work on the same machine anyway.
 

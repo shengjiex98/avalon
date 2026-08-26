@@ -26,11 +26,14 @@ PORT="${PORT:-8420}"; export PORT
 # never restart. Empty when the server is down or is not a git checkout -- both
 # cases deliberately do nothing here, so an unreadable commit cannot turn the
 # hourly timer into an hourly restart.
-running_commit() {
+running_health() {
   node -e '
     fetch(`http://127.0.0.1:${process.env.PORT}/api/health`)
-      .then((r) => r.json()).then((h) => console.log(h.commit ?? ""))
-      .catch(() => console.log(""));
+      .then((r) => r.json()).then((h) => {
+        console.log(h.commit ?? "");
+        console.log(h.stateVersion ?? "");
+      })
+      .catch(() => console.log("\n"));
   ' 2>/dev/null || true
 }
 
@@ -46,7 +49,11 @@ publish() {
 git fetch --quiet origin main
 previous=$(git rev-parse HEAD)
 target=$(git rev-parse origin/main)
-running=$(running_commit)
+health=$(running_health)
+running=$(printf '%s\n' "$health" | sed -n '1p')
+running_sv=$(printf '%s\n' "$health" | sed -n '2p')
+target_sv=$(git show "$target:src/state-version.js" 2>/dev/null \
+  | sed -n 's/.*STATE_VERSION = \([0-9][0-9]*\).*/\1/p')
 
 # Nothing to do only when the tree *and* the process are both on the target.
 if [ "$previous" = "$target" ]; then
@@ -55,15 +62,21 @@ if [ "$previous" = "$target" ]; then
   echo "tree is current but $running is running; restarting" >&2
 fi
 
-# Before touching the working tree, not merely before restarting: static files
-# are read from disk per request and /version.json is derived from their mtimes,
-# so a checkout alone already changes what open browsers are served.
-set +e; "$here/gate.sh"; gate=$?; set -e
-if [ "$gate" -eq 75 ]; then
-  publish "busy $target"
-  exit 75
+# A known-equal state shape makes a restart lossless. Unknown or different
+# versions fail closed through the existing gate before the checkout moves.
+if [ -n "$running_sv" ] && [ -n "$target_sv" ] && [ "$running_sv" = "$target_sv" ]; then
+  echo "state version $target_sv is restart-compatible" >&2
+else
+  # Before touching the working tree, not merely before restarting: static files
+  # are read from disk per request and /version.json is derived from their mtimes,
+  # so a checkout alone already changes what open browsers are served.
+  set +e; "$here/gate.sh"; gate=$?; set -e
+  if [ "$gate" -eq 75 ]; then
+    publish "busy $target"
+    exit 75
+  fi
+  [ "$gate" -eq 0 ] || exit "$gate"   # a broken gate is not a game in progress
 fi
-[ "$gate" -eq 0 ] || exit "$gate"   # a broken gate is not a game in progress
 
 # Only when the tree actually has to move: an unconditional reset would discard
 # a working tree that is already correct, for no gain.

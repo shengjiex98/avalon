@@ -24,13 +24,13 @@ import {
   stepMillis, tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
-import { defaultShuffle, logEvent, playerById, require_ } from '../../lobby.js';
+import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
 export const PHASES = ['lobby', 'reveal', 'night', 'day', 'vote', 'over'];
 
-export function createGame(code, { now = Date.now } = {}) {
+export function createGame(code, { now = Date.now, seed } = {}) {
   return {
-    ...lobby.baseState(code, 'onuw', { now }),
+    ...lobby.baseState(code, 'onuw', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
     pace: DEFAULT_PACE,
@@ -42,7 +42,7 @@ export function createGame(code, { now = Date.now } = {}) {
     centreStart: [],         // the three cards nobody was dealt
     finalRoles: {},          // after the night's swaps
     centre: [],
-    actions: {},             // playerId -> what they chose to do
+    nightActions: {},        // playerId -> what they chose to do
     info: {},                // playerId -> private results, as i18n keys
     swaps: [],               // public at the end: what moved, not who saw what
     votes: {},               // playerId -> who they pointed at
@@ -72,7 +72,7 @@ export function setOptions(g, playerId, options) {
   g.optionsTouched = true;
 }
 
-export function startGame(g, playerId, { shuffle = defaultShuffle, now = Date.now } = {}) {
+export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list), now = Date.now } = {}) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
@@ -164,42 +164,42 @@ export function submitNight(g, playerId, action = {}) {
   require_(isAwake(g, playerId), 'notYourTurn');
   const kind = actionFor(g, playerId);
   require_(kind, 'noNightAction');
-  require_(!(playerId in g.actions), 'alreadyActed');
+  require_(!(playerId in g.nightActions), 'alreadyActed');
 
   const known = (id) => Boolean(playerById(g, id));
   const centreIndex = (i) => Number.isInteger(i) && i >= 0 && i < g.centreStart.length;
 
   if (action.skip) {
     require_(kind !== 'drunk', 'drunkMustSwap');   // the Drunk has no choice
-    g.actions[playerId] = { skip: true };
+    g.nightActions[playerId] = { skip: true };
   } else if (kind === 'loneWolf') {
     require_(centreIndex(action.centre), 'badCentreCard');
-    g.actions[playerId] = { centre: action.centre };
+    g.nightActions[playerId] = { centre: action.centre };
   } else if (kind === 'seer') {
     if (action.mode === 'player') {
       require_(known(action.target) && action.target !== playerId, 'badTarget');
-      g.actions[playerId] = { mode: 'player', target: action.target };
+      g.nightActions[playerId] = { mode: 'player', target: action.target };
     } else {
       const [a, b] = action.centres ?? [];
       require_(centreIndex(a) && centreIndex(b) && a !== b, 'badCentreCard');
-      g.actions[playerId] = { mode: 'centre', centres: [a, b] };
+      g.nightActions[playerId] = { mode: 'centre', centres: [a, b] };
     }
   } else if (kind === 'robber') {
     require_(known(action.target) && action.target !== playerId, 'badTarget');
-    g.actions[playerId] = { target: action.target };
+    g.nightActions[playerId] = { target: action.target };
   } else if (kind === 'troublemaker') {
     const [a, b] = action.targets ?? [];
     require_(known(a) && known(b) && a !== b, 'badTarget');
     require_(a !== playerId && b !== playerId, 'troublemakerNotSelf');
-    g.actions[playerId] = { targets: [a, b] };
+    g.nightActions[playerId] = { targets: [a, b] };
   } else if (kind === 'drunk') {
     require_(centreIndex(action.centre), 'badCentreCard');
-    g.actions[playerId] = { centre: action.centre };
+    g.nightActions[playerId] = { centre: action.centre };
   }
 
   // Resolve now, so the player sees what they looked at or took while they are
   // still awake. Order is safe: only this role acts during this step.
-  resolve(g, playerId, g.actions[playerId]);
+  resolve(g, playerId, g.nightActions[playerId]);
   // Deliberately no early advance: the clock is the same for everyone.
 }
 
@@ -291,14 +291,14 @@ function closeStep(g) {
   const step = currentStep(g);
   if (!step?.role) return;
   for (const p of actorsFor(g, step.role)) {
-    if (p.id in g.actions) continue;
+    if (p.id in g.nightActions) continue;
     if (!actionFor(g, p.id)) continue;
     // The Drunk always swaps, even asleep at the wheel — with a card nobody
     // could have predicted.
     const fallback = step.role === 'drunk'
-      ? { centre: Math.floor(Math.random() * g.centre.length) }
+      ? { centre: randInt(g, g.centre.length) }
       : { skip: true };
-    g.actions[p.id] = fallback;
+    g.nightActions[p.id] = fallback;
     resolve(g, p.id, fallback);
   }
 }
@@ -350,27 +350,29 @@ function resolveVote(g) {
   logEvent(g, 'log.gameOver', { winner: g.winners[0] ?? 'nobody' });
 }
 
-function rebuildLobby(g) {
+function rebuildLobby(g, { now = Date.now } = {}) {
   const keep = {
     code: g.code, players: g.players, hostId: g.hostId,
     options: g.options, optionsTouched: g.optionsTouched, pace: g.pace,
+    seed: g.seed, rng: g.rng, actions: g.actions,
+    ...(g.actionsDropped ? { actionsDropped: true } : {}),
   };
-  const fresh = createGame(g.code);
+  const fresh = createGame(g.code, { now, seed: g.seed });
   Object.assign(g, fresh, keep, { version: g.version });
   logEvent(g, 'log.newGame', {});
 }
 
-export function resetToLobby(g, playerId) {
+export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase === 'over', 'gameInProgress');
-  rebuildLobby(g);
+  rebuildLobby(g, { now });
 }
 
 /** Let the host abandon an active game and immediately return to its lobby. */
-export function restartToLobby(g, playerId) {
+export function restartToLobby(g, playerId, { now = Date.now } = {}) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
-  rebuildLobby(g);
+  rebuildLobby(g, { now });
 }
 
 // ---------------------------------------------------------------- views
@@ -397,7 +399,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
       finalRole: over ? g.finalRoles[viewerId] : undefined,
       awake,
       action: awake ? actionFor(g, viewerId) : null,
-      acted: viewerId in g.actions,
+      acted: viewerId in g.nightActions,
       voted: viewerId in g.votes,
     } : null,
     players: g.players.map((p, i) => ({

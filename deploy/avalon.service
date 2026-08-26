@@ -8,7 +8,7 @@
 # The server always accepts the official shengjiex98.github.io client.
 #
 # Deployments arrive from CI, with avalon-update.timer as the hourly fallback;
-# both go through deploy/update.sh, which refuses to restart during a game.
+# state-compatible updates can restart during a game without losing it.
 
 [Unit]
 Description=Avalon game server
@@ -27,7 +27,8 @@ ExecStart=%h/.local/bin/node %h/avalon/src/server.js
 Restart=on-failure
 RestartSec=3
 
-# The game holds nothing on disk; it does not need to write anywhere.
+# Room snapshots live in the service-managed state directory.
+StateDirectory=avalon
 ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true

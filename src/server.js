@@ -1,5 +1,5 @@
 // Zero-dependency HTTP server: static files, a JSON action endpoint and an
-// SSE stream per player. State lives in memory only.
+// SSE stream per player. Room state is periodically snapshotted for restarts.
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
@@ -9,8 +9,10 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { GameError } from './lobby.js';
+import { defaultStateFile, load, save } from './persistence.js';
 import { Rooms } from './rooms.js';
-import { GAMES, GAME_IDS, gameFor } from './games/index.js';
+import { GAME_IDS, gameFor } from './games/index.js';
+import { STATE_VERSION } from './state-version.js';
 
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 export const API_PROTOCOL = 1;
@@ -59,11 +61,6 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
-/** Actions that mean the same thing whatever is being played. */
-const COMMON_ACTIONS = {
-  leave: (g, id) => gameFor(g.gameId).removePlayer(g, id),
-};
-
 export function createApp({ rooms = new Rooms(), clientOrigin = CLIENT_ORIGIN } = {}) {
   return async function handle(req, res) {
     try {
@@ -110,6 +107,7 @@ async function api(rooms, req, res, url) {
       ok: true,
       service: 'avalon',
       protocol: API_PROTOCOL,
+      stateVersion: STATE_VERSION,
       games: GAME_IDS,
       rooms: rooms.rooms.size,
       activeGames,
@@ -143,7 +141,7 @@ async function api(rooms, req, res, url) {
     const room = rooms.get(code);
     const known = playerId && room.game.players.some((p) => p.id === playerId);
     if (!known) playerId = randomUUID();
-    rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: playerId, name: body.name }));
+    rooms.dispatch(code, playerId, { type: 'join', id: playerId, name: body.name });
     return json(res, 200, { playerId, code });
   }
 
@@ -151,18 +149,7 @@ async function api(rooms, req, res, url) {
     const body = await readJson(req);
     if (typeof body.playerId !== 'string') return json(res, 400, { error: 'notInGame' });
 
-    // Changing game replaces the room state, so it cannot run inside apply().
-    if (body.type === 'setGame') {
-      rooms.setGame(code, body.playerId, body.game);
-      return json(res, 200, { ok: true });
-    }
-
-    rooms.apply(code, (g) => {
-      if (!g.players.some((p) => p.id === body.playerId)) throw new GameError('notInGame');
-      const action = COMMON_ACTIONS[body.type] ?? gameFor(g.gameId).actions[body.type];
-      if (!action) throw new GameError('unknownAction', { type: body.type });
-      return action(g, body.playerId, body);
-    });
+    rooms.dispatch(code, body.playerId, body);
     return json(res, 200, { ok: true });
   }
 
@@ -262,11 +249,44 @@ async function readJson(req) {
   }
 }
 
-export function start({ port = Number(process.env.PORT ?? 8420), host = process.env.HOST ?? '0.0.0.0' } = {}) {
-  const rooms = new Rooms();
+export function start({
+  port = Number(process.env.PORT ?? 8420),
+  host = process.env.HOST ?? '0.0.0.0',
+  stateFile = defaultStateFile(),
+} = {}) {
+  let pendingSave = null;
+  let rooms;
+  const saveSoon = () => {
+    if (pendingSave) return;
+    pendingSave = setTimeout(() => {
+      pendingSave = null;
+      try { save(rooms, stateFile); }
+      catch (err) { console.error(`could not save room snapshot: ${err.message}`); }
+    }, 1000);
+    pendingSave.unref?.();
+  };
+  rooms = new Rooms({ onMutate: saveSoon });
+  const restored = load(rooms, stateFile);
+  console.log(restored.restored
+    ? `restored ${restored.restored} room${restored.restored === 1 ? '' : 's'} from ${stateFile}`
+    : `${restored.reason} (${stateFile})`);
+
   const server = createServer(createApp({ rooms }));
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
   sweeper.unref();
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(sweeper);
+    clearTimeout(pendingSave);
+    try { save(rooms, stateFile); }
+    catch (err) { console.error(`could not save room snapshot during shutdown: ${err.message}`); }
+    server.close();
+    process.exit(0);
+  };
+  process.once('SIGTERM', stop);
+  process.once('SIGINT', stop);
   server.listen(port, host, () => {
     console.log(`Avalon listening on http://${host}:${port}`);
   });

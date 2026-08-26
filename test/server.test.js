@@ -5,6 +5,7 @@ import { once } from 'node:events';
 
 import { API_PROTOCOL, CLIENT_ORIGIN, createApp } from '../src/server.js';
 import { Rooms } from '../src/rooms.js';
+import { STATE_VERSION } from '../src/state-version.js';
 import * as onuw from '../src/games/onuw/game.js';
 
 async function withServer(fn, options = {}) {
@@ -60,7 +61,9 @@ test('advertises one API protocol to the supported Pages client', async () => {
   await withServer(async (base) => {
     const health = await fetch(base + '/api/health', { headers: { origin: CLIENT_ORIGIN } });
     assert.equal(health.headers.get('access-control-allow-origin'), CLIENT_ORIGIN);
-    assert.equal((await health.json()).protocol, API_PROTOCOL);
+    const status = await health.json();
+    assert.equal(status.protocol, API_PROTOCOL);
+    assert.equal(status.stateVersion, STATE_VERSION);
 
     const preflight = await fetch(base + '/api/rooms', {
       method: 'OPTIONS',
