@@ -24,7 +24,8 @@ One Night Ultimate Werewolf actions are `options`, `start`, `night`,
 `startVote`, `vote`, and `again`. Its `options` action carries optional role
 keys, `pace`, and `houseRules`, an object of variant switches; the view reports
 the switches in force under `houseRules`. Both are additive, so a client that
-predates a variant simply never sends or shows it.
+predates a variant simply never sends or shows it, and a room whose stored
+state predates one plays without it.
 
 Errors use this shape:
 

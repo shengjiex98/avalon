@@ -27,21 +27,32 @@ export const ROLES = {
 export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional);
 
 /**
- * House rules: printed rules some tables prefer to play differently. They are
- * off unless the host turns them on, and they change how the vote is scored,
- * never what is dealt — so a house rule can never make a deck impossible.
+ * House rules: printed rules some tables prefer to play differently. Each maps
+ * to how a new table plays unless the host says otherwise. They change how the
+ * vote is scored, never what is dealt — so a house rule can never make a deck
+ * impossible.
  *
  * `decisiveVote` is the common table fix for the game's flattest ending. By
  * the book, a table holding no werewolf card at all must kill nobody: hang the
  * Minion and nobody wins, hang anyone else with no Minion in play and nobody
  * wins either. This rule promotes the Minion to head of an absent pack, so
  * catching him is the village's win and hanging an innocent is the werewolf
- * side's. Every vote then names a winner.
+ * side's. It is on by default because those two endings reward nobody for the
+ * argument that produced them.
  */
-export const HOUSE_RULES = ['decisiveVote'];
+export const HOUSE_RULES = { decisiveVote: true };
+export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
-export const defaultHouseRules = () =>
-  Object.fromEntries(HOUSE_RULES.map((rule) => [rule, false]));
+/** How a table plays before anybody touches the switches. */
+export const defaultHouseRules = () => ({ ...HOUSE_RULES });
+
+/**
+ * No house rules at all. This is what a game whose state predates a rule falls
+ * back to: a table that never agreed to a variant keeps the scoring it started
+ * under, even when the server it is restored onto now offers one.
+ */
+export const noHouseRules = () =>
+  Object.fromEntries(HOUSE_RULE_KEYS.map((rule) => [rule, false]));
 
 export const NIGHT_ORDER = Object.keys(ROLES)
   .filter((r) => ROLES[r].wake)

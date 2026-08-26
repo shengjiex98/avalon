@@ -19,9 +19,9 @@
 // role this model cannot represent honestly.
 
 import {
-  DEFAULT_PACE, HOUSE_RULES, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
+  DEFAULT_PACE, HOUSE_RULE_KEYS, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
   buildDeck, decideWinners, defaultHouseRules, defaultOptions, nightLength, nightScript,
-  roomForOptions, stepMillis, tallyVotes, teamOf,
+  noHouseRules, roomForOptions, stepMillis, tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
@@ -33,7 +33,7 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     ...lobby.baseState(code, 'onuw', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
-    houseRules: defaultHouseRules(),   // variants, off until the host says otherwise
+    houseRules: defaultHouseRules(),   // variants, as a new table plays them
     pace: DEFAULT_PACE,
     script: [],              // this deck's night, decided when the cards are dealt
     step: -1,                // index into script
@@ -60,11 +60,12 @@ const nameOf = (g, id) => playerById(g, id)?.name ?? '?';
 const liveOptions = (g) => (g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
 /**
- * The house rules in force. Defaulted rather than read straight off the game,
- * so a room restored from a snapshot taken before a rule existed simply plays
- * without it instead of scoring its vote against `undefined`.
+ * The house rules in force. Filled in rather than read straight off the game,
+ * so a room restored from a snapshot taken before a rule existed plays without
+ * it instead of scoring its vote against `undefined` — or having a variant it
+ * never agreed to switched on underneath it mid-game.
  */
-const houseRulesOf = (g) => ({ ...defaultHouseRules(), ...g.houseRules });
+const houseRulesOf = (g) => ({ ...noHouseRules(), ...g.houseRules });
 
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
@@ -75,7 +76,7 @@ export function setOptions(g, playerId, options) {
   }
   if (options.houseRules) {
     const rules = houseRulesOf(g);
-    for (const rule of HOUSE_RULES) {
+    for (const rule of HOUSE_RULE_KEYS) {
       if (rule in options.houseRules) rules[rule] = Boolean(options.houseRules[rule]);
     }
     g.houseRules = rules;

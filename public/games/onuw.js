@@ -157,9 +157,10 @@ export const taglineKey = 'onuw.tagline';
 const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
 /**
  * House rules are variants, not cards, so they sit under their own heading and
- * keep their description on screen: a table has to agree what one means before
- * switching it on. Rendered only when the server offers them, so a newer client
- * against an older server shows no switch it cannot actually throw.
+ * keep their description on screen: the table has to be able to read what it is
+ * playing with, whether or not anybody touched the switch. Rendered only when
+ * the server offers them, so a newer client against an older server shows no
+ * switch it cannot actually throw.
  */
 const HOUSE_RULES = ['decisiveVote'];
 const roleName = (role) => T(`onuw.role.${role}`);
