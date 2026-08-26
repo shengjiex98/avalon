@@ -35,6 +35,61 @@ export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional
 
 export const sideOf = (role) => ROLES[role].side;
 
+/**
+ * The deck a table of this size plays unless the host says otherwise: the
+ * standard setup, Percival opposite Morgana at every count, with Oberon and
+ * Mordred joining as the evil side gains seats. Nothing here is a rule — it is
+ * what a table would have picked anyway, so nobody has to pick it.
+ */
+const DEFAULT_OPTIONS = {
+  5:  ['percival', 'morgana'],
+  6:  ['percival', 'morgana'],
+  7:  ['percival', 'morgana', 'oberon'],
+  8:  ['percival', 'morgana'],
+  9:  ['percival', 'morgana', 'mordred'],
+  10: ['percival', 'morgana', 'mordred', 'oberon'],
+};
+
+/** The optional roles a table of this size starts with. */
+export function defaultOptions(playerCount) {
+  const wanted = DEFAULT_OPTIONS[playerCount] ?? [];
+  return Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, wanted.includes(r)]));
+}
+
+/**
+ * House rules: variants a table may agree to before the cards come out. Each
+ * value is how a new table plays unless the host says otherwise, and all three
+ * start off — the printed game is the default, and a variant has to be chosen.
+ *
+ * `randomLeader` shuffles the seating and drops the leader token anywhere in
+ * it. Off, seats keep the order people joined in and the host leads first,
+ * which is what a table around a real table does. Either way the roles are
+ * dealt from a shuffled deck, so seating never says anything about who is who.
+ *
+ * `hiddenVotes` publishes the tally and nothing else. The table still learns
+ * how many approved and how many rejected — that is what decides the mission —
+ * but never who voted which way, which is the read most of the game's talking
+ * is built on.
+ *
+ * `questHang` softens the hammer. By the book a fifth rejection hands evil the
+ * whole game; under this rule it washes the quest out as a failure instead and
+ * play moves on to the next one. Evil still wins on three failures, so the
+ * hammer costs good a mission rather than the match.
+ */
+export const HOUSE_RULES = { randomLeader: false, hiddenVotes: false, questHang: false };
+export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
+
+/** How a table plays before anybody touches the switches. */
+export const defaultHouseRules = () => ({ ...HOUSE_RULES });
+
+/**
+ * No house rules at all. This is what a game whose state predates a rule falls
+ * back to: a table that never agreed to a variant keeps the game it started
+ * under, even when the server it is restored onto now offers one.
+ */
+export const noHouseRules = () =>
+  Object.fromEntries(HOUSE_RULE_KEYS.map((rule) => [rule, false]));
+
 /** How many fail cards this quest needs to fail. */
 export function failsRequired(playerCount, round) {
   return playerCount >= 7 && round === 3 ? 2 : 1;

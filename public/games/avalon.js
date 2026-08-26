@@ -17,7 +17,17 @@ export const taglineKey = 'app.tagline';
 /** Each round is a fresh screen, so the middle pane starts at the top again. */
 export function paneKey() { return String(app.view.round); }
 
-/** The role toggles the host sets before starting. */
+/**
+ * House rules are variants, not cards, so they sit under their own heading and
+ * keep their description on screen: the table has to be able to read what it is
+ * playing with, whether or not anybody touched the switch. Rendered only when
+ * the server offers them, so a newer client against an older server shows no
+ * switch it cannot actually throw.
+ */
+const HOUSE_RULES = ['randomLeader', 'hiddenVotes', 'questHang'];
+const houseRuleName = (rule) => T(`avalon.house.${rule}`);
+
+/** The role toggles and house rules the host sets before starting. */
 export function lobbyOptions() {
   const v = app.view;
   const isHost = v.you?.id === v.hostId;
@@ -30,10 +40,38 @@ export function lobbyOptions() {
       h('span', { class: 'role-option-description', text: T(`roleDesc.${key}`) }),
     ),
   );
+
+  const houseToggle = (rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+    h('input', {
+      type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
+      onchange: (e) => send('options', { options: { houseRules: { [rule]: e.target.checked } } }),
+    }),
+    h('span', { class: 'house-rule-copy' },
+      h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
+      h('span', { class: 'house-rule-description', text: T(`avalon.houseDesc.${rule}`) }),
+    ),
+  );
+
   return h('div', { class: 'card stack' },
     h('h2', { text: T('lobby.roles') }),
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
     h('div', { class: 'role-options' }, ['percival', 'morgana', 'mordred', 'oberon'].map(optionRow)),
+    // The deck the toggles above add up to. It follows the table size on its
+    // own, so the usual answer to "what are we playing?" is already on screen.
+    // Drawn only when the server works it out, so a newer client against an
+    // older one shows no deck rather than an empty one.
+    ...(v.deck !== undefined ? [
+      h('h3', { text: T('avalon.deck') }),
+      v.deck
+        ? h('div', { class: 'deck' }, Object.entries(v.deck).map(([role, n]) =>
+            h('span', { class: `tag ${sideOfRole(role)}`, text: n > 1 ? `${T(`role.${role}`)} ×${n}` : T(`role.${role}`) })))
+        : h('p', { class: 'muted', text: T('avalon.deckTooBig', { n: v.players.length }) }),
+      h('p', { class: 'muted', text: T('avalon.deckHint') }),
+    ] : []),
+    ...(v.houseRules ? [
+      h('h3', { text: T('avalon.houseRules') }),
+      h('div', { class: 'house-rules' }, HOUSE_RULES.map(houseToggle)),
+    ] : []),
   );
 }
 
@@ -114,10 +152,14 @@ function closeInfoPopup() {
   render();
 }
 
+/** The variants this table switched on, in the order they are listed. */
+const houseRulesInForce = () => HOUSE_RULES.filter((rule) => app.view.houseRules?.[rule]);
+
 /** Public role composition and abilities, without revealing who holds what. */
 function referenceContent() {
   const counts = app.view.roleCounts ?? {};
   const roles = Object.keys(counts);
+  const inForce = houseRulesInForce();
   return h('div', { class: 'stack' },
     h('h3', { text: T('avalon.ref.inPlay', { n: app.view.players.length }) }),
     ...['good', 'evil'].map((side) => h('div', { class: 'stack tight' },
@@ -131,6 +173,15 @@ function referenceContent() {
         h('span', { class: 'muted', text: T(`roleDesc.${role}`) }),
       )),
     )),
+    // The lobby agreed these too, and they decide how the game ends — so they
+    // stay within reach of the argument they are going to come up in.
+    ...(inForce.length ? [
+      h('h3', { text: T('avalon.houseRules') }),
+      h('div', { class: 'stack tight' }, inForce.map((rule) => h('div', { class: 'stack tight' },
+        h('div', { class: 'deck' }, h('span', { class: 'tag gold', text: houseRuleName(rule) })),
+        h('p', { class: 'muted', text: T(`avalon.houseDesc.${rule}`) }),
+      ))),
+    ] : []),
   );
 }
 
@@ -159,27 +210,50 @@ function paneBoard() {
         class: `pip ${i < v.rejects ? 'on' : ''} ${i === 4 ? 'last' : ''}`,
       }))),
     ),
-    v.rejects === v.maxRejects - 1 ? h('div', { class: 'banner evil', text: T('board.rejectWarn') }) : null,
-    v.lastVote ? h('div', { class: 'stack tight vote-result' },
-      h('p', { class: 'muted', text: T('vote.result', {
-        n: v.lastVote.attempt,
-        yes: Object.values(v.lastVote.votes).filter(Boolean).length,
-        no: Object.values(v.lastVote.votes).filter((x) => !x).length,
-        outcome: T(v.lastVote.approved ? 'vote.approved' : 'vote.rejected'),
-      }) }),
-      h('div', { class: 'players' }, v.players.map((p) => {
-        const approved = v.lastVote.votes[p.id];
-        return h('div', { class: 'player' },
-          h('span', { class: 'name', text: p.name }),
-          h('span', {
-            class: `tag verdict ${approved ? 'ok' : 'evil'}`, role: 'img',
-            title: T(approved ? 'vote.approve' : 'vote.reject'),
-            'aria-label': T(approved ? 'vote.approve' : 'vote.reject'),
-            text: approved ? '✓' : '✕',
-          }),
-        );
-      })),
-    ) : null,
+    v.rejects === v.maxRejects - 1
+      ? h('div', { class: 'banner evil', text: T(v.houseRules?.questHang ? 'board.rejectWarnHang' : 'board.rejectWarn') })
+      : null,
+    voteResult(),
+  );
+}
+
+/**
+ * How the last vote went. The tally is always public — it is what decided the
+ * mission — but the ballots behind it are only drawn when the table is playing
+ * with open votes. An older server sends no tally, so it is read back off the
+ * ballots in that case.
+ */
+function voteResult() {
+  const v = app.view;
+  const tally = v.voteTally ?? (v.lastVote ? {
+    attempt: v.lastVote.attempt,
+    approved: v.lastVote.approved,
+    yes: Object.values(v.lastVote.votes).filter(Boolean).length,
+    no: Object.values(v.lastVote.votes).filter((x) => !x).length,
+  } : null);
+  if (!tally) return null;
+
+  return h('div', { class: 'stack tight vote-result' },
+    h('p', { class: 'muted', text: T('vote.result', {
+      n: tally.attempt,
+      yes: tally.yes,
+      no: tally.no,
+      outcome: T(tally.approved ? 'vote.approved' : 'vote.rejected'),
+    }) }),
+    v.lastVote
+      ? h('div', { class: 'players' }, v.players.map((p) => {
+          const approved = v.lastVote.votes[p.id];
+          return h('div', { class: 'player' },
+            h('span', { class: 'name', text: p.name }),
+            h('span', {
+              class: `tag verdict ${approved ? 'ok' : 'evil'}`, role: 'img',
+              title: T(approved ? 'vote.approve' : 'vote.reject'),
+              'aria-label': T(approved ? 'vote.approve' : 'vote.reject'),
+              text: approved ? '✓' : '✕',
+            }),
+          );
+        }))
+      : h('p', { class: 'muted', text: T('vote.hidden') }),
   );
 }
 
