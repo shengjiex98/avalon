@@ -516,6 +516,58 @@ test('the lobby lets the host set the night pace', () => {
   assert.equal(dom.calls.find((c) => c.path.endsWith('/action')).body.options.pace, 'brisk');
 });
 
+test('the lobby shows the house rule it is playing with, and only the host can drop it', () => {
+  const game = w.createGame('WXYZ', { now });
+  ['Ann', '张三', 'Cai'].forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
+
+  let view = show(game, 'p0');
+  assert.match(view.text, /House rules/);
+  assert.match(view.text, /Decisive vote/);
+  assert.match(view.text, /the Minion leads the pack/, 'a variant explains itself, switch untouched');
+  assert.equal(view.byClass('role-option').length, 6, 'a house rule is not one of the cards');
+  const [row] = view.byClass('house-rule');
+  assert.match(row.className, /selected/, 'a new table plays with it');
+
+  dom.calls.length = 0;
+  const box = row.findAll((n) => n.tagName === 'INPUT')[0];
+  box.checked = false;
+  box.dispatch('change');
+  const sent = dom.calls.find((c) => c.path.endsWith('/action'));
+  assert.deepEqual(sent.body.options, { houseRules: { decisiveVote: false } });
+
+  w.setOptions(game, 'p0', { houseRules: { decisiveVote: false } });
+  view = show(game, 'p0');
+  assert.doesNotMatch(view.byClass('house-rule')[0].className, /selected/);
+
+  view = show(game, 'p1');   // not the host
+  assert.equal(view.byClass('house-rule')[0].findAll((n) => n.tagName === 'INPUT')[0].disabled, true);
+});
+
+test('a house rule in force is named in the reference panel, in both languages', () => {
+  const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  finishNight(game);
+
+  let view = show(game, 'p0');
+  assert.doesNotMatch(view.text, /Decisive vote/, 'it lives behind the reference button');
+  view.byId('refToggle').dispatch('click');
+  view = dom.fixtures.view;
+  assert.match(view.text, /Decisive vote/);
+  assertNoRawKeys(view, 'the reference panel with a house rule');
+
+  view = show(game, 'p0', 'zh');
+  view.byId('refToggle').dispatch('click');
+  assert.match(dom.fixtures.view.text, /一票定胜负/);
+});
+
+test('a table that switched the house rule off is not told it is playing one', () => {
+  const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
+  game.houseRules = { decisiveVote: false };
+  finishNight(game);
+  const view = show(game, 'p0');
+  view.byId('refToggle').dispatch('click');
+  assert.doesNotMatch(dom.fixtures.view.text, /House rules/);
+});
+
 // ---------------------------------------------------------------- day, vote, end
 
 test('the morning tells each player only what they learned', () => {

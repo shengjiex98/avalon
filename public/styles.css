@@ -82,30 +82,39 @@ input[type=text]:focus { outline: 2px solid var(--good); outline-offset: 1px; }
 .btn.ghost { background: transparent; }
 .btn.wide { width: 100%; }
 
-/* Lobby role picker: every row shares the same checkbox, name and copy grid. */
-.role-options { display: grid; gap: 8px; }
-.role-option {
+/* Lobby role picker: every row shares the same checkbox, name and copy grid.
+   A house rule is switched on the same way, so it borrows the same chrome. */
+.role-options, .house-rules { display: grid; gap: 8px; }
+.role-option, .house-rule {
   display: grid; grid-template-columns: 22px minmax(0, 1fr); align-items: start; gap: 12px;
   padding: 12px 14px; color: var(--text); cursor: pointer;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
   transition: border-color .15s, background .15s, box-shadow .15s;
 }
-.role-option:hover:not(:has(input:disabled)) { border-color: var(--gold); }
-.role-option.selected {
+.role-option:hover:not(:has(input:disabled)),
+.house-rule:hover:not(:has(input:disabled)) { border-color: var(--gold); }
+.role-option.selected, .house-rule.selected {
   border-color: color-mix(in srgb, var(--good) 65%, var(--line));
   background: linear-gradient(90deg, rgba(79,140,255,.12), var(--panel-2) 42%);
   box-shadow: inset 3px 0 0 var(--good);
 }
-.role-option input {
+.role-option input, .house-rule input {
   width: 20px; height: 20px; margin: 2px 0 0; accent-color: var(--good); cursor: inherit;
 }
 .role-option-copy {
   min-width: 0; display: grid; grid-template-columns: 6.25rem minmax(0, 1fr);
   align-items: baseline; column-gap: 12px;
 }
-.role-option-name { color: var(--text); font-weight: 700; white-space: nowrap; }
-.role-option-description { color: var(--muted); font-size: 14px; line-height: 1.45; }
-.role-option:has(input:disabled) { opacity: .68; cursor: default; }
+/* A house rule is a paragraph rather than a card: name over description, and
+   the description always on, because the table has to agree what it means
+   before switching it on. */
+.house-rule-copy { min-width: 0; display: grid; row-gap: 2px; }
+.role-option-name, .house-rule-name { color: var(--text); font-weight: 700; white-space: nowrap; }
+.role-option-description, .house-rule-description {
+  color: var(--muted); font-size: 14px; line-height: 1.45;
+}
+.house-rule-name { white-space: normal; }
+.role-option:has(input:disabled), .house-rule:has(input:disabled) { opacity: .68; cursor: default; }
 .option-room {
   margin: 0; padding: 9px 12px; border-radius: 9px;
   background: rgba(217,177,105,.08); border: 1px solid rgba(217,177,105,.2);
@@ -459,10 +468,22 @@ input[type=text]:focus { outline-color: var(--gold); }
   border-color: var(--gold); background: linear-gradient(90deg, rgba(240,201,107,.15), rgba(20,37,77,.8));
   box-shadow: inset 3px 0 0 var(--gold), 0 0 10px rgba(240,201,107,.09);
 }
-.role-option input { width: 17px; height: 17px; margin: 0; accent-color: var(--gold); }
+.role-option input, .house-rule input {
+  width: 17px; height: 17px; margin: 0; accent-color: var(--gold);
+}
 .role-option-copy { display: block; }
-.role-option-name { display: block; font-size: 12px; white-space: normal; line-height: 1.2; }
+.role-option-name, .house-rule-name { display: block; font-size: 12px; white-space: normal; line-height: 1.2; }
 .role-option-description { display: none; }
+.house-rules { gap: 7px; }
+.house-rule {
+  grid-template-columns: 17px minmax(0, 1fr); gap: 7px; padding: 7px;
+  border-radius: 4px; background: rgba(5, 12, 30, .68); border-color: #5e533c;
+}
+.house-rule.selected {
+  border-color: var(--gold); background: linear-gradient(90deg, rgba(240,201,107,.15), rgba(20,37,77,.8));
+  box-shadow: inset 3px 0 0 var(--gold), 0 0 10px rgba(240,201,107,.09);
+}
+.house-rule-description { font-size: 11px; line-height: 1.35; }
 
 .players { gap: 6px; }
 .phase-area .players, .lobby-scroll .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
