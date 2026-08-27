@@ -12,8 +12,11 @@ game starts.
 Avalon supports 5–10 players.
 
 - Merlin and the Assassin are always included.
-- Percival, Morgana, Mordred, and Oberon are optional. The lobby prevents role
-  combinations that do not fit the player count.
+- Percival, Morgana, Mordred, and Oberon are optional. Until the host touches a
+  switch, the lobby picks the standard deck for the number of players who have
+  joined (see below) and follows the table as people come and go. A combination
+  that does not fit the player count shows no deck at all, and starting with it
+  is refused.
 - The leader proposes a team and everyone votes on it.
 - Five rejected teams in a row give evil the win.
 - An approved team secretly plays Success or Fail cards. Good players cannot
@@ -24,6 +27,34 @@ Avalon supports 5–10 players.
   identifying Merlin. Any player but the Assassin is a legal target; naming
   anyone other than Merlin hands the game to good.
 - **Play again** returns the same players to the lobby and deals new roles.
+
+### The default deck
+
+| Players | Good | Evil |
+| --- | --- | --- |
+| 5 | Merlin, Percival, Servant | Morgana, Assassin |
+| 6 | Merlin, Percival, Servant ×2 | Morgana, Assassin |
+| 7 | Merlin, Percival, Servant ×2 | Morgana, Assassin, Oberon |
+| 8 | Merlin, Percival, Servant ×3 | Morgana, Assassin, Minion |
+| 9 | Merlin, Percival, Servant ×4 | Morgana, Assassin, Mordred |
+| 10 | Merlin, Percival, Servant ×4 | Morgana, Assassin, Mordred, Oberon |
+
+### House rules
+
+Variants the host may switch on in the lobby. All three are off by default —
+the printed game is what a new table plays — and the ones in force are listed
+in the roles panel during the game.
+
+- **Random leader** shuffles the seating and drops the first leader token
+  anywhere in it. Off, the table plays in the order it joined and the host
+  leads first. Roles are dealt from a shuffled deck either way, so seating
+  never says anything about who is who.
+- **Hidden votes** publish the tally only — how many approved and how many
+  rejected. The ballots never leave the server, at the end of the game either.
+  Who has yet to vote is still shown, so the table knows who it is waiting on.
+- **Quest washout** turns a fifth rejection into a failed quest rather than the
+  end of the game: play moves on to the next quest with the count cleared, and
+  evil still wins on three failures.
 
 Hidden information is filtered on the server. Merlin does not see Mordred;
 Percival cannot distinguish Merlin from Morgana; Oberon and the other evil

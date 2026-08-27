@@ -8,7 +8,10 @@ import { sideOf } from '../src/games/avalon/rules.js';
 function setup(count = 5, options = {}) {
   const game = g.createGame('TEST');
   for (let i = 0; i < count; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
-  g.setOptions(game, 'p0', options);
+  // The lobby picks a deck to suit the table size on its own, so a test that
+  // cares about the deal names every optional role rather than only the ones
+  // it wants in.
+  g.setOptions(game, 'p0', { percival: false, morgana: false, mordred: false, oberon: false, ...options });
   g.startGame(game, 'p0', { shuffle: (list) => list });
   game.leaderIndex = 0; // startGame randomises the first leader; pin it for the tests
   for (const p of game.players) g.confirmRole(game, p.id);
@@ -293,4 +296,164 @@ test('leaving is a lobby-only move and hands the host role on', () => {
   g.addPlayer(game, { id: 'p9', name: 'P9' });
   g.startGame(game, 'p1', { shuffle: (l) => l });
   assert.throws(() => g.removePlayer(game, 'p2'), { key: 'cannotLeaveMidGame' });
+});
+
+// ---------------------------------------------------------------- the lobby's own choices
+
+test('the lobby follows the table size until the host touches a switch', () => {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < 7; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  let view = g.viewFor(game, 'p0');
+  assert.deepEqual(view.options, { percival: true, morgana: true, mordred: false, oberon: true });
+  assert.deepEqual(view.deck,
+    { merlin: 1, percival: 1, servant: 2, morgana: 1, assassin: 1, oberon: 1 });
+
+  // A player joining moves the deck with the table, since nobody has chosen.
+  g.addPlayer(game, { id: 'p7', name: 'P7' });
+  assert.deepEqual(g.viewFor(game, 'p0').options,
+    { percival: true, morgana: true, mordred: false, oberon: false });
+
+  // One switch thrown pins the rest of that deck rather than the empty one.
+  g.setOptions(game, 'p0', { mordred: true });
+  view = g.viewFor(game, 'p0');
+  assert.deepEqual(view.options, { percival: true, morgana: true, mordred: true, oberon: false });
+  g.addPlayer(game, { id: 'p8', name: 'P8' });
+  assert.deepEqual(g.viewFor(game, 'p0').options.mordred, true, 'a later joiner does not undo it');
+});
+
+test('a lobby whose roles do not fit shows no deck rather than an error', () => {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < 5; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  g.setOptions(game, 'p0', { mordred: true });   // morgana is already in by default
+  assert.equal(g.viewFor(game, 'p0').deck, null);
+  assert.throws(() => g.startGame(game, 'p0'), { key: 'tooManyEvilRoles' });
+});
+
+test('a table too small to deal shows no deck either', () => {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < 3; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  assert.equal(g.viewFor(game, 'p0').deck, null);
+});
+
+test('the deck a game was dealt from survives a return to the lobby', () => {
+  const game = setup(5, { percival: true });
+  const dealt = { ...game.options };
+  game.phase = 'over';
+  g.resetToLobby(game, 'p0');
+  assert.deepEqual(g.viewFor(game, 'p0').options, dealt);
+});
+
+// ---------------------------------------------------------------- house rules
+
+/** A game with the given house rules in force, dealt with a fixed deck. */
+function houseGame(rules, count = 5) {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < count; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  g.setOptions(game, 'p0', {
+    percival: false, morgana: false, mordred: false, oberon: false, houseRules: rules,
+  });
+  return game;
+}
+
+test('by default the table plays in the order it joined, host first', () => {
+  const game = houseGame({});
+  g.startGame(game, 'p0', { shuffle: (l) => l.slice().reverse() });
+  assert.deepEqual(game.players.map((p) => p.id), ['p0', 'p1', 'p2', 'p3', 'p4']);
+  assert.equal(game.leaderIndex, 0);
+});
+
+test('the random leader rule shuffles the seating and the first leader', () => {
+  const game = houseGame({ randomLeader: true });
+  g.startGame(game, 'p0', { shuffle: (l) => l.slice().reverse() });
+  assert.deepEqual(game.players.map((p) => p.id), ['p4', 'p3', 'p2', 'p1', 'p0']);
+  // Whichever seat the token landed in, it is a seat at this table.
+  assert.ok(game.leaderIndex >= 0 && game.leaderIndex < 5);
+});
+
+test('hidden votes publish the tally and nothing else', () => {
+  const game = houseGame({ hiddenVotes: true });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  game.players.forEach((p, i) => g.castVote(game, p.id, i < 2));   // 2–3, rejected
+
+  const view = g.viewFor(game, 'p1');
+  assert.equal(view.lastVote, null, 'no ballots leave the server');
+  assert.deepEqual(view.voteTally, { round: 0, attempt: 1, approved: false, yes: 2, no: 3 });
+  assert.equal(JSON.stringify(view).includes('"votes"'), false);
+});
+
+test('open votes still name who voted which way', () => {
+  const game = houseGame({});
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  for (const p of game.players) g.castVote(game, p.id, true);
+
+  const view = g.viewFor(game, 'p1');
+  assert.equal(view.lastVote.votes.p0, true);
+  assert.deepEqual(view.voteTally, { round: 0, attempt: 1, approved: true, yes: 5, no: 0 });
+});
+
+/** Reject five proposals in a row, whoever happens to be leading. */
+function hammer(game) {
+  for (let i = 0; i < 5; i++) {
+    const size = g.currentTeamSize(game);
+    g.proposeTeam(game, game.players[game.leaderIndex].id,
+      game.players.slice(0, size).map((p) => p.id));
+    for (const p of game.players) g.castVote(game, p.id, false);
+  }
+}
+
+test('five rejections hand evil the game by the book', () => {
+  const game = houseGame({});
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  hammer(game);
+  assert.equal(game.phase, 'over');
+  assert.equal(game.winReason, 'win.hammer');
+});
+
+test('the washout rule loses the quest instead of the game', () => {
+  const game = houseGame({ questHang: true });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+
+  hammer(game);
+  assert.equal(game.phase, 'team', 'play carries on');
+  assert.equal(game.round, 1, 'on the next quest');
+  assert.equal(game.rejects, 0, 'with a clear count');
+  assert.deepEqual(game.quests, [{ round: 0, team: [], fails: 0, success: false, hung: true }]);
+  assert.equal(g.viewFor(game, 'p0').quests[0].hung, true);
+
+  hammer(game);
+  assert.equal(game.phase, 'team');
+  hammer(game);
+  assert.equal(game.phase, 'over', 'three failures are still three failures');
+  assert.equal(game.winReason, 'win.threeFails');
+});
+
+test('a washout on the last quest can still hand good the assassin phase', () => {
+  const game = houseGame({ questHang: true });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  runQuest(game); runQuest(game);            // two successes
+  hammer(game);                              // quest 3 washes out
+  runQuest(game);                            // three successes
+  assert.equal(game.phase, 'assassin');
+});
+
+test('a game restored without house rules plays by the book', () => {
+  const game = houseGame({ questHang: true, hiddenVotes: true });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  delete game.houseRules;                    // a snapshot from before the rules existed
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  for (const p of game.players) g.castVote(game, p.id, false);
+  assert.ok(g.viewFor(game, 'p1').lastVote, 'ballots are public again');
+  for (let i = 0; i < 4; i++) {          // four more, for five rejections in all
+    g.proposeTeam(game, game.players[game.leaderIndex].id, ['p0', 'p1']);
+    for (const p of game.players) g.castVote(game, p.id, false);
+  }
+  assert.equal(game.winReason, 'win.hammer');
 });

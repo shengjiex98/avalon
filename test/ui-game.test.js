@@ -17,6 +17,8 @@ const { app, render } = client;
 function newGame({ confirm = true } = {}) {
   const game = g.createGame('WXYZ');
   ['Ann', '张三', 'Cai', 'Dee', 'Eli'].forEach((name, i) => g.addPlayer(game, { id: `p${i}`, name }));
+  // Pin the deck: the lobby otherwise picks one to suit the table size.
+  g.setOptions(game, 'p0', { percival: false, morgana: false, mordred: false, oberon: false });
   g.startGame(game, 'p0', { shuffle: (l) => l });
   game.leaderIndex = 0;
   if (confirm) for (const p of game.players) g.confirmRole(game, p.id);
@@ -374,4 +376,132 @@ test('the journal stays open across a redraw', () => {
 
   render();
   assert.equal(view.byClass('journal')[0].open, true, 'a redraw must not shut the log');
+});
+
+// ---------------------------------------------------------------- the lobby
+
+/** A lobby of `count` players, nobody having touched a switch. */
+function lobby(count = 7) {
+  const game = g.createGame('WXYZ');
+  ['Ann', '张三', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus', 'Hal', 'Ivy', 'Jon']
+    .slice(0, count).forEach((name, i) => g.addPlayer(game, { id: `p${i}`, name }));
+  return game;
+}
+
+test('the lobby names the characters the table will be dealt', () => {
+  const view = show(lobby(7), 'p0');
+  const deck = view.byClass('deck')[0].findAll((n) => n.className?.includes('tag'));
+  assert.deepEqual(deck.map((tag) => tag.text),
+    ['Merlin', 'Percival', 'Loyal Servant of Arthur ×2', 'Assassin', 'Morgana', 'Oberon']);
+  assert.deepEqual(deck.map((tag) => tag.className.includes('evil')),
+    [false, false, false, true, true, true], 'each side is coloured as its own');
+  assertNoRawKeys(view, 'the lobby');
+});
+
+test('the deck follows the table size, and the toggles follow the deck', () => {
+  let view = show(lobby(5), 'p0');
+  assert.match(view.byClass('deck')[0].text, /Morgana/);
+  assert.doesNotMatch(view.byClass('deck')[0].text, /Oberon/);
+  const selected = view.byClass('role-option')
+    .filter((row) => row.className.includes('selected'))
+    .map((row) => row.byClass('role-option-name')[0].text);
+  assert.deepEqual(selected, ['Percival', 'Morgana']);
+
+  view = show(lobby(10), 'p0');
+  assert.match(view.byClass('deck')[0].text, /Oberon/);
+  assert.match(view.byClass('deck')[0].text, /Loyal Servant of Arthur ×4/);
+});
+
+test('a lobby that cannot be dealt says so instead of showing a deck', () => {
+  const game = lobby(5);
+  g.setOptions(game, 'p0', { mordred: true });   // one evil too many at five
+  const view = show(game, 'p0');
+  assert.equal(view.byClass('deck').length, 0);
+  assert.match(view.text, /do not fit 5 players/);
+});
+
+test('the lobby offers the house rules, and only the host may throw them', () => {
+  const game = lobby(5);
+  let view = show(game, 'p0');
+  assert.match(view.text, /House rules/);
+  assert.deepEqual(view.byClass('house-rule-name').map((n) => n.text),
+    ['Random leader', 'Hidden votes', 'Quest washout']);
+  assert.match(view.text, /never who voted which way/, 'a variant explains itself, switch untouched');
+  assert.equal(view.byClass('role-option').length, 4, 'a house rule is not one of the cards');
+  assert.equal(view.byClass('house-rule').filter((r) => r.className.includes('selected')).length, 0,
+    'the printed game is what a new table plays');
+
+  dom.calls.length = 0;
+  const box = view.byClass('house-rule')[1].findAll((n) => n.tagName === 'INPUT')[0];
+  box.checked = true;
+  box.dispatch('change');
+  const sent = dom.calls.find((c) => c.path.endsWith('/action'));
+  assert.deepEqual(sent.body.options, { houseRules: { hiddenVotes: true } });
+
+  g.setOptions(game, 'p0', { houseRules: { hiddenVotes: true } });
+  view = show(game, 'p0');
+  assert.match(view.byClass('house-rule')[1].className, /selected/);
+
+  view = show(game, 'p1');   // not the host
+  assert.equal(view.byClass('house-rule')[1].findAll((n) => n.tagName === 'INPUT')[0].disabled, true);
+});
+
+test('the house rules in force are named in the reference panel, in both languages', () => {
+  const game = lobby(5);
+  g.setOptions(game, 'p0', { houseRules: { questHang: true } });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+
+  let view = show(game, 'p0');
+  assert.doesNotMatch(view.text, /Quest washout/, 'it lives behind the reference button');
+  view.byId('avalonRefToggle').dispatch('click');
+  view = dom.fixtures.view;
+  assert.match(view.text, /Quest washout/);
+  assert.doesNotMatch(view.text, /Hidden votes/, 'only the ones this table agreed to');
+  assertNoRawKeys(view, 'the reference panel with a house rule');
+
+  view = show(game, 'p0', 'zh');
+  view.byId('avalonRefToggle').dispatch('click');
+  assert.match(dom.fixtures.view.text, /任务流局/);
+});
+
+// ---------------------------------------------------------------- hidden votes
+
+/** A five-player game, past the first vote, playing with the given rules. */
+function voted(rules) {
+  const game = lobby(5);
+  g.setOptions(game, 'p0', {
+    percival: false, morgana: false, mordred: false, oberon: false, houseRules: rules,
+  });
+  g.startGame(game, 'p0', { shuffle: (l) => l });
+  for (const p of game.players) g.confirmRole(game, p.id);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  game.players.forEach((p, i) => g.castVote(game, p.id, i < 2));   // 2–3, rejected
+  return game;
+}
+
+test('an open vote shows the tally and every ballot behind it', () => {
+  const view = show(voted({}), 'p2');
+  const result = view.byClass('vote-result')[0];
+  assert.match(result.text, /Vote 1: 2 approve, 3 reject — rejected/);
+  assert.equal(result.byClass('verdict').length, 5);
+  assert.deepEqual(result.byClass('verdict').map((tag) => tag.text), ['✓', '✓', '✕', '✕', '✕']);
+});
+
+test('a hidden vote shows the tally and no ballots at all', () => {
+  const view = show(voted({ hiddenVotes: true }), 'p2');
+  const result = view.byClass('vote-result')[0];
+  assert.match(result.text, /Vote 1: 2 approve, 3 reject — rejected/);
+  assert.equal(result.byClass('verdict').length, 0, 'nobody is shown as having voted either way');
+  assert.match(result.text, /Only the tally is published/);
+  assertNoRawKeys(view, 'a hidden vote');
+});
+
+test('the washout rule changes what the last-chance banner threatens', () => {
+  const game = voted({ questHang: true });
+  for (let i = 0; i < 3; i++) {          // four rejections in all: one to go
+    g.proposeTeam(game, game.players[game.leaderIndex].id, ['p0', 'p1']);
+    for (const p of game.players) g.castVote(game, p.id, false);
+  }
+  assert.match(show(game, 'p2').byClass('banner')[0].text, /this quest is lost/);
 });

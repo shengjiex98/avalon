@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SETUPS, buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize } from '../src/games/avalon/rules.js';
+import {
+  SETUPS, buildRoleList, defaultHouseRules, defaultOptions, failsRequired, knowledgeFor,
+  noHouseRules, sideOf, teamSize,
+} from '../src/games/avalon/rules.js';
 import { missingKeys, t, STRINGS } from '../public/i18n.js';
 
 test('every player count has five quests and a sane evil count', () => {
@@ -86,4 +89,29 @@ test('every role and error key the server can emit has a translation', () => {
     assert.ok(STRINGS.zh[key], `missing zh for ${key}`);
     assert.ok(STRINGS.en[`roleDesc.${key.slice(5)}`], `missing description for ${key}`);
   }
+});
+
+test('the default deck for each table size is the standard setup', () => {
+  // The table the lobby is expected to reproduce without anybody touching a
+  // switch: Percival opposite Morgana throughout, Oberon and Mordred joining
+  // as the evil side gains seats.
+  const expected = {
+    5:  { merlin: 1, percival: 1, servant: 1, morgana: 1, assassin: 1 },
+    6:  { merlin: 1, percival: 1, servant: 2, morgana: 1, assassin: 1 },
+    7:  { merlin: 1, percival: 1, servant: 2, morgana: 1, assassin: 1, oberon: 1 },
+    8:  { merlin: 1, percival: 1, servant: 3, morgana: 1, assassin: 1, minion: 1 },
+    9:  { merlin: 1, percival: 1, servant: 4, morgana: 1, assassin: 1, mordred: 1 },
+    10: { merlin: 1, percival: 1, servant: 4, morgana: 1, assassin: 1, mordred: 1, oberon: 1 },
+  };
+  for (const [count, want] of Object.entries(expected)) {
+    const roles = buildRoleList(Number(count), defaultOptions(Number(count)));
+    const got = {};
+    for (const role of roles) got[role] = (got[role] ?? 0) + 1;
+    assert.deepEqual(got, want, `${count} players`);
+  }
+});
+
+test('house rules all start off, and an unknown one is simply absent', () => {
+  assert.deepEqual(defaultHouseRules(), { randomLeader: false, hiddenVotes: false, questHang: false });
+  assert.deepEqual(noHouseRules(), defaultHouseRules());
 });

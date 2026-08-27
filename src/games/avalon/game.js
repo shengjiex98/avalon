@@ -2,8 +2,9 @@
 // clock (beyond timestamps) or randomness it was not handed.
 
 import {
-  MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
-  buildRoleList, failsRequired, knowledgeFor, sideOf, teamSize,
+  HOUSE_RULE_KEYS, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
+  buildRoleList, defaultHouseRules, defaultOptions, failsRequired, knowledgeFor,
+  noHouseRules, sideOf, teamSize,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
@@ -14,6 +15,8 @@ export function createGame(code, { now = Date.now, seed } = {}) {
   return {
     ...lobby.baseState(code, 'avalon', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
+    optionsTouched: false,  // until the host picks, follow the table size
+    houseRules: defaultHouseRules(),   // variants, as a new table plays them
     roles: {},              // playerId -> role key
     round: 0,               // 0-based quest index
     leaderIndex: 0,
@@ -32,6 +35,22 @@ export function createGame(code, { now = Date.now, seed } = {}) {
 const leader = (g) => g.players[g.leaderIndex];
 const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'evil');
 
+/**
+ * The deck the lobby is currently describing. Once the cards are out, it is
+ * whatever they were dealt from — including in a game restored from a snapshot
+ * taken before the lobby followed the table size on its own.
+ */
+const liveOptions = (g) =>
+  (g.phase !== 'lobby' || g.optionsTouched ? g.options : defaultOptions(g.players.length));
+
+/**
+ * The house rules in force. Filled in rather than read straight off the game,
+ * so a room restored from a snapshot taken before a rule existed plays without
+ * it, instead of having a variant it never agreed to switched on underneath it
+ * mid-game.
+ */
+const houseRulesOf = (g) => ({ ...noHouseRules(), ...g.houseRules });
+
 // ---------------------------------------------------------------- lobby
 
 export const addPlayer = (g, player) => lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
@@ -40,9 +59,20 @@ export const removePlayer = lobby.removePlayer;
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
-  for (const r of OPTIONAL_ROLES) {
-    if (r in options) g.options[r] = Boolean(options[r]);
+  if (options.houseRules) {
+    const rules = houseRulesOf(g);
+    for (const rule of HOUSE_RULE_KEYS) {
+      if (rule in options.houseRules) rules[rule] = Boolean(options.houseRules[rule]);
+    }
+    g.houseRules = rules;
   }
+  const next = { ...liveOptions(g) };
+  let touched = g.optionsTouched;
+  for (const r of OPTIONAL_ROLES) {
+    if (r in options) { next[r] = Boolean(options[r]); touched = true; }
+  }
+  g.options = next;
+  g.optionsTouched = touched;
 }
 
 export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list) } = {}) {
@@ -50,14 +80,19 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
 
-  const roleList = shuffle(buildRoleList(g.players.length, g.options));
-  const seats = shuffle(g.players.slice());   // seating order is randomised too
+  const options = liveOptions(g);
+  const randomLeader = houseRulesOf(g).randomLeader;
+  const roleList = shuffle(buildRoleList(g.players.length, options));
+  // Roles come off a shuffled deck either way; only the seating and the first
+  // leader are what this house rule decides.
+  const seats = randomLeader ? shuffle(g.players.slice()) : g.players.slice();
+  g.options = options;
   g.players = seats;
   g.roles = Object.fromEntries(seats.map((p, i) => [p.id, roleList[i]]));
 
   g.phase = 'reveal';
   g.ready = {};
-  g.leaderIndex = randInt(g, g.players.length);
+  g.leaderIndex = randomLeader ? randInt(g, g.players.length) : 0;
   logEvent(g, 'log.gameStarted', { count: g.players.length });
 }
 
@@ -126,6 +161,10 @@ function resolveVote(g) {
 
   g.rejects += 1;
   if (g.rejects >= MAX_REJECTS) {
+    // By the book the hammer ends the whole game. Under `questHang` it costs
+    // good the mission instead: the quest is washed out as a failure and the
+    // table moves on, so three of them still hand evil the win.
+    if (houseRulesOf(g).questHang) return hangQuest(g);
     finish(g, 'evil', 'win.hammer');
     return;
   }
@@ -133,6 +172,13 @@ function resolveVote(g) {
   g.team = [];
   g.phase = 'team';
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
+}
+
+/** A quest nobody was ever sent on: no team, no cards, counted as a failure. */
+function hangQuest(g) {
+  g.quests.push({ round: g.round, team: [], fails: 0, success: false, hung: true });
+  logEvent(g, 'log.questHung', { round: g.round + 1 });
+  afterQuest(g);
 }
 
 function nextLeader(g) {
@@ -157,7 +203,11 @@ function resolveQuest(g) {
     round: g.round + 1,
     fails,
   });
+  afterQuest(g);
+}
 
+/** Where a settled quest — played out or washed out — leaves the game. */
+function afterQuest(g) {
   const successes = g.quests.filter((q) => q.success).length;
   const failures = g.quests.length - successes;
 
@@ -207,7 +257,9 @@ function finish(g, winner, reason) {
 
 function rebuildLobby(g, { now = Date.now } = {}) {
   const keep = {
-    code: g.code, players: g.players, hostId: g.hostId, options: g.options,
+    code: g.code, players: g.players, hostId: g.hostId,
+    options: g.options, optionsTouched: Boolean(g.optionsTouched),
+    houseRules: houseRulesOf(g),
     seed: g.seed, rng: g.rng, actions: g.actions,
     ...(g.actionsDropped ? { actionsDropped: true } : {}),
   };
@@ -255,8 +307,14 @@ export function viewFor(g, viewerId) {
       ready: g.phase === 'reveal' ? Boolean(g.ready?.[p.id]) : undefined,
       role: revealAll ? g.roles[p.id] : undefined,
     })),
-    options: { ...g.options },
-    // The deck is public; only the mapping from a role to a player is secret.
+    options: { ...liveOptions(g) },
+    houseRules: houseRulesOf(g),
+    // The deck is public — the lobby agreed it — and only the mapping from a
+    // role to a player is secret. `deck` is what the lobby is heading for,
+    // with `null` for a table that cannot be dealt as asked; `roleCounts` is
+    // what a running game was dealt, and stays absent from the lobby so a
+    // client that predates the lobby deck cannot mistake one for the other.
+    deck: g.phase === 'lobby' ? safeRoleCounts(g) : null,
     roleCounts: g.phase === 'lobby' ? null : countRoles(buildRoleList(g.players.length, g.options)),
     round: g.round,
     rejects: g.rejects,
@@ -270,8 +328,16 @@ export function viewFor(g, viewerId) {
         }))
       : null,
     team: g.team.slice(),
-    quests: g.quests.map((q) => ({ round: q.round, success: q.success, fails: q.fails, team: q.team })),
-    lastVote: g.lastVote,
+    quests: g.quests.map((q) => ({
+      round: q.round, success: q.success, fails: q.fails, team: q.team,
+      ...(q.hung ? { hung: true } : {}),
+    })),
+    // Under hidden votes the per-player ballot never leaves the server: the
+    // table gets the tally, which is what decides the mission, and nothing
+    // else. Withholding the whole field rather than emptying it keeps a client
+    // that predates the rule from drawing everyone as a rejection.
+    lastVote: houseRulesOf(g).hiddenVotes ? null : g.lastVote,
+    voteTally: voteTally(g),
     knowledge: myRole ? knowledgeFor(viewerId, g.roles) : [],
     assassinTarget: g.assassinTarget,
     winner: g.winner,
@@ -286,6 +352,29 @@ function countRoles(roles) {
   const counts = {};
   for (const role of roles) counts[role] = (counts[role] ?? 0) + 1;
   return counts;
+}
+
+/** The lobby's deck, or nothing when this table cannot be dealt as asked. */
+function safeRoleCounts(g) {
+  try {
+    return countRoles(buildRoleList(g.players.length, liveOptions(g)));
+  } catch {
+    return null;
+  }
+}
+
+/** How the last vote went, without saying who made it go that way. */
+function voteTally(g) {
+  if (!g.lastVote) return null;
+  const ballots = Object.values(g.lastVote.votes);
+  const yes = ballots.filter(Boolean).length;
+  return {
+    round: g.lastVote.round,
+    attempt: g.lastVote.attempt,
+    approved: g.lastVote.approved,
+    yes,
+    no: ballots.length - yes,
+  };
 }
 
 function waitingFor(g) {
