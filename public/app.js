@@ -816,6 +816,10 @@ function paneTestMode() {
       rows.push(h('div', { class: 'row' },
         h('button', { class: 'btn', id: 'testAdd', disabled: !lobby, onclick: addSeat },
           lobby ? T('test.add') : T('test.lobbyOnly')),
+        h('button', {
+          class: 'btn', id: 'testReset', disabled: !lobby || app.seats.length < 2,
+          onclick: resetSeats,
+        }, T('test.reset')),
       ));
       rows.push(h('p', { class: 'muted', text: T('test.actingAs') }));
       rows.push(h('div', { class: 'row' }, app.seats.map((seat) => h('button', {
@@ -843,6 +847,33 @@ async function addSeat() {
   } catch (err) {
     toast(T(`err.${err.key}`, err.params));
   }
+}
+
+/**
+ * Send the invented players home, leaving the one the person at the keyboard
+ * actually joined as. That is the first seat in the list: every other one was
+ * added from here, in order, on top of it. Lobby-only for the same reason
+ * adding is — the server will not remove anyone once the roles are dealt.
+ */
+async function resetSeats() {
+  const [mine, ...extras] = app.seats;
+  if (!mine || extras.length === 0) return;
+  if (app.playerId !== mine.id) actAs(mine.id);   // never watch through a seat we are about to remove
+
+  const gone = [];
+  for (const seat of extras) {
+    try {
+      await api(`/api/rooms/${app.code}/action`, { body: { type: 'leave', playerId: seat.id } });
+      gone.push(seat.id);
+    } catch (err) {
+      if (err.key === 'notInGame') { gone.push(seat.id); continue; }   // already gone is the goal
+      toast(T(`err.${err.key}`, err.params));
+      break;                                       // whatever went wrong will go wrong again
+    }
+  }
+  app.seats = app.seats.filter((seat) => !gone.includes(seat.id));
+  store.setSeats(app.code, app.seats);
+  render();
 }
 
 /** Look through another seat's eyes, by reconnecting as them. */
