@@ -146,7 +146,9 @@ test('a failed target restores the previous release, snapshot, and healthy proce
   const fakeSystemctl = join(dir, 'systemctl');
   const fakeServer = join(dir, 'server.mjs');
   const target = (await run('git', ['rev-parse', 'HEAD'])).stdout.trim();
-  const rollback = (await run('git', ['rev-parse', 'HEAD^'])).stdout.trim();
+  // CI checks out a single commit. The rollback already exists and is verified,
+  // so it only needs a valid release identity; no Git object lookup is needed.
+  const rollback = 'a'.repeat(40);
   const manifest = (commit) => ({
     commit,
     stateVersion: 1,
