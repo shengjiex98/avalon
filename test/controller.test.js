@@ -8,7 +8,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const deployDir = fileURLToPath(new URL('../deploy/', import.meta.url));
-const repoDir = fileURLToPath(new URL('../', import.meta.url));
 
 function run(command, args, env = {}) {
   return new Promise((resolve) => {
@@ -69,10 +68,10 @@ test('the controller installer atomically selects an immutable version', async (
     AVALON_CONTROLLER_ROOT: root,
   });
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/2');
-  assert.equal(await readFile(join(root, 'versions/2/controller-version'), 'utf8'), '2\n');
-  assert.match(await readFile(join(root, 'versions/2/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/2/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  assert.equal(await readlink(join(root, 'current')), 'versions/3');
+  assert.equal(await readFile(join(root, 'versions/3/controller-version'), 'utf8'), '3\n');
+  assert.match(await readFile(join(root, 'versions/3/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
+  assert.match(await readFile(join(root, 'versions/3/wait-for-health.mjs'), 'utf8'), /api\/health/);
 
   const second = await run('sh', [join(source, 'install-controller.sh')], {
     AVALON_CONTROLLER_ROOT: root,
@@ -145,9 +144,9 @@ test('a failed target restores the previous release, snapshot, and healthy proce
   const pidFile = join(dir, 'server.pid');
   const fakeSystemctl = join(dir, 'systemctl');
   const fakeServer = join(dir, 'server.mjs');
-  const target = (await run('git', ['rev-parse', 'HEAD'])).stdout.trim();
-  // CI checks out a single commit. The rollback already exists and is verified,
-  // so it only needs a valid release identity; no Git object lookup is needed.
+  // These releases already exist, so the drill must not depend on a source
+  // checkout or Git metadata. That is also how it runs from a staged artifact.
+  const target = 'b'.repeat(40);
   const rollback = 'a'.repeat(40);
   const manifest = (commit) => ({
     commit,
@@ -216,7 +215,7 @@ test('a failed target restores the previous release, snapshot, and healthy proce
     PORT: String(port),
     AVALON_NODE: process.execPath,
     AVALON_SYSTEMCTL: fakeSystemctl,
-    AVALON_SOURCE_REPO: repoDir,
+    AVALON_SOURCE_REPO: join(dir, 'no-source-checkout'),
     AVALON_RELEASE_ROOT: releaseRoot,
     AVALON_STATE_FILE: stateFile,
     AVALON_HEALTH_TIMEOUT_SECONDS: '2',

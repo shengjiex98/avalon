@@ -40,7 +40,6 @@ prepare() (
     *) echo "unexpected node $("$node_bin" -v); refusing $target" >&2; return 1 ;;
   esac
 
-  git -C "$source_repo" cat-file -e "$target^{commit}" || return 1
   mkdir -p "$releases" || return 1
   release="$releases/$target"
   if [ -d "$release" ]; then
@@ -49,6 +48,7 @@ prepare() (
     return 0
   fi
 
+  git -C "$source_repo" cat-file -e "$target^{commit}" || return 1
   stage=$(mktemp -d "$releases/.staging-$target.XXXXXX") || return 1
   cleanup() {
     [ -n "${stage:-}" ] && [ -d "$stage" ] && rm -rf -- "$stage"
