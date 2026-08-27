@@ -64,11 +64,13 @@ esac
 # compares state versions and, when they cannot both be known to match, asks
 # the server whether a game would be lost. Asked before the working tree moves,
 # for the same reason as the node check above.
-TARGET_STATE_VERSION=$(git show "$target:src/state-version.js" 2>/dev/null \
+target_state_version=$(git show "$target:src/state-version.js" 2>/dev/null \
   | sed -n 's/.*STATE_VERSION = \([0-9][0-9]*\).*/\1/p')
-export TARGET_STATE_VERSION
 
-set +e; "$here/gate.sh"; gate=$?; set -e
+set +e
+TARGET_STATE_VERSION="$target_state_version" "$here/gate.sh"
+gate=$?
+set -e
 if [ "$gate" -eq 75 ]; then
   publish "busy $target"
   exit 75
@@ -79,7 +81,11 @@ fi
 # a working tree that is already correct, for no gain.
 [ "$previous" = "$target" ] || git reset --hard --quiet "$target"
 
-if ! node --test "test/**/*.test.js" >/dev/null 2>&1; then
+# The gate's controls are inputs to one subprocess, not ambient test settings.
+# Scrub either value inherited from a manual invocation or host config too.
+# Leave test output in the journal so a rollback says what actually failed.
+if ! env -u TARGET_STATE_VERSION -u AVALON_FORCE \
+  node --test "test/**/*.test.js"; then
   [ "$previous" = "$target" ] || git reset --hard --quiet "$previous"
   echo "tests failed on $target; stayed on $previous" >&2
   publish "failed $target tests"

@@ -151,11 +151,9 @@ async function askGate({ running, target, updateStatus = 409, down = false, forc
   try {
     const gate = fileURLToPath(new URL('../deploy/gate.sh', import.meta.url));
     const env = { ...process.env, HOME: home, PORT: String(port) };
-    // update.sh exports TARGET_STATE_VERSION for the gate and then runs these
-    // tests in the same environment, so the cases that mean "not declared"
-    // have to unset it rather than merely decline to set it. AVALON_FORCE gets
-    // the same treatment: inheriting either one silently inverts the answer
-    // this helper exists to check.
+    // A case's declared inputs must win over ambient values from its caller or
+    // host config. Inheriting either value silently inverts the answer this
+    // helper exists to check.
     delete env.TARGET_STATE_VERSION;
     delete env.AVALON_FORCE;
     if (target !== undefined) env.TARGET_STATE_VERSION = String(target);
@@ -218,8 +216,14 @@ test('the gate is asked before anything is replaced', async () => {
 
   // The gate cannot answer without knowing what is being deployed, and it must
   // learn it as a version rather than a commit: nothing in it knows about git.
-  assert.match(update, /TARGET_STATE_VERSION=\$\(git show "\$target:src\/state-version\.js"/);
-  assert.match(update, /export TARGET_STATE_VERSION/);
+  assert.match(update, /target_state_version=\$\(git show "\$target:src\/state-version\.js"/);
+  assert.match(update, /TARGET_STATE_VERSION="\$target_state_version" "\$here\/gate\.sh"/);
+  assert.doesNotMatch(update, /export TARGET_STATE_VERSION/,
+    'the gate input must not leak into the test environment');
+  assert.match(update, /env -u TARGET_STATE_VERSION -u AVALON_FORCE[\s\\]+node --test/,
+    'deployment controls inherited from the host must not affect tests');
+  assert.doesNotMatch(update, /node --test[^\n]*>\/dev\/null/,
+    'a failed deployment must leave its test diagnostics in the journal');
   assert.doesNotMatch(gate, /\bgit\b/, 'the gate stays usable for an image deployment');
   assert.match(update, /systemctl --user restart avalon/);
 
