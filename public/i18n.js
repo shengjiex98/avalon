@@ -63,11 +63,11 @@ const STRINGS = {
     'avalon.deckTooBig': 'Those roles do not fit {n} players. Turn some off.',
     'avalon.houseRules': 'House rules',
     'avalon.house.randomLeader': 'Random leader',
-    'avalon.houseDesc.randomLeader': 'Shuffle the seating and hand the first leader token to anyone. Off, the table plays in the order it joined, starting with the host.',
+    'avalon.houseDesc.randomLeader': 'Shuffle the seating and hand the first leader token to anyone. Roles are dealt from a shuffled deck, so seating never says anything about who is who.',
     'avalon.house.hiddenVotes': 'Hidden votes',
     'avalon.houseDesc.hiddenVotes': 'Publish the tally only: how many approved and how many rejected, never who voted which way.',
     'avalon.house.resetRejects': 'Reset rejection count',
-    'avalon.houseDesc.resetRejects': 'Off, rejected teams accumulate across the whole game and the fifth gives evil the win. On, every approved team resets the count to zero.',
+    'avalon.houseDesc.resetRejects': 'Every approved team resets the rejection count to zero. Evil still wins on the fifth rejection in the current count.',
 
     'role.merlin': 'Merlin',
     'role.percival': 'Percival',
@@ -413,7 +413,7 @@ Five quests are attempted. Each round the leader proposes a team; everyone votes
 
 Evil wins by failing three quests. If good succeeds three times, the Assassin gets one guess at who Merlin is: guess right and evil still wins.
 
-The lobby picks the standard deck for the number of players who have joined, and the host can change it. Whenever the player count changes, those choices reset to the defaults for the new count. The host can also switch on house rules: a random leader instead of the order people joined in, hidden votes that publish only the tally, and rejection-count reset, which clears the count whenever a team is approved.`,
+The lobby picks the standard deck for the number of players who have joined, and the host can change it. Whenever the player count changes, those choices reset to the defaults for the new count. The host can also switch on house rules: a random leader, hidden votes that publish only the tally, and rejection-count reset, which clears the count whenever a team is approved.`,
   },
 
   zh: {
@@ -475,11 +475,11 @@ The lobby picks the standard deck for the number of players who have joined, and
     'avalon.deckTooBig': '{n} 人放不下这么多角色，请关掉一些。',
     'avalon.houseRules': '规则变体',
     'avalon.house.randomLeader': '随机队长',
-    'avalon.houseDesc.randomLeader': '打乱顺序随机分配队长，默认为顺序分配。',
+    'avalon.houseDesc.randomLeader': '打乱座位顺序，队长令牌随机交给一名玩家。身份始终由洗好的牌堆发出，座位顺序不会透露任何身份信息。',
     'avalon.house.hiddenVotes': '隐藏投票',
     'avalon.houseDesc.hiddenVotes': '隐藏投票后，统计投票数，投票行为不可见。',
     'avalon.house.resetRejects': '重置流局计数',
-    'avalon.houseDesc.resetRejects': '关闭时，流局次数会跨任务累计，累计 5 次后坏人直接获胜。开启后，每次组队通过都会将流局计数清零。',
+    'avalon.houseDesc.resetRejects': '每次组队通过都会将流局计数清零。当前计数累计 5 次流局，坏人直接获胜。',
 
     'role.merlin': '梅林',
     'role.percival': '派西维尔',
@@ -823,7 +823,7 @@ The lobby picks the standard deck for the number of players who have joined, and
 
 坏人只要让三轮任务失败即获胜；若好人成功三轮，刺客有一次机会指认梅林，猜中则坏人反败为胜。
 
-等待室会按已加入的人数自动配好标准角色，房主也可以自行增减；每当玩家人数变化时，角色选择都会重置为新人数的默认配置。房主还可以开启规则变体：随机队长（默认按加入顺序）、隐藏投票（只公布票数）、重置流局计数（每次组队通过后清零；关闭时则跨任务累计）。`,
+等待室会按已加入的人数自动配好标准角色，房主也可以自行增减；每当玩家人数变化时，角色选择都会重置为新人数的默认配置。房主还可以开启规则变体：随机队长（队长令牌随机分配）、隐藏投票（只公布票数）、重置流局计数（每次组队通过后清零）。`,
   },
 };
 
