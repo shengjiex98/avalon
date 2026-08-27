@@ -11,7 +11,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=%h/avalon/deploy/update.sh
+ExecStart=%h/.local/libexec/avalon-deploy/current/controller.sh deploy-main
 
 # Exit 75 means a game was in progress. That is a healthy outcome, not a
 # failure: the next hourly run tries again.

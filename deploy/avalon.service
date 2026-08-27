@@ -1,4 +1,4 @@
-# Install without copying, so the unit stays version-controlled:
+# The application runs from the immutable release selected by the controller:
 #   systemctl --user link  %h/avalon/deploy/avalon.service
 #   systemctl --user enable --now avalon
 #   loginctl enable-linger "$USER"        # survive logout / reboot
@@ -17,13 +17,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/avalon
+WorkingDirectory=%h/.local/lib/avalon/current
 EnvironmentFile=-%h/.config/avalon.env
 Environment=PORT=8420
 # An absolute path, not `env node`: the runtime is hand-installed under
-# ~/.local, so resolving through PATH is the one part of this deployment that
-# is not pinned. deploy/update.sh checks the major version before restarting.
-ExecStart=%h/.local/bin/node %h/avalon/src/server.js
+# ~/.local. The release manifest and controller both require Node 24.
+ExecStart=%h/.local/bin/node %h/.local/lib/avalon/current/src/server.js
 Restart=on-failure
 RestartSec=3
 

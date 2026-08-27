@@ -15,7 +15,7 @@ destination="$versions/$version"
 mkdir -p "$versions"
 
 if [ -e "$destination" ]; then
-  for file in controller.sh verify-release.mjs controller-version; do
+  for file in controller.sh gate.sh lib.sh verify-release.mjs wait-for-health.mjs controller-version; do
     cmp -s "$here/$file" "$destination/$file" || {
       echo "controller version $version is already installed with different contents" >&2
       exit 65
@@ -27,9 +27,9 @@ else
     [ -n "${stage:-}" ] && [ -d "$stage" ] && rm -rf -- "$stage"
   }
   trap cleanup EXIT HUP INT TERM
-  install -m 755 "$here/controller.sh" "$stage/controller.sh"
-  install -m 644 "$here/verify-release.mjs" "$stage/verify-release.mjs"
-  install -m 644 "$here/controller-version" "$stage/controller-version"
+  install -m 755 "$here/controller.sh" "$here/gate.sh" "$stage/"
+  install -m 644 "$here/lib.sh" "$here/verify-release.mjs" \
+    "$here/wait-for-health.mjs" "$here/controller-version" "$stage/"
   mv "$stage" "$destination"
   stage=
   trap - EXIT HUP INT TERM

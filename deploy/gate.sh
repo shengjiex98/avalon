@@ -22,9 +22,13 @@ set -eu
 here=$(cd -- "$(dirname -- "$0")" >/dev/null && pwd)
 . "$here/lib.sh"
 
-[ "${AVALON_FORCE:-0}" = "1" ] && { echo 'forced: skipping the safety check' >&2; exit 0; }
-
+requested_target=${TARGET_STATE_VERSION:-}
+requested_force=${AVALON_FORCE:-0}
 avalon_load_env
+TARGET_STATE_VERSION=$requested_target
+AVALON_FORCE=$requested_force
+
+[ "$AVALON_FORCE" = "1" ] && { echo 'forced: skipping the safety check' >&2; exit 0; }
 
 target_sv="${TARGET_STATE_VERSION:-}"
 running_sv=$(avalon_health | sed -n '2p')
@@ -36,7 +40,7 @@ if [ -n "$running_sv" ] && [ -n "$target_sv" ] && [ "$running_sv" = "$target_sv"
   exit 0
 fi
 
-status=$(node -e '
+status=$(avalon_node -e '
   fetch(`http://127.0.0.1:${process.env.PORT}/api/health/update`, { signal: AbortSignal.timeout(5000) })
     .then((r) => console.log(r.status))
     .catch(() => console.log(0));   // not running: nothing to protect

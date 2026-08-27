@@ -12,6 +12,10 @@ avalon_load_env() {
   export PORT
 }
 
+avalon_node() {
+  "${AVALON_NODE:-node}" "$@"
+}
+
 # The commit and the state version the running process reports, one per line.
 # Both lines are empty when the server is down or answers something else --
 # callers treat that as "unknown", never as a value.
@@ -19,7 +23,7 @@ avalon_load_env() {
 # node rather than curl/jq: the project ships no dependencies, and the runtime
 # is by definition installed wherever the server runs.
 avalon_health() {
-  node -e '
+  avalon_node -e '
     fetch(`http://127.0.0.1:${process.env.PORT}/api/health`, { signal: AbortSignal.timeout(5000) })
       .then((r) => r.json()).then((h) => {
         console.log(h.commit ?? "");

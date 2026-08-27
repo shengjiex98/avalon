@@ -4,8 +4,8 @@
 // publish to it, so nothing here interprets what a message says: a body has to
 // match one exact shape, and the only thing a match can do is start a fixed
 // unit. Worst case, a stranger makes this host run `git fetch` and find
-// nothing new. Authority over *what* gets deployed lives in update.sh, which
-// only ever moves to origin/main.
+// nothing new. Authority over *what* gets deployed lives in the external
+// release controller, which only ever selects origin/main.
 //
 // Reconnection is systemd's job (Restart=always); this exits on any stream
 // error and is started again a few seconds later.
@@ -20,7 +20,7 @@ if (!topic) {
 }
 
 // The SHA is matched but never used: it is what lets this ignore the
-// `deployed …` and `busy …` messages update.sh publishes to the same topic.
+// `deployed …` and `busy …` messages the controller publishes to the same topic.
 const TRIGGER = /^deploy [0-9a-f]{40}$/;
 
 let running = false;
