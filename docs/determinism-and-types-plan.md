@@ -239,8 +239,8 @@ comment naming the rule.
   fuzzer probing the guards; catch `GameError` and continue.
 - Run a fixed set of seeds (e.g. 0–19) plus a handful of `Date.now()`-derived
   ones per run, ~200 steps each, both games. Keep total runtime well under a
-  few seconds — this runs in `npm test`, which `deploy/update.sh` executes on
-  the host before every restart.
+  few seconds — this runs in `npm test`, which the host executes from the
+  candidate release before every restart.
 - On any invariant failure, `assert.fail` with the JSON repro in the message.
 
 **Acceptance:** fuzz runs green and fast. Prove the leak check has teeth once:
@@ -262,8 +262,8 @@ it accordingly and never expose it over HTTP. Do **not** add a debug endpoint.
 ### Step B0 — the dependency decision, made explicitly
 
 This adds `typescript` as a **devDependency**. Nothing ships: no build step,
-no emitted files, the runtime stays dependency-free, and the host's
-`deploy/update.sh` keeps running plain `node --test` with no `npm install`.
+no emitted files, the runtime stays dependency-free, and the host keeps
+running plain `node --test` with no `npm install`.
 Per [AGENTS.md](../AGENTS.md) this is a design decision — record it there in
 the same PR: *"Runtime dependencies: none, deliberately. Dev-only:
 `typescript`, for `npm run typecheck`; it must never appear in
@@ -291,7 +291,7 @@ server files.)
 Wire `npm run typecheck` into the CI test job in
 `.github/workflows/deploy.yml` (after `npm test`; requires an `npm ci` step —
 the lockfile this creates is the other artifact of B0). Do **not** add it to
-`deploy/update.sh`: the host verifies behavior, CI verifies types.
+the host's test run: the host verifies behavior, CI verifies types.
 
 **Acceptance:** `npm run typecheck` passes (trivially — nothing opted in),
 CI runs it, `npm test` still needs no install.
