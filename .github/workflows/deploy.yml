@@ -24,12 +24,56 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Match the runtime deploy/update.sh accepts on the server host.
+          # Match the runtime the release manifest requires on the server host.
           node-version: '24'
-      - run: npm test
+      - name: Package the immutable release
+        run: scripts/package-release.sh "$GITHUB_SHA" dist
+      - name: Test the exact release bytes
+        run: |
+          set -eu
+          archive="avalon-$GITHUB_SHA.tar.gz"
+          (cd dist && sha256sum -c "$archive.sha256")
+          mkdir tested-release
+          tar -xzf "dist/$archive" --strip-components=1 -C tested-release
+          (cd tested-release && npm test)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avalon-${{ github.sha }}
+          path: |
+            dist/avalon-${{ github.sha }}.tar.gz
+            dist/avalon-${{ github.sha }}.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-artifact:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: avalon-${{ github.sha }}
+          path: dist
+      - name: Publish the exact tested release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          release_tag=deployment-artifacts
+          archive="avalon-$GITHUB_SHA.tar.gz"
+          (cd dist && sha256sum -c "$archive.sha256")
+          if ! gh release view "$release_tag" >/dev/null 2>&1; then
+            gh release create "$release_tag" --target "$GITHUB_SHA" \
+              --title "Avalon deployment artifacts" \
+              --notes "Immutable artifacts consumed by the Avalon release controller." \
+              --latest=false
+          fi
+          gh release upload "$release_tag" \
+            "dist/$archive" "dist/$archive.sha256" --clobber
 
   deploy-server:
-    needs: test
+    needs: publish-artifact
     runs-on: ubuntu-latest
     steps:
       # The topic is a channel, not an authority. A stranger who learns it can

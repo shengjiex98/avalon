@@ -114,10 +114,12 @@ for a release directory, tarball, or image.
 
 `deploy/install-controller.sh` installs a separately versioned control plane at
 `~/.local/libexec/avalon-deploy/current` and atomically points the Avalon,
-update, and timer units at that external bundle. Its `prepare <sha>` operation exports
-that exact commit into `~/.local/lib/avalon/releases/<sha>`, validates the
-manifest with controller-owned code, runs the host test suite from the staged
-tree, and makes the result read-only. The source checkout is never moved.
+update, and timer units at that external bundle. Its `prepare <sha>` operation
+downloads `avalon-<sha>.tar.gz` and its checksum from the
+`deployment-artifacts` GitHub release, verifies both checksum and manifest with
+controller-owned code, reruns the host test suite from the extracted tree, and
+makes `~/.local/lib/avalon/releases/<sha>` read-only. Application files never
+come from the source checkout.
 
 `avalon.service` runs the release selected by the atomic
 `~/.local/lib/avalon/current` symlink. `avalon-update.service` invokes the
@@ -128,16 +130,18 @@ switches `current`, starts Avalon, and requires the target commit from
 `/api/health`. Failed health verification restores the previous release pointer
 and snapshot and proves the rollback commit is serving.
 
-The source checkout is still fetched in this migration stage, but it is never
-reset and the application does not execute or serve files from it. A later step
-replaces the locally exported commit with the exact artifact published by CI.
+The source checkout is still fetched in this migration stage only to resolve
+the current `origin/main` SHA; it is never reset and the application does not
+execute, test, or serve files from it. A later step removes that last lookup.
 
-`.github/workflows/deploy.yml` runs on every push to `main` as three ordered
-jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
-A client newer than its server fails the protocol check and closes the lobby, so
-the server takes each commit first and the client is published only if it did.
-The workflow and production host both use Node 24, so the test gate exercises
-the runtime family the server will actually execute.
+`.github/workflows/deploy.yml` runs on every push to `main` as four ordered
+jobs: `test`, `publish-artifact`, `deploy-server`, then `deploy-pages`. The test
+job packages first and runs the full suite from the extracted tarball; the next
+job promotes those exact bytes to durable release assets before the host is
+notified. A client newer than its server fails the protocol check and closes
+the lobby, so the server takes each commit first and the client is published
+only if it did. The workflow and production host both use Node 24, so the test
+gate exercises the runtime family the server will actually execute.
 
 CI never connects to this host. The two sides meet on an ntfy topic:
 
