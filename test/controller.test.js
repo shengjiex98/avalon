@@ -8,7 +8,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const deployDir = fileURLToPath(new URL('../deploy/', import.meta.url));
-const repoDir = fileURLToPath(new URL('../', import.meta.url));
 
 function run(command, args, env = {}) {
   return new Promise((resolve) => {
@@ -145,9 +144,9 @@ test('a failed target restores the previous release, snapshot, and healthy proce
   const pidFile = join(dir, 'server.pid');
   const fakeSystemctl = join(dir, 'systemctl');
   const fakeServer = join(dir, 'server.mjs');
-  const target = (await run('git', ['rev-parse', 'HEAD'])).stdout.trim();
-  // CI checks out a single commit. The rollback already exists and is verified,
-  // so it only needs a valid release identity; no Git object lookup is needed.
+  // These releases already exist, so the drill must not depend on a source
+  // checkout or Git metadata. That is also how it runs from a staged artifact.
+  const target = 'b'.repeat(40);
   const rollback = 'a'.repeat(40);
   const manifest = (commit) => ({
     commit,
@@ -216,7 +215,7 @@ test('a failed target restores the previous release, snapshot, and healthy proce
     PORT: String(port),
     AVALON_NODE: process.execPath,
     AVALON_SYSTEMCTL: fakeSystemctl,
-    AVALON_SOURCE_REPO: repoDir,
+    AVALON_SOURCE_REPO: join(dir, 'no-source-checkout'),
     AVALON_RELEASE_ROOT: releaseRoot,
     AVALON_STATE_FILE: stateFile,
     AVALON_HEALTH_TIMEOUT_SECONDS: '2',
