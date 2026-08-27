@@ -181,12 +181,15 @@ is a human running `deploy/install-bootstrap.sh` from a clone.
 
 `.github/workflows/deploy.yml` runs on every push to `main` as four ordered
 jobs: `test`, `publish-artifact`, `deploy-server`, then `deploy-pages`. The test
-job packages first and runs the full suite from the extracted tarball; the next
-job promotes those exact bytes to durable release assets before the host is
-notified. A client newer than its server fails the protocol check and closes
-the lobby, so the server takes each commit first and the client is published
-only if it did. The workflow and production host both use Node 24, so the test
-gate exercises the runtime family the server will actually execute.
+job packages first, then hands the artifact to its own `controller.sh prepare`
+-- the exact code path the host runs -- staged outside any checkout, under the
+bootstrap's environment allowlist, with a canary ntfy topic that fails the run
+if the suite reaches it. The next job promotes those exact bytes to durable
+release assets before the host is notified. A client newer than its server
+fails the protocol check and closes the lobby, so the server takes each commit
+first and the client is published only if it did. The workflow and production
+host both use Node 24, so the test gate exercises the runtime family the server
+will actually execute.
 
 CI never connects to this host. The two sides meet on an ntfy topic:
 

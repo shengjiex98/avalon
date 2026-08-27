@@ -29,9 +29,10 @@ from the release's.
 npm test
 ```
 
-That is the whole gate — `node --test` over `test/**/*.test.js`, and CI runs
-exactly the same command. Tests are fast; run them after each change rather than
-once at the end.
+That is the whole gate — `node --test` over `test/**/*.test.js`. CI runs the
+same suite, but through the release controller's own `prepare` from the packaged
+artifact, the way the host will. Tests are fast; run them after each change
+rather than once at the end.
 
 ## Constraints worth knowing before you write code
 
