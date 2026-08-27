@@ -299,10 +299,14 @@ export function viewFor(g, viewerId) {
 
   return {
     ...lobby.baseView(g, viewerId),
-    you: me ? { id: me.id, name: me.name, role: myRole, side: myRole ? sideOf(myRole) : null } : null,
+    you: me ? {
+      id: me.id, name: me.name, avatar: me.avatar ?? null,
+      role: myRole, side: myRole ? sideOf(myRole) : null,
+    } : null,
     players: g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
+      avatar: p.avatar ?? null,
       seat: i,
       isLeader: g.phase !== 'lobby' && i === g.leaderIndex,
       onTeam: g.team.includes(p.id),

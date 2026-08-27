@@ -10,6 +10,21 @@ export function rolePortrait(role, { small = false } = {}) {
   });
 }
 
+/** A player's chamfered badge; deliberately unlike the round role medallions. */
+export function playerAvatar(player, server = '') {
+  const initial = [...String(player?.name ?? '?').trim()][0]?.toLocaleUpperCase() ?? '?';
+  const src = typeof player?.avatar === 'string' && player.avatar.startsWith('/api/avatars/')
+    ? `${server}${player.avatar}`
+    : null;
+  return h('span', { class: 'player-avatar', 'aria-hidden': 'true' },
+    h('span', { class: 'player-avatar-initial', text: initial }),
+    src ? h('img', {
+      src, alt: '', loading: 'lazy', decoding: 'async',
+      onerror: (event) => { event.target.hidden = true; },
+    }) : null,
+  );
+}
+
 export function h(tag, props = {}, ...children) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(props)) {

@@ -1,6 +1,6 @@
 import { LANGS, detectLang, t } from './i18n.js';
 import { API_BASE } from './config.js';
-import { el, h, toast } from './ui.js';
+import { el, h, playerAvatar, toast } from './ui.js';
 import { DEFAULT_GAME, GAME_IDS, gameFor } from './games/index.js';
 
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
@@ -18,6 +18,8 @@ const app = {
   server: null,           // remote origin, or '' when Node serves this page
   serverStatus: 'checking',
   serverProtocol: null,
+  avatarGeneration: false,
+  avatarUpload: null,
   code: null,
   playerId: null,
   view: null,        // latest server view, or null before the first event
@@ -97,8 +99,10 @@ async function probeServer() {
     const body = await res.json();
     if (!res.ok || body.service !== 'avalon') throw new Error('not avalon');
     app.serverProtocol = body.protocol;
+    app.avatarGeneration = Boolean(body.avatarGeneration);
     app.serverStatus = body.protocol === API_PROTOCOL ? 'ready' : 'incompatible';
   } catch {
+    app.avatarGeneration = false;
     app.serverStatus = 'unreachable';
   }
   return app.serverStatus;
@@ -327,7 +331,7 @@ async function joinRoom(code, name) {
   code = code.toUpperCase();
   try {
     const res = await api(`/api/rooms/${code}/join`, {
-      body: { name, playerId: store.playerFor(code) },
+      body: { name, playerId: store.playerFor(code), avatar: app.avatarUpload ?? undefined },
     });
     app.code = code;
     app.playerId = res.playerId;
@@ -336,11 +340,69 @@ async function joinRoom(code, name) {
     store.setPlayer(code, res.playerId);
     store.room = code;
     rememberSeat(code, res.playerId, name);
+    app.avatarUpload = null;
     location.hash = `#/${code}`;
     connect();
     render();
   } catch (err) {
     toast(T(`err.${err.key}`, err.params));
+  }
+}
+
+const avatarInitial = (name) => [...String(name ?? '').trim()][0]?.toLocaleUpperCase() ?? '✦';
+
+/** Strip metadata and turn a phone photo into the small square the API accepts. */
+async function prepareAvatarUpload(file) {
+  if (!file?.type?.startsWith('image/')) throw new ApiError('avatarImageOnly', {});
+  if (file.size > 8 * 1024 * 1024) throw new ApiError('avatarTooLarge', {});
+
+  const bitmap = await decodeAvatar(file);
+  const width = bitmap.width ?? bitmap.naturalWidth;
+  const height = bitmap.height ?? bitmap.naturalHeight;
+  if (!width || !height) throw new ApiError('avatarImageOnly', {});
+  const side = Math.min(width, height);
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const context = canvas.getContext('2d');
+  context.drawImage(bitmap, (width - side) / 2, (height - side) / 2, side, side, 0, 0, 256, 256);
+  bitmap.close?.();
+
+  const blob = await new Promise((resolve, reject) => canvas.toBlob(
+    (value) => value ? resolve(value) : reject(new ApiError('avatarImageOnly', {})),
+    'image/webp', 0.78,
+  ));
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new ApiError('avatarImageOnly', {}));
+    reader.readAsDataURL(blob);
+  });
+}
+
+async function decodeAvatar(file) {
+  if (globalThis.createImageBitmap) return createImageBitmap(file);
+  const url = URL.createObjectURL(file);
+  try {
+    return await new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new ApiError('avatarImageOnly', {}));
+      image.src = url;
+    });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function chooseAvatar(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    app.avatarUpload = await prepareAvatarUpload(file);
+    render();
+  } catch (err) {
+    toast(T(`err.${err.key ?? 'avatarImageOnly'}`));
   }
 }
 
@@ -544,9 +606,37 @@ function screenHome() {
           type: 'text', id: 'nameInput', maxlength: '24', value: store.name,
           placeholder: T('home.namePlaceholder'), autocomplete: 'nickname',
           autofocus: store.name ? null : 'autofocus',
+          oninput: (event) => {
+            const initial = el('avatarPreviewInitial');
+            if (initial) initial.textContent = avatarInitial(event.target.value);
+          },
           onkeydown: (e) => { if (e.key === 'Enter') (invited ? doJoin() : doCreate()); },
         })),
       h('p', { class: 'muted', text: T('home.nameHint') }),
+
+      h('div', { class: 'avatar-picker' },
+        h('span', { class: 'avatar-preview', 'aria-hidden': 'true' },
+          h('span', { id: 'avatarPreviewInitial', text: avatarInitial(store.name) }),
+          app.avatarUpload ? h('img', { src: app.avatarUpload, alt: '' }) : null,
+        ),
+        h('div', { class: 'avatar-picker-copy' },
+          h('span', { class: 'avatar-picker-title', text: T('home.avatar') }),
+          h('span', { class: 'muted', text: T(app.avatarGeneration ? 'home.avatarAuto' : 'home.avatarInitials') }),
+          h('div', { class: 'row avatar-actions' },
+            h('label', { class: 'btn avatar-upload' },
+              T(app.avatarUpload ? 'home.avatarReplace' : 'home.avatarUpload'),
+              h('input', {
+                type: 'file', id: 'avatarInput', class: 'avatar-file-input',
+                accept: 'image/*', onchange: chooseAvatar,
+              }),
+            ),
+            app.avatarUpload ? h('button', {
+              class: 'btn ghost', type: 'button',
+              onclick: () => { app.avatarUpload = null; render(); },
+            }, T('home.avatarRemove')) : null,
+          ),
+        ),
+      ),
 
       h('button', { class: `btn wide ${invited ? '' : 'primary'}`, id: 'createBtn', onclick: doCreate },
         T('home.create')),
@@ -709,6 +799,7 @@ function paneLobby(game) {
     h('div', { class: 'card stack' },
       h('h2', { text: T('lobby.players', { n: v.players.length }) }),
       h('div', { class: 'players' }, v.players.map((p) => h('div', { class: 'player' },
+        playerAvatar(p, app.server),
         h('span', { class: 'seat', text: p.seat + 1 }),
         h('span', { class: 'name', text: p.name }),
         p.id === v.hostId ? h('span', { class: 'tag', text: T('lobby.host') }) : null,
@@ -748,6 +839,7 @@ function playerList({ selectable = false, selected = [], onpick, tags, only, exc
       const picked = selected.includes(p.id);
       const blocked = exclude.includes(p.id);
       const inner = [
+        playerAvatar(p, app.server),
         h('span', { class: 'seat', text: p.seat + 1 }),
         h('span', { class: 'name', text: p.name }),
         p.id === v.you?.id ? h('span', { class: 'tag you', text: T('lobby.you') }) : null,
@@ -841,7 +933,7 @@ async function addSeat() {
   while (taken.has(name.toLowerCase())) name = T('test.player', { n: ++n });
 
   try {
-    const res = await api(`/api/rooms/${app.code}/join`, { body: { name } });
+    const res = await api(`/api/rooms/${app.code}/join`, { body: { name, avatar: false } });
     rememberSeat(app.code, res.playerId, name);
     render();
   } catch (err) {

@@ -55,7 +55,17 @@ test('the home screen asks for a name exactly once', () => {
   const view = home();
   const nameFields = inputs(view).filter((i) => i.id === 'nameInput');
   assert.equal(nameFields.length, 1);
-  assert.deepEqual(inputs(view).map((i) => i.id), ['nameInput', 'codeInput']);
+  assert.deepEqual(inputs(view).map((i) => i.id), ['nameInput', 'avatarInput', 'codeInput']);
+});
+
+test('the avatar upload is optional and sits with the shared name', () => {
+  const view = home();
+  const input = view.byId('avatarInput');
+  assert.ok(input, 'the home screen offers an avatar file input');
+  assert.equal(input.getAttribute('type'), 'file');
+  assert.equal(input.getAttribute('accept'), 'image/*');
+  assert.match(view.text, /Player avatar/);
+  assert.match(view.text, /Upload \(optional\)/);
 });
 
 test('the name field governs both actions instead of belonging to "create"', () => {
@@ -106,6 +116,21 @@ test('joining sends the name typed into the shared field', async () => {
   const join = dom.calls.find((c) => c.path === '/api/rooms/WXYZ/join');
   assert.ok(join, 'the join endpoint was called');
   assert.equal(join.body.name, 'Ann');
+});
+
+test('joining sends a prepared optional avatar', async () => {
+  let view = home({ hash: '#/WXYZ' });
+  app.avatarUpload = 'data:image/webp;base64,UklGRgAAAABXRUJQ';
+  render();
+  view = dom.fixtures.view;
+  view.byId('nameInput').value = 'Ann';
+  dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'pid-avatar', code: 'WXYZ' });
+
+  view.byId('joinBtn').dispatch('click');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const join = dom.calls.find((call) => call.path === '/api/rooms/WXYZ/join');
+  assert.equal(join.body.avatar, 'data:image/webp;base64,UklGRgAAAABXRUJQ');
 });
 
 test('joining without a name asks for one instead of calling the server', async () => {
@@ -197,6 +222,20 @@ test('the lobby shows the room code and every player', () => {
   const action = buttons(view).find((b) => /Need at least|Start game/.test(b.text));
   assert.equal(action.text, 'Need at least 5 players (2 so far)');
   assert.equal(action.disabled, true);
+});
+
+test('a player avatar is loaded from the configured game server', () => {
+  home();
+  app.server = 'https://games.example.com';
+  app.code = 'WXYZ';
+  app.playerId = 'p1';
+  app.view = lobbyView(app.playerId);
+  app.view.players[0].avatar = '/api/avatars/g-example.webp';
+  render();
+
+  const badge = dom.fixtures.view.byClass('player-avatar')[0];
+  const image = badge.find((node) => node.tagName === 'IMG');
+  assert.equal(image.getAttribute('src'), 'https://games.example.com/api/avatars/g-example.webp');
 });
 
 test('the host can start once five players are in', () => {

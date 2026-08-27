@@ -70,6 +70,31 @@ input[type=text] {
 input[type=text]:focus { outline: 2px solid var(--good); outline-offset: 1px; }
 #codeInput { text-transform: uppercase; letter-spacing: .3em; font-weight: 700; }
 
+.avatar-picker {
+  display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; align-items: center;
+  padding: 10px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px;
+}
+.avatar-preview, .player-avatar {
+  position: relative; overflow: hidden; display: grid; place-items: center; flex: 0 0 auto;
+  color: #d9f5ff; background: radial-gradient(circle at 40% 30%, #315d77, #142440 68%);
+  border: 2px solid #8fb8c6;
+  clip-path: polygon(12% 0, 88% 0, 100% 12%, 100% 88%, 88% 100%, 12% 100%, 0 88%, 0 12%);
+  box-shadow: inset 0 0 0 2px #0b1830;
+}
+.avatar-preview { width: 72px; height: 72px; font: 700 28px Georgia, serif; }
+.avatar-preview img, .player-avatar img {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+}
+.avatar-picker-copy { min-width: 0; display: grid; gap: 4px; }
+.avatar-picker-title { color: var(--text); font-weight: 700; }
+.avatar-actions { gap: 6px; margin-top: 3px; }
+.avatar-actions .btn { padding: 7px 10px; font-size: 13px; }
+.avatar-upload { display: inline-flex; width: max-content; color: var(--text); cursor: pointer; }
+.avatar-file-input {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap;
+}
+
 .btn {
   background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
   border-radius: 10px; padding: 12px 18px; font-size: 15px; cursor: pointer;
@@ -141,6 +166,10 @@ button.player:disabled { cursor: default; }
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .player .seat { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; min-width: 1.6em; }
+.player-avatar {
+  width: 30px; height: 30px; border-width: 1px; font: 700 13px Georgia, serif;
+  box-shadow: inset 0 0 0 1px #091329;
+}
 /* The recap's tags are a paragraph's worth, so they take the width of the row
    and wrap among themselves under the name. */
 .player-tags { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; min-width: 0; }
@@ -221,6 +250,8 @@ button.player:disabled { cursor: default; }
   .quest .size { font-size: 16px; }
   .code-pill { font-size: 24px; }
   .role-option-copy { grid-template-columns: 1fr; row-gap: 2px; }
+  .avatar-picker { grid-template-columns: 60px minmax(0, 1fr); }
+  .avatar-preview { width: 60px; height: 60px; }
 }
 
 /* "or" rule between the two ways into a game. */
@@ -491,10 +522,11 @@ input[type=text]:focus { outline-color: var(--gold); }
 .players { gap: 6px; }
 .phase-area .players, .lobby-scroll .players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .player {
-  min-height: 40px; gap: 6px; padding: 7px 8px; border-radius: 4px;
+  min-height: 44px; gap: 6px; padding: 7px 8px; border-radius: 4px;
   border-color: #544c3a; background: rgba(7, 16, 41, .78);
 }
 .player .name { font-size: 14px; }
+.player-avatar { width: 28px; height: 28px; border-color: #88b9c9; background: #132b4c; }
 .player-tags { gap: 6px; }
 .player .seat {
   display: grid; place-items: center; flex: 0 0 22px; width: 22px; height: 22px;

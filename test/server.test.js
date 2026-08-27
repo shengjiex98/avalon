@@ -135,6 +135,38 @@ test('serves pre-generated announcement audio with the right media type', async 
   });
 });
 
+test('a new seat gets its avatar in the background and the file is cached', async () => {
+  const rooms = new Rooms();
+  const image = Buffer.from('RIFF0000WEBPavatar');
+  const avatars = {
+    canGenerate: true,
+    resolve: async ({ name, upload }) => {
+      assert.equal(name, 'Ann');
+      assert.equal(upload, undefined);
+      return '/api/avatars/g-test.webp';
+    },
+    read: async (file) => file === 'g-test.webp' ? { bytes: image, mime: 'image/webp' } : null,
+  };
+
+  await withServer(async (base) => {
+    const { code } = await (await post(base, '/api/rooms')).json();
+    const { playerId } = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rooms.peek(code).game.players[0].avatar, '/api/avatars/g-test.webp');
+
+    const res = await fetch(`${base}/api/avatars/g-test.webp`);
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'image/webp');
+    assert.match(res.headers.get('cache-control'), /immutable/);
+    assert.deepEqual(Buffer.from(await res.arrayBuffer()), image);
+
+    const abort = new AbortController();
+    const view = (await views(base, code, playerId, abort.signal).next()).value;
+    abort.abort();
+    assert.equal(view.players[0].avatar, '/api/avatars/g-test.webp');
+  }, { rooms, avatars });
+});
+
 test('refuses to walk out of the public directory', async () => {
   await withServer(async (base) => {
     const res = await fetch(base + '/../src/server.js', { redirect: 'manual' });

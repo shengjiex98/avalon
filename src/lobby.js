@@ -75,10 +75,11 @@ export function logEvent(g, key, params = {}) {
   g.log.push({ key, params, at: g.log.length });
 }
 
-export function addPlayer(g, { id, name }, { maxPlayers }) {
+export function addPlayer(g, { id, name, avatar }, { maxPlayers }) {
   const existing = playerById(g, id);
   if (existing) {                       // reconnect keeps the seat and the role
     if (name && name !== existing.name) existing.name = name;
+    if (avatar !== undefined) existing.avatar = avatar;
     return existing;
   }
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
@@ -87,7 +88,7 @@ export function addPlayer(g, { id, name }, { maxPlayers }) {
   require_(clean.length > 0, 'nameRequired');
   require_(!g.players.some((p) => p.name.toLowerCase() === clean.toLowerCase()), 'nameTaken');
 
-  const player = { id, name: clean };
+  const player = { id, name: clean, ...(avatar ? { avatar } : {}) };
   g.players.push(player);
   if (!g.hostId) g.hostId = id;
   logEvent(g, 'log.joined', { name: clean });
@@ -122,7 +123,7 @@ export function baseView(g, viewerId) {
     phase: g.phase,
     version: g.version,
     hostId: g.hostId,
-    me: me ? { id: me.id, name: me.name } : null,
+    me: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
     log: g.log.slice(-40),
   };
 }
