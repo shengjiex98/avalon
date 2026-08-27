@@ -5,9 +5,10 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { extname, join, normalize } from 'node:path';
+import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { Avatars } from './avatars.js';
 import { GameError } from './lobby.js';
 import { defaultStateFile, load, save } from './persistence.js';
 import { Rooms } from './rooms.js';
@@ -64,10 +65,15 @@ const MIME = {
   '.ico': 'image/x-icon',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
+  '.webp': 'image/webp',
   '.json': 'application/json; charset=utf-8',
 };
 
-export function createApp({ rooms = new Rooms(), clientOrigin = CLIENT_ORIGIN } = {}) {
+export function createApp({
+  rooms = new Rooms(),
+  avatars = new Avatars(),
+  clientOrigin = CLIENT_ORIGIN,
+} = {}) {
   return async function handle(req, res) {
     try {
       const url = new URL(req.url, `http://${req.headers.host ?? 'localhost'}`);
@@ -81,7 +87,7 @@ export function createApp({ rooms = new Rooms(), clientOrigin = CLIENT_ORIGIN } 
           });
           return res.end();
         }
-        return await api(rooms, req, res, url);
+        return await api(rooms, avatars, req, res, url);
       }
       return await serveStatic(req, res, url);
     } catch (err) {
@@ -100,7 +106,7 @@ function allowClient(req, res, clientOrigin) {
   res.setHeader('access-control-allow-origin', origin);
 }
 
-async function api(rooms, req, res, url) {
+async function api(rooms, avatars, req, res, url) {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','rooms',CODE,...]
 
   // Liveness always stays healthy. Updaters use /update to avoid interrupting
@@ -118,8 +124,21 @@ async function api(rooms, req, res, url) {
       rooms: rooms.rooms.size,
       activeGames,
       updateSafe,
+      avatarGeneration: avatars.canGenerate,
       commit: DEPLOYED_COMMIT,
     });
+  }
+
+  if ((req.method === 'GET' || req.method === 'HEAD') && parts[1] === 'avatars' && parts[2] && !parts[3]) {
+    const avatar = await avatars.read(parts[2]);
+    if (!avatar) return json(res, 404, { error: 'notFound' });
+    res.writeHead(200, {
+      'content-type': avatar.mime,
+      'content-length': avatar.bytes.length,
+      'cache-control': 'public, max-age=31536000, immutable',
+      'x-content-type-options': 'nosniff',
+    });
+    return res.end(req.method === 'HEAD' ? undefined : avatar.bytes);
   }
 
   if (req.method === 'POST' && url.pathname === '/api/rooms') {
@@ -151,13 +170,24 @@ async function api(rooms, req, res, url) {
   }
 
   if (req.method === 'POST' && tail === 'join') {
-    const body = await readJson(req);
+    const body = await readJson(req, 384 * 1024);
     let playerId = typeof body.playerId === 'string' ? body.playerId : null;
     const room = rooms.get(code);
     const known = playerId && room.game.players.some((p) => p.id === playerId);
     if (!known) playerId = randomUUID();
     rooms.dispatch(code, playerId, { type: 'join', id: playerId, name: body.name });
-    return json(res, 200, { playerId, code });
+    json(res, 200, { playerId, code });
+
+    // Joining is never held hostage by image generation, which can take up to
+    // a couple of minutes. A placeholder appears immediately and the SSE view
+    // replaces it as soon as the upload or generated portrait is stored.
+    if (!known) {
+      const player = room.game.players.find((candidate) => candidate.id === playerId);
+      void avatars.resolve({ name: player.name, upload: body.avatar })
+        .then((avatar) => avatar && rooms.updatePlayerAvatar(code, playerId, avatar))
+        .catch((err) => console.error(`could not prepare avatar for ${code}: ${err.message}`));
+    }
+    return;
   }
 
   if (req.method === 'POST' && tail === 'action') {
@@ -248,12 +278,12 @@ function json(res, status, payload) {
   res.end(body);
 }
 
-async function readJson(req) {
+async function readJson(req, maxBytes = 64 * 1024) {
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 64 * 1024) throw new GameError('payloadTooLarge');
+    if (size > maxBytes) throw new GameError('payloadTooLarge');
     chunks.push(chunk);
   }
   if (!chunks.length) return {};
@@ -281,12 +311,13 @@ export function start({
     pendingSave.unref?.();
   };
   rooms = new Rooms({ onMutate: saveSoon });
+  const avatars = new Avatars({ directory: join(dirname(stateFile), 'avatars') });
   const restored = load(rooms, stateFile);
   console.log(restored.restored
     ? `restored ${restored.restored} room${restored.restored === 1 ? '' : 's'} from ${stateFile}`
     : `${restored.reason} (${stateFile})`);
 
-  const server = createServer(createApp({ rooms }));
+  const server = createServer(createApp({ rooms, avatars }));
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
   sweeper.unref();
   let stopping = false;

@@ -1,8 +1,9 @@
 // One Night Werewolf's screens.
 
-import { h, infoPopup, rolePortrait } from '../ui.js';
+import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
 let T, send, app, joinNames, render;
+const avatarOf = (player) => playerAvatar(player, app.server);
 
 export function bind(ctx) {
   ({ T, send, app, joinNames, render } = ctx);
@@ -340,6 +341,7 @@ function pickList({ picked = [], onpick, exclude = [], tags } = {}) {
   const v = app.view;
   return h('div', { class: 'players' }, v.players.map((p) => {
     const inner = [
+      avatarOf(p),
       h('span', { class: 'seat', text: p.seat + 1 }),
       h('span', { class: 'name', text: p.name }),
       p.id === v.you?.id ? h('span', { class: 'tag you', text: T('lobby.you') }) : null,
@@ -670,6 +672,7 @@ function paneOver() {
         const votedFor = p.votedFor && v.players.find((q) => q.id === p.votedFor)?.name;
         const voteLabel = votedFor && T('onuw.over.votedFor', { name: votedFor });
         return h('div', { class: `player ${p.dead ? 'dead' : ''}` },
+          avatarOf(p),
           rolePortrait(p.finalRole, { small: true }),
           h('span', { class: 'seat', text: p.seat + 1 }),
           h('span', { class: 'name', text: p.name }),

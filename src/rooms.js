@@ -38,6 +38,15 @@ export class Rooms {
     return this.dispatch(code, playerId, { type: 'setGame', game: gameId });
   }
 
+  /** Complete an upload/generation job without pretending it was a game move. */
+  updatePlayerAvatar(code, playerId, avatar) {
+    const room = this.peek(code);
+    const player = room?.game.players.find((candidate) => candidate.id === playerId);
+    if (!player || player.avatar === avatar) return false;
+    this.apply(code, () => { player.avatar = avatar; });
+    return true;
+  }
+
   /** Replace a lobby's engine without replacing its object identity. */
   replaceGame(g, playerId, gameId, now = this.now) {
     if (!(gameId in GAMES)) throw new GameError('noSuchGame', { game: gameId });

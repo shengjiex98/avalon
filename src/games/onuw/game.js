@@ -413,7 +413,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
   return {
     ...lobby.baseView(g, viewerId),
     you: me ? {
-      id: me.id, name: me.name,
+      id: me.id, name: me.name, avatar: me.avatar ?? null,
       role: startRole,
       team: startRole ? teamOf(startRole) : null,
       finalRole: over ? g.finalRoles[viewerId] : undefined,
@@ -425,6 +425,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
     players: g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
+      avatar: p.avatar ?? null,
       seat: i,
       ready: g.phase === 'reveal' ? Boolean(g.ready[p.id]) : undefined,
       // No `acted` at night: it would be false only for players holding an

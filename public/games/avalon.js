@@ -1,9 +1,10 @@
 // Avalon's screens. The shell hands over a context so these read the same as
 // they did when they lived in app.js.
 
-import { h, infoPopup, rolePortrait } from '../ui.js';
+import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
 let T, send, app, nameOf, namesOf, waitingNames, playerList, render;
+const avatarOf = (player) => playerAvatar(player, app.server);
 
 export function bind(ctx) {
   ({ T, send, app, nameOf, namesOf, waitingNames, playerList, render } = ctx);
@@ -133,6 +134,7 @@ function roleContent() {
     h('p', { class: 'muted', text: T(`roleDesc.${v.you.role}`) }),
     v.knowledge.length
       ? h('div', { class: 'players' }, v.knowledge.map((k) => h('div', { class: 'player' },
+          avatarOf(v.players.find((player) => player.id === k.playerId)),
           h('span', { class: 'name', text: nameOf(k.playerId) }),
           // "Evil" is the sigil above, not a word; a hint that names two roles
           // has nothing to draw and stays as text.
@@ -244,6 +246,7 @@ function voteResult() {
       ? h('div', { class: 'players' }, v.players.map((p) => {
           const approved = v.lastVote.votes[p.id];
           return h('div', { class: 'player' },
+            avatarOf(p),
             h('span', { class: 'name', text: p.name }),
             h('span', {
               class: `tag verdict ${approved ? 'ok' : 'evil'}`, role: 'img',
@@ -376,6 +379,7 @@ function paneOver() {
     v.assassinTarget ? h('p', { class: 'muted', text: T('over.assassinPicked', { name: nameOf(v.assassinTarget) }) }) : null,
     h('h3', { text: T('over.roles') }),
     h('div', { class: 'players' }, v.players.map((p) => h('div', { class: 'player' },
+      avatarOf(p),
       rolePortrait(p.role, { small: true }),
       h('span', { class: 'seat', text: p.seat + 1 }),
       h('span', { class: 'name', text: p.name }),
