@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
-import { chmod, cp, mkdtemp, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdtemp, mkdir, readdir, readFile, readlink, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +31,30 @@ async function fakeRelease(manifest) {
   return dir;
 }
 
-async function writeFakeRelease(dir, manifest) {
+const UNITS = [
+  'avalon.service',
+  'avalon-listen.service',
+  'avalon-update.service',
+  'avalon-update@.service',
+  'avalon-update.timer',
+];
+
+async function writeFakeRelease(dir, manifest, { controlPlane = false } = {}) {
   for (const path of ['package.json', 'src/server.js', 'public/index.html']) {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), path);
   }
   await writeFile(join(dir, 'release.json'), JSON.stringify(manifest));
+
+  // Units and the bootstrap ship inside the release, so a fake release that
+  // stands in for a deployment has to carry them too.
+  if (controlPlane) {
+    await mkdir(join(dir, 'deploy'), { recursive: true });
+    for (const unit of UNITS) {
+      await writeFile(join(dir, 'deploy', unit), `# ${unit} from ${manifest.commit}\n`);
+    }
+    await writeFile(join(dir, 'deploy', 'bootstrap.sh'), `# bootstrap from ${manifest.commit}\n`);
+  }
 }
 
 async function writeFakeArtifact(dir, target) {
@@ -83,23 +101,28 @@ test('the stable verifier accepts exactly its release contract', async () => {
   assert.equal(result.code, 65);
 });
 
-test('the controller installer atomically selects an immutable version', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'avalon-controller-'));
+test('installing the static layer leaves one script and five real units', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'avalon-bootstrap-install-'));
   const source = join(dir, 'source');
   const root = join(dir, 'installed');
   const unitDir = join(dir, 'systemd');
   await cp(deployDir, source, { recursive: true });
-  await chmod(join(source, 'install-controller.sh'), 0o755);
+  await chmod(join(source, 'install-bootstrap.sh'), 0o755);
 
-  const first = await run('sh', [join(source, 'install-controller.sh')], {
-    AVALON_CONTROLLER_ROOT: root,
-    AVALON_SYSTEMD_USER_DIR: unitDir,
-  });
+  // The layout it replaces pointed the units at a versioned bundle by symlink.
+  await mkdir(unitDir, { recursive: true });
+  await symlink(join(dir, 'gone', 'avalon.service'), join(unitDir, 'avalon.service'));
+
+  const env = { AVALON_CONTROLLER_ROOT: root, AVALON_SYSTEMD_USER_DIR: unitDir };
+  const first = await run('sh', [join(source, 'install-bootstrap.sh')], env);
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/6');
-  assert.equal(await readFile(join(root, 'versions/6/controller-version'), 'utf8'), '6\n');
-  assert.match(await readFile(join(root, 'versions/6/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/6/wait-for-health.mjs'), 'utf8'), /api\/health/);
+
+  const installed = join(root, 'bootstrap.sh');
+  assert.equal(await readFile(installed, 'utf8'), await readFile(join(deployDir, 'bootstrap.sh'), 'utf8'));
+  assert.equal((await stat(installed)).mode & 0o777, 0o755);
+  assert.equal(await readdir(root).then((names) => names.join()), 'bootstrap.sh',
+    'nothing else belongs in the static layer');
+
   for (const unit of [
     'avalon.service',
     'avalon-listen.service',
@@ -107,22 +130,34 @@ test('the controller installer atomically selects an immutable version', async (
     'avalon-update@.service',
     'avalon-update.timer',
   ]) {
-    assert.equal(await readlink(join(unitDir, unit)), join(root, 'current', unit));
+    const file = join(unitDir, unit);
+    assert.equal((await lstat(file)).isSymbolicLink(), false, `${unit} is a real file, not a link`);
+    assert.equal(await readFile(file, 'utf8'), await readFile(join(deployDir, unit), 'utf8'));
   }
 
-  const second = await run('sh', [join(source, 'install-controller.sh')], {
-    AVALON_CONTROLLER_ROOT: root,
-    AVALON_SYSTEMD_USER_DIR: unitDir,
-  });
+  // Run again on a host that is already installed: same result, no complaint.
+  const second = await run('sh', [join(source, 'install-bootstrap.sh')], env);
   assert.equal(second.code, 0, second.stderr);
+  assert.equal(await readFile(installed, 'utf8'), await readFile(join(deployDir, 'bootstrap.sh'), 'utf8'));
+});
 
-  await writeFile(join(source, 'controller.sh'), '# changed\n');
-  const collision = await run('sh', [join(source, 'install-controller.sh')], {
-    AVALON_CONTROLLER_ROOT: root,
-    AVALON_SYSTEMD_USER_DIR: unitDir,
-  });
-  assert.equal(collision.code, 65);
-  assert.match(collision.stderr, /different contents/);
+test('the update units call the static bootstrap, which owns target selection', async () => {
+  const updater = await readFile(join(deployDir, 'avalon-update.service'), 'utf8');
+  assert.match(updater, /ExecStart=%h\/\.local\/libexec\/avalon-deploy\/bootstrap\.sh deploy-main$/m);
+  assert.match(updater, /SuccessExitStatus=75/);
+
+  const triggered = await readFile(join(deployDir, 'avalon-update@.service'), 'utf8');
+  assert.match(triggered, /ExecStart=%h\/\.local\/libexec\/avalon-deploy\/bootstrap\.sh deploy-trigger %i$/m);
+  assert.match(triggered, /SuccessExitStatus=75/);
+
+  // The listener is part of the release now, and upgrades with it.
+  const listener = await readFile(join(deployDir, 'avalon-listen.service'), 'utf8');
+  assert.match(listener, /WorkingDirectory=%h\/\.local\/lib\/avalon\/current$/m);
+  assert.match(listener, /ExecStart=.*%h\/\.local\/lib\/avalon\/current\/deploy\/listen\.mjs$/m);
+
+  const controller = await readFile(join(deployDir, 'controller.sh'), 'utf8');
+  assert.doesNotMatch(controller, /deploy-main|deploy-trigger|resolve-main/,
+    'the controller deploys the commit it is given; the bootstrap chooses it');
 });
 
 test('the controller downloads a verified artifact without moving the source checkout', async () => {
@@ -217,40 +252,24 @@ test('activation stops, snapshots, switches, verifies, and can roll back in that
   assert.match(service, /WorkingDirectory=%h\/\.local\/lib\/avalon\/current/);
   assert.match(service, /ExecStart=.*--preserve-symlinks-main .*current\/src\/server\.js/);
 
-  const updater = await readFile(join(deployDir, 'avalon-update.service'), 'utf8');
-  assert.match(updater, /libexec\/avalon-deploy\/current\/controller\.sh deploy-main/);
-  assert.doesNotMatch(updater, /%h\/avalon\/deploy\/update\.sh/);
-
-  const triggered = await readFile(join(deployDir, 'avalon-update@.service'), 'utf8');
-  assert.match(triggered, /controller\.sh deploy-trigger %i/);
+  // The units the switch installs come from the release being selected, and a
+  // failed health check puts the previous release's units back before it
+  // restarts on them.
+  const installedTarget = controller.indexOf('install_units "$target_release"');
+  const reloaded = controller.indexOf('"$systemctl_bin" --user daemon-reload');
+  assert.ok(installedTarget !== -1 && installedTarget < reloaded && reloaded < stopped);
+  assert.match(controller, /install_units "\$releases\/\$rollback"[\s\S]*select_release "\$rollback"/);
 });
 
-test('a failed target restores the previous release, snapshot, and healthy process', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'avalon-rollback-'));
-  const releaseRoot = join(dir, 'app');
-  const releases = join(releaseRoot, 'releases');
-  const stateFile = join(dir, 'state', 'rooms.json');
-  const pidFile = join(dir, 'server.pid');
-  const fakeSystemctl = join(dir, 'systemctl');
+/**
+ * A stand-in for the host: a systemctl that starts and stops a fake server
+ * reporting the selected release's commit, and records what it was asked to
+ * do. FAIL_COMMIT names a release that starts unhealthily and corrupts the
+ * snapshot on its way, which is how the rollback drill provokes a failure.
+ */
+async function writeFakeHost(dir) {
   const fakeServer = join(dir, 'server.mjs');
-  // These releases already exist, so the drill must not depend on a source
-  // checkout or Git metadata. That is also how it runs from a staged artifact.
-  const target = 'b'.repeat(40);
-  const rollback = 'a'.repeat(40);
-  const manifest = (commit) => ({
-    commit,
-    stateVersion: 1,
-    apiProtocol: 1,
-    nodeMajor: 24,
-    deployerSchema: 1,
-  });
-
-  await mkdir(releases, { recursive: true });
-  await writeFakeRelease(join(releases, target), manifest(target));
-  await writeFakeRelease(join(releases, rollback), manifest(rollback));
-  await symlink(`releases/${rollback}`, join(releaseRoot, 'current'));
-  await mkdir(dirname(stateFile), { recursive: true });
-  await writeFile(stateFile, 'original snapshot');
+  const fakeSystemctl = join(dir, 'systemctl');
 
   await writeFile(fakeServer, `
     import { createServer } from 'node:http';
@@ -264,6 +283,7 @@ test('a failed target restores the previous release, snapshot, and healthy proce
   await writeFile(fakeSystemctl, `#!/bin/sh
     set -eu
     [ "\$1" = --user ] && shift
+    printf '%s\n' "\$*" >>"\$FAKE_LOG"
     stop_server() {
       if [ -f "\$FAKE_PID_FILE" ]; then
         kill "\$(cat "\$FAKE_PID_FILE")" 2>/dev/null || true
@@ -276,14 +296,14 @@ test('a failed target restores the previous release, snapshot, and healthy proce
       fi
     }
     case "\$1" in
-      daemon-reload) exit 0 ;;
+      daemon-reload|try-restart) exit 0 ;;
       stop) stop_server ;;
       start)
         commit=\$("\$AVALON_NODE" -e '
           const fs = require("node:fs");
           console.log(JSON.parse(fs.readFileSync(process.argv[1])).commit);
         ' "\$AVALON_RELEASE_ROOT/current/release.json")
-        if [ "\$commit" = "\$FAIL_COMMIT" ]; then
+        if [ "\$commit" = "\${FAIL_COMMIT:-}" ]; then
           printf corrupt >"\$AVALON_STATE_FILE"
           exit 0
         fi
@@ -293,34 +313,124 @@ test('a failed target restores the previous release, snapshot, and healthy proce
     esac
   `);
   await chmod(fakeSystemctl, 0o755);
+  return { fakeServer, fakeSystemctl };
+}
 
-  const portProbe = createServer();
-  await new Promise((resolve) => portProbe.listen(0, '127.0.0.1', resolve));
-  const port = portProbe.address().port;
-  await new Promise((resolve) => portProbe.close(resolve));
+async function freePort() {
+  const probe = createServer();
+  await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const port = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  return port;
+}
 
+const manifest = (commit) => ({
+  commit,
+  stateVersion: 1,
+  apiProtocol: 1,
+  nodeMajor: 24,
+  deployerSchema: 1,
+});
+
+/**
+ * Two prepared releases and a host to switch between them. The releases exist
+ * already, so the drill depends on no source checkout and no Git metadata --
+ * which is also how it runs from a staged artifact.
+ */
+async function deploymentDrill(prefix, { failCommit } = {}) {
+  const dir = await mkdtemp(join(tmpdir(), prefix));
+  const releaseRoot = join(dir, 'app');
+  const releases = join(releaseRoot, 'releases');
+  const stateFile = join(dir, 'state', 'rooms.json');
+  const unitDir = join(dir, 'systemd');
+  const target = 'b'.repeat(40);
+  const rollback = 'a'.repeat(40);
+
+  await mkdir(releases, { recursive: true });
+  await writeFakeRelease(join(releases, target), manifest(target), { controlPlane: true });
+  await writeFakeRelease(join(releases, rollback), manifest(rollback), { controlPlane: true });
+  await symlink(`releases/${rollback}`, join(releaseRoot, 'current'));
+  await mkdir(dirname(stateFile), { recursive: true });
+  await writeFile(stateFile, 'original snapshot');
+  await mkdir(unitDir, { recursive: true });
+  for (const unit of UNITS) await writeFile(join(unitDir, unit), '# installed before this deployment\n');
+
+  const { fakeServer, fakeSystemctl } = await writeFakeHost(dir);
   const env = {
     HOME: dir,
-    PORT: String(port),
+    PORT: String(await freePort()),
     AVALON_NODE: process.execPath,
     AVALON_SYSTEMCTL: fakeSystemctl,
     AVALON_SOURCE_REPO: join(dir, 'no-source-checkout'),
     AVALON_RELEASE_ROOT: releaseRoot,
     AVALON_STATE_FILE: stateFile,
+    AVALON_SYSTEMD_USER_DIR: unitDir,
+    AVALON_CONTROLLER_ROOT: join(dir, 'libexec'),
     AVALON_HEALTH_TIMEOUT_SECONDS: '2',
-    FAKE_PID_FILE: pidFile,
+    FAKE_PID_FILE: join(dir, 'server.pid'),
+    FAKE_LOG: join(dir, 'systemctl.log'),
     FAKE_SERVER: fakeServer,
-    FAIL_COMMIT: target,
+    ...(failCommit ? { FAIL_COMMIT: failCommit } : {}),
   };
+
+  return {
+    dir, releaseRoot, releases, stateFile, unitDir, target, rollback, fakeSystemctl, env,
+    deploy: () => run('sh', [join(deployDir, 'controller.sh'), 'deploy', target, rollback], env),
+    log: () => readFile(env.FAKE_LOG, 'utf8'),
+  };
+}
+
+test('the switch installs the units of the release it selects', async () => {
+  const drill = await deploymentDrill('avalon-switch-');
+  const { env, fakeSystemctl, target, unitDir } = drill;
+
+  // The bootstrap is the one file a release may not replace under itself.
+  const installedBootstrap = join(env.AVALON_CONTROLLER_ROOT, 'bootstrap.sh');
+  await mkdir(env.AVALON_CONTROLLER_ROOT, { recursive: true });
+  await writeFile(installedBootstrap, '# an older bootstrap\n');
 
   assert.equal((await run(fakeSystemctl, ['--user', 'start', 'avalon'], env)).code, 0);
   try {
-    const result = await run('sh', [join(deployDir, 'controller.sh'), 'deploy', target, rollback], env);
+    const result = await drill.deploy();
+    assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
+    assert.equal(await readlink(join(drill.releaseRoot, 'current')), `releases/${target}`);
+
+    for (const unit of UNITS) {
+      assert.equal(await readFile(join(unitDir, unit), 'utf8'), `# ${unit} from ${target}\n`,
+        `${unit} comes from the release that was selected`);
+      assert.equal((await lstat(join(unitDir, unit))).isSymbolicLink(), false);
+    }
+
+    const log = await drill.log();
+    assert.match(log, /^daemon-reload$/m, 'systemd reads the new units before the restart');
+    assert.match(log, /^try-restart avalon-listen$/m,
+      'the listener picks up the deployed release copy of listen.mjs');
+
+    assert.match(result.stderr, /differs from the bootstrap in/, 'drift is reported');
+    assert.equal(await readFile(installedBootstrap, 'utf8'), '# an older bootstrap\n',
+      'and never repaired behind the running deployment');
+  } finally {
+    await run(fakeSystemctl, ['--user', 'stop', 'avalon'], env);
+  }
+});
+
+test('a failed target restores the previous release, snapshot, units, and healthy process', async () => {
+  const drill = await deploymentDrill('avalon-rollback-', { failCommit: 'b'.repeat(40) });
+  const { env, fakeSystemctl, rollback, stateFile, unitDir } = drill;
+
+  assert.equal((await run(fakeSystemctl, ['--user', 'start', 'avalon'], env)).code, 0);
+  try {
+    const result = await drill.deploy();
     assert.equal(result.code, 1);
     assert.match(result.stderr, /rolling back/);
-    assert.equal(await readlink(join(releaseRoot, 'current')), `releases/${rollback}`);
+    assert.equal(await readlink(join(drill.releaseRoot, 'current')), `releases/${rollback}`);
     assert.equal(await readFile(stateFile, 'utf8'), 'original snapshot');
     assert.match(result.stdout, new RegExp(rollback));
+
+    for (const unit of UNITS) {
+      assert.equal(await readFile(join(unitDir, unit), 'utf8'), `# ${unit} from ${rollback}\n`,
+        `${unit} is restored from the release actually being served`);
+    }
   } finally {
     await run(fakeSystemctl, ['--user', 'stop', 'avalon'], env);
   }

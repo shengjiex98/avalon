@@ -1,4 +1,5 @@
 # Deploy one CI-triggered commit only when it is still GitHub's current main.
+# The bootstrap decides that; %i is a request, never an authority.
 
 [Unit]
 Description=Deploy Avalon commit %i when authorized by main
@@ -8,5 +9,5 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=-%h/.config/avalon.env
-ExecStart=%h/.local/libexec/avalon-deploy/current/controller.sh deploy-trigger %i
+ExecStart=%h/.local/libexec/avalon-deploy/bootstrap.sh deploy-trigger %i
 SuccessExitStatus=75
