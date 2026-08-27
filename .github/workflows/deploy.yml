@@ -24,7 +24,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # Match the runtime deploy/update.sh accepts on the server host.
+          node-version: '24'
       - run: npm test
 
   deploy-server:
@@ -102,7 +103,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
 
       - name: Set the default backend
         env:
