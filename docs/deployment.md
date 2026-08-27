@@ -102,6 +102,19 @@ If maintaining both entry points is no longer useful, follow the
 
 ## Continuous deployment
 
+### Release artifact contract
+
+`scripts/package-release.sh` can package any commit as a deterministic,
+architecture-neutral `avalon-<sha>.tar.gz` plus a SHA-256 checksum. The archive
+contains only tracked files and a generated `release.json` with the commit,
+`STATE_VERSION`, `API_PROTOCOL`, required Node major, and deployer schema.
+
+The server reads the commit from that manifest when it is not running from a
+Git checkout, so `/api/health.commit` keeps the same deployment-proof contract
+for a release directory, tarball, or image. The checkout updater remains the
+active deployment mechanism for now; later migration steps will consume this
+artifact without changing its format.
+
 `.github/workflows/deploy.yml` runs on every push to `main` as three ordered
 jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
 A client newer than its server fails the protocol check and closes the lobby, so

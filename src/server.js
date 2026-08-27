@@ -14,6 +14,7 @@ import { Rooms } from './rooms.js';
 import { GAME_IDS, gameFor } from './games/index.js';
 import { STATE_VERSION } from './state-version.js';
 
+const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
 export const API_PROTOCOL = 1;
 
@@ -24,10 +25,15 @@ export const API_PROTOCOL = 1;
  * pipeline needs to hear -- a working tree moved underneath a running process
  * has not been deployed until the restart.
  */
-function readDeployedCommit() {
+export function readDeployedCommit(rootDir = ROOT_DIR) {
   const sha = /^[0-9a-f]{40}$/;
   try {
-    const gitDir = fileURLToPath(new URL('../.git/', import.meta.url));
+    const manifest = JSON.parse(readFileSync(join(rootDir, 'release.json'), 'utf8'));
+    if (sha.test(manifest.commit)) return manifest.commit;
+  } catch { /* a development checkout has no release manifest */ }
+
+  try {
+    const gitDir = join(rootDir, '.git');
     const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim();
     if (!head.startsWith('ref: ')) return sha.test(head) ? head : null;
 
@@ -41,7 +47,7 @@ function readDeployedCommit() {
       const [candidate, name] = line.split(' ');
       if (name === ref && sha.test(candidate)) return candidate;
     }
-  } catch { /* not a checkout: a tarball or an image */ }
+  } catch { /* not a checkout: an unstamped tarball or image */ }
   return null;
 }
 
