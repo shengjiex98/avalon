@@ -1,4 +1,6 @@
-# The controller installer owns this unit outside the source checkout.
+# This unit ships in the release it starts: the controller copies it into
+# ~/.config/systemd/user during each switch, and restores the previous one on a
+# rollback. deploy/install-bootstrap.sh installs it the first time.
 #   systemctl --user enable --now avalon
 #   loginctl enable-linger "$USER"        # survive logout / reboot
 #

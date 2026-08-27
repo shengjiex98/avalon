@@ -117,8 +117,13 @@ test('the deployment listener cannot be talked into running anything', async () 
   assert.doesNotMatch(listener, /shell:\s*true|execSync|import \{[^}]*\bexec\b/,
     'no shell may see a message');
 
+  // A trigger is a request, never an authority: the bootstrap deploys the
+  // named commit only while GitHub still calls it main.
+  const bootstrap = await read('../deploy/bootstrap.sh');
+  assert.match(bootstrap, /\[ "\$requested" != "\$sha" \]/);
+  assert.match(bootstrap, /ignored deployment trigger/);
+
   const controller = await read('../deploy/controller.sh');
-  assert.match(controller, /\[ "\$target" != "\$current_main" \]/);
   assert.doesNotMatch(controller, /source_repo|git -C/);
 });
 
