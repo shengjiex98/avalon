@@ -129,7 +129,7 @@ test('activation stops, snapshots, switches, verifies, and can roll back in that
 
   const service = await readFile(join(deployDir, 'avalon.service'), 'utf8');
   assert.match(service, /WorkingDirectory=%h\/\.local\/lib\/avalon\/current/);
-  assert.match(service, /current\/src\/server\.js/);
+  assert.match(service, /ExecStart=.*--preserve-symlinks-main .*current\/src\/server\.js/);
 
   const updater = await readFile(join(deployDir, 'avalon-update.service'), 'utf8');
   assert.match(updater, /libexec\/avalon-deploy\/current\/controller\.sh deploy-main/);

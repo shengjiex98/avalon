@@ -22,7 +22,10 @@ EnvironmentFile=-%h/.config/avalon.env
 Environment=PORT=8420
 # An absolute path, not `env node`: the runtime is hand-installed under
 # ~/.local. The release manifest and controller both require Node 24.
-ExecStart=%h/.local/bin/node %h/.local/lib/avalon/current/src/server.js
+# Node normally resolves the current symlink before assigning import.meta.url.
+# Preserve the entrypoint path so the server's direct-execution guard sees the
+# same path as process.argv[1] and actually starts listening.
+ExecStart=%h/.local/bin/node --preserve-symlinks-main %h/.local/lib/avalon/current/src/server.js
 Restart=on-failure
 RestartSec=3
 
