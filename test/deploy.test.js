@@ -58,9 +58,13 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the deploy workflow tests and publishes only the browser client', async () => {
+test('the deploy workflow tests an exact server artifact and publishes the browser client', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow, /npm test/);
+  assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
+  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C tested-release/);
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /gh release upload "\$release_tag"/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
   assert.match(workflow, /writeFileSync\("public\/config\.js"/);
   assert.match(workflow, /stamp-frontend-version\.mjs public "\$GITHUB_SHA"/);
@@ -71,12 +75,14 @@ test('the deploy workflow tests and publishes only the browser client', async ()
 
 test('the client is published only after the server takes the same commit', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
+  const artifact = workflow.indexOf('publish-artifact:');
   const server = workflow.indexOf('deploy-server:');
   const pages = workflow.indexOf('deploy-pages:');
-  assert.ok(server !== -1 && pages !== -1);
-  assert.ok(server < pages, 'the server must be deployed before the Pages client');
+  assert.ok(artifact !== -1 && server !== -1 && pages !== -1);
+  assert.ok(artifact < server && server < pages,
+    'the tested artifact must be published before the server and Pages client');
   assert.match(workflow.slice(pages), /needs:\s*deploy-server/);
-  assert.match(workflow.slice(server, pages), /needs:\s*test/);
+  assert.match(workflow.slice(server, pages), /needs:\s*publish-artifact/);
 });
 
 test('the deploy job proves the server took the commit before publishing the client', async () => {

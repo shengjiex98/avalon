@@ -9,6 +9,7 @@ controller_dir=$(cd -- "$(dirname "$0")" >/dev/null && pwd)
 source_repo=${AVALON_SOURCE_REPO:-"$HOME/avalon"}
 release_root=${AVALON_RELEASE_ROOT:-"$HOME/.local/lib/avalon"}
 releases="$release_root/releases"
+artifact_base=${AVALON_ARTIFACT_BASE:-"https://github.com/shengjiex98/avalon/releases/download/deployment-artifacts"}
 node_bin=${AVALON_NODE:-"$HOME/.local/bin/node"}
 systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
 export AVALON_NODE="$node_bin"
@@ -48,20 +49,34 @@ prepare() (
     return 0
   fi
 
-  git -C "$source_repo" cat-file -e "$target^{commit}" || return 1
   stage=$(mktemp -d "$releases/.staging-$target.XXXXXX") || return 1
+  download=
   cleanup() {
     [ -n "${stage:-}" ] && [ -d "$stage" ] && rm -rf -- "$stage"
+    [ -n "${download:-}" ] && [ -d "$download" ] && rm -rf -- "$download"
   }
   trap cleanup EXIT HUP INT TERM
+  download=$(mktemp -d "$releases/.download-$target.XXXXXX") || return 1
+  archive="avalon-$target.tar.gz"
 
-  git -C "$source_repo" archive "$target" | tar -x -C "$stage"
-  "$node_bin" "$stage/scripts/write-release-manifest.mjs" "$target" "$stage/release.json" || return 1
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 \
+    "$artifact_base/$archive" -o "$download/$archive" || return 1
+  curl -fsSL --retry 3 --connect-timeout 10 --max-time 30 \
+    "$artifact_base/$archive.sha256" -o "$download/$archive.sha256" || return 1
+  expected=$(sed -n '1{s/[[:space:]].*//;p;}' "$download/$archive.sha256")
+  case "$expected" in
+    *[!0-9a-f]*|'') echo "invalid checksum for $archive" >&2; return 1 ;;
+  esac
+  [ "${#expected}" -eq 64 ] || { echo "invalid checksum for $archive" >&2; return 1; }
+  actual=$(sha256sum "$download/$archive" | sed 's/[[:space:]].*//')
+  [ "$actual" = "$expected" ] || { echo "checksum mismatch for $archive" >&2; return 1; }
+
+  tar -xzf "$download/$archive" --strip-components=1 -C "$stage" || return 1
   "$node_bin" "$controller_dir/verify-release.mjs" "$stage" "$target" >/dev/null || return 1
 
   (
     cd "$stage"
-    env -u TARGET_STATE_VERSION -u AVALON_FORCE \
+    env -u TARGET_STATE_VERSION -u AVALON_FORCE -u NODE_TEST_CONTEXT \
       "$node_bin" --test "test/**/*.test.js"
   ) || return 1
 
@@ -69,6 +84,8 @@ prepare() (
   chmod -R a-w "$stage" || return 1
   mv "$stage" "$release" || return 1
   stage=
+  rm -rf -- "$download"
+  download=
   trap - EXIT HUP INT TERM
   printf '%s\n' "$release"
 )

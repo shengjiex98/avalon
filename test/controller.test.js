@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { chmod, cp, mkdtemp, mkdir, readFile, readlink, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -38,6 +39,31 @@ async function writeFakeRelease(dir, manifest) {
   await writeFile(join(dir, 'release.json'), JSON.stringify(manifest));
 }
 
+async function writeFakeArtifact(dir, target) {
+  const name = `avalon-${target}`;
+  const release = join(dir, name);
+  await writeFakeRelease(release, {
+    commit: target,
+    stateVersion: 1,
+    apiProtocol: 1,
+    nodeMajor: 24,
+    deployerSchema: 1,
+  });
+  await writeFile(join(release, 'package.json'), JSON.stringify({ type: 'module' }));
+  await mkdir(join(release, 'test'), { recursive: true });
+  await writeFile(join(release, 'test', 'smoke.test.js'), `
+    import test from 'node:test';
+    import assert from 'node:assert/strict';
+    test('artifact smoke test', () => assert.equal(1, 1));
+  `);
+
+  const archive = join(dir, `${name}.tar.gz`);
+  const packed = await run('tar', ['-czf', archive, '-C', dir, name]);
+  assert.equal(packed.code, 0, packed.stderr);
+  const digest = createHash('sha256').update(await readFile(archive)).digest('hex');
+  await writeFile(`${archive}.sha256`, `${digest}  ${name}.tar.gz\n`);
+}
+
 test('the stable verifier accepts exactly its release contract', async () => {
   const commit = 'b'.repeat(40);
   const valid = {
@@ -70,10 +96,10 @@ test('the controller installer atomically selects an immutable version', async (
     AVALON_SYSTEMD_USER_DIR: unitDir,
   });
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/4');
-  assert.equal(await readFile(join(root, 'versions/4/controller-version'), 'utf8'), '4\n');
-  assert.match(await readFile(join(root, 'versions/4/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/4/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  assert.equal(await readlink(join(root, 'current')), 'versions/5');
+  assert.equal(await readFile(join(root, 'versions/5/controller-version'), 'utf8'), '5\n');
+  assert.match(await readFile(join(root, 'versions/5/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
+  assert.match(await readFile(join(root, 'versions/5/wait-for-health.mjs'), 'utf8'), /api\/health/);
   for (const unit of ['avalon.service', 'avalon-update.service', 'avalon-update.timer']) {
     assert.equal(await readlink(join(unitDir, unit)), join(root, 'current', unit));
   }
@@ -93,14 +119,37 @@ test('the controller installer atomically selects an immutable version', async (
   assert.match(collision.stderr, /different contents/);
 });
 
-test('the controller stages a commit without moving the source checkout', async () => {
+test('the controller downloads a verified artifact without moving the source checkout', async () => {
   const source = await readFile(join(deployDir, 'controller.sh'), 'utf8');
   assert.match(source, /prepare\(\) \(/);
-  assert.match(source, /git -C "\$source_repo" archive "\$target"/);
+  assert.match(source, /"\$artifact_base\/\$archive"/);
+  assert.match(source, /sha256sum "\$download\/\$archive"/);
+  assert.match(source, /tar -xzf "\$download\/\$archive" --strip-components=1/);
   assert.match(source, /mktemp -d "\$releases\/\.staging-\$target/);
   assert.match(source, /"\$node_bin" --test "test\/\*\*\/\*\.test\.js"/);
   assert.match(source, /chmod -R a-w "\$stage"/);
-  assert.doesNotMatch(source, /git (?:reset|checkout|switch|pull)/);
+  assert.doesNotMatch(source, /git -C "\$source_repo" (?:archive|reset|checkout|switch|pull)/);
+});
+
+test('artifact preparation verifies, tests, and stages the downloaded bytes', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'avalon-artifact-'));
+  const artifactDir = join(dir, 'artifacts');
+  const releaseRoot = join(dir, 'releases-root');
+  const target = 'c'.repeat(40);
+  await mkdir(artifactDir);
+  await writeFakeArtifact(artifactDir, target);
+
+  const result = await run('sh', [join(deployDir, 'controller.sh'), 'prepare', target], {
+    HOME: dir,
+    AVALON_NODE: process.execPath,
+    AVALON_RELEASE_ROOT: releaseRoot,
+    AVALON_ARTIFACT_BASE: `file://${artifactDir}`,
+    AVALON_SOURCE_REPO: join(dir, 'no-source-checkout'),
+  });
+  assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
+  const prepared = result.stdout.trim().split('\n').at(-1);
+  assert.equal(prepared, join(releaseRoot, 'releases', target));
+  assert.equal(JSON.parse(await readFile(join(prepared, 'release.json'))).commit, target);
 });
 
 test('health verification requires the selected release commit', async () => {
