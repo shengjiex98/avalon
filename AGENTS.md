@@ -3,13 +3,13 @@
 See [README.md](README.md) for what the project is, [docs/architecture.md](docs/architecture.md)
 for how it fits together, and [docs/deployment.md](docs/deployment.md) for how it ships.
 
-## The checkout on the game server is a live deployment
+## The checkout on the game server is deployment infrastructure
 
 `~/avalon` on the server host is not a development directory. It is what
-`deploy/update.sh` manages, and that script runs `git reset --hard origin/main`
-whenever a deployment is triggered — within seconds of a commit landing on
-`main`, and again every hour as a fallback. It discards uncommitted work without
-warning and gives no notice first.
+the external release controller uses as its source repository, and its unit
+files and listener remain addressed by path. The controller fetches
+`origin/main` but does not reset this checkout, and the application itself runs
+from an immutable release under `~/.local/lib/avalon`.
 
 So on that host, never edit files in `~/avalon` directly. Use a worktree:
 
@@ -17,13 +17,10 @@ So on that host, never edit files in `~/avalon` directly. Use a worktree:
 git worktree add ~/avalon-dev -b some-feature
 ```
 
-One clone, one object store, shared history, and a directory the updater will
-never touch. Git also refuses to check out a branch that is already active in
-another worktree, so the deployment cannot be dragged onto your branch by
-accident — which is a real failure mode here, not a hypothetical: a reset that
-lands while the deployment checkout sits on a feature branch moves *that*
-branch, and the running server ends up serving code from a commit the tree no
-longer points at.
+One clone, one object store, shared history, and a directory isolated from the
+deployment control plane. Git also refuses to check out a branch that is
+already active in another worktree, so deployment infrastructure cannot be
+accidentally coupled to a feature branch.
 
 Anywhere other than the server host, an ordinary clone is fine.
 
@@ -68,10 +65,11 @@ all times.
 **Merge without waiting for a quiet moment.** The protection is server-side and
 automatic, so do not check `activeGames` before merging or hold a merge until a
 game ends. `deploy/gate.sh` decides whether the running process may be replaced,
-and `deploy/update.sh` asks it *before* touching the working tree. When running
+and the release controller asks it *before* selecting a release. When running
 and target `STATE_VERSION` values match the restart is lossless and happens
 immediately, live rooms and all. Otherwise a game in progress exits 75,
 publishes `busy`, and leaves the deployment exactly where it was for the hourly
-retry. The updater then tests the target and rolls back if the tests fail; a
-host that is not on Node v24 is refused before anything moves. Open the PR,
-merge it, and let the host sort out the timing.
+retry. The controller tests the target before selection and rolls back code and
+snapshot if the new process fails its health check; a host that is not on Node
+v24 is refused before anything moves. Open the PR, merge it, and let the host
+sort out the timing.

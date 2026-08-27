@@ -119,10 +119,18 @@ that exact commit into `~/.local/lib/avalon/releases/<sha>`, validates the
 manifest with controller-owned code, runs the host test suite from the staged
 tree, and makes the result read-only. The source checkout is never moved.
 
-At this migration stage the checkout updater remains active and the running
-service still uses `~/avalon`. Preparing a release is deliberately not enough
-to select or start it; the atomic service switch and rollback arrive in the
-next independently deployable step.
+`avalon.service` runs the release selected by the atomic
+`~/.local/lib/avalon/current` symlink. `avalon-update.service` invokes the
+external controller, which prepares and tests the candidate before asking the
+same state-version gate used by the checkout updater. Once allowed, it stops
+the old process so its final room snapshot is complete, backs that snapshot up,
+switches `current`, starts Avalon, and requires the target commit from
+`/api/health`. Failed health verification restores the previous release pointer
+and snapshot and proves the rollback commit is serving.
+
+The source checkout is still fetched in this migration stage, but it is never
+reset and the application does not execute or serve files from it. A later step
+replaces the locally exported commit with the exact artifact published by CI.
 
 `.github/workflows/deploy.yml` runs on every push to `main` as three ordered
 jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
@@ -135,7 +143,7 @@ CI never connects to this host. The two sides meet on an ntfy topic:
 
 ```text
 CI  --"deploy <sha>"-->  ntfy topic  -->  avalon-listen  -->  avalon-update
-CI  <--"deployed|busy|failed <sha>"--  update.sh
+CI  <--"deployed|busy|failed <sha>"--  release controller
 CI  confirms GET $API_BASE/api/health .commit == <sha>
 ```
 
@@ -150,8 +158,8 @@ It never interprets a message: a body must match `deploy <40 hex>` exactly, and
 the only thing a match does is start `avalon-update.service`. Reconnection is
 `Restart=always`.
 
-`deploy/update.sh` publishes what happened, each message carrying the target
-commit so concurrent runs cannot read each other's results:
+The external release controller publishes what happened, each message carrying
+the target commit so concurrent runs cannot read each other's results:
 
 | Message | Meaning | What CI does |
 | --- | --- | --- |
@@ -180,21 +188,14 @@ label or a build arg and keep using it unchanged. `AVALON_FORCE=1` skips the
 question entirely, for when a restart cannot wait. A server that does not
 answer within five seconds is treated as down -- nothing to protect.
 
-`deploy/update.sh` is the mechanism around that decision. It resolves the
-target's `STATE_VERSION` from the commit, checks the Node major version, and
-asks the gate -- all before it touches the checkout, because static files are
-read from disk per request and `/version.json` is derived from their mtimes, so
-moving the tree already changes what open browsers are served. It then
-fast-forwards the checkout, runs the tests, and restarts the service. It compares the commit the *running server* reports as
-well as the one in the working tree, so a tree moved by anything other than
-this script -- a manual pull, or a checkout whose restart failed -- still gets
-the process restarted rather than being mistaken for up to date. A server that
-is down or reports no commit is left alone, so an unreadable commit cannot turn
-the hourly timer into an hourly restart. If the tests fail it restores the
-previous commit, so a bad `main` cannot take the server down. The checkout it
-manages is deploy-only: it discards local edits without warning.
-See [developing on the server host](#developing-on-the-server-host) for how to
-work on the same machine anyway.
+The release controller is the mechanism around that decision. It prepares and
+tests a read-only candidate without changing either the running release or the
+source checkout. It reads `STATE_VERSION` from the verified manifest, asks the
+gate, then performs the stop, snapshot backup, atomic pointer switch, start,
+and health proof described above. A candidate never becomes visible before it
+passes host tests, and a failed start restores the previous code and snapshot.
+`deploy/update.sh` remains only as the one-time bootstrap path for hosts that
+have not installed the external controller yet.
 
 ### Repository configuration
 
@@ -217,9 +218,11 @@ from the internet for CI to confirm a deployment. That is already true here via
 
 ### Developing on the server host
 
-`~/avalon` belongs to the updater. A deployment can land seconds after a commit
-reaches `main`, and the hourly timer runs whether or not anyone is watching, so
-uncommitted work left there is discarded without warning.
+`~/avalon` belongs to the deployment control plane. The external controller
+fetches it as a source repository, and the listener and linked unit files are
+still addressed there during this migration. The application does not run from
+the checkout and the controller does not reset it, but local edits can still
+change deployment infrastructure outside review.
 
 Give development its own directory instead:
 
@@ -227,15 +230,13 @@ Give development its own directory instead:
 git worktree add ~/avalon-dev -b some-feature
 ```
 
-One clone, one object store, shared history, and a working tree the updater
-never touches. Git also refuses to check out a branch that is already active in
-another worktree, which rules out the sharper version of this failure: if the
-deployment checkout is sitting on a feature branch when a reset lands, that
-branch is moved instead, and the running server ends up serving code from a
-commit its own tree no longer points at.
+One clone, one object store, shared history, and a working tree isolated from
+the deployment control plane. Git also refuses to check out a branch that is
+already active in another worktree, preventing accidental coupling between a
+feature branch and the source repository the controller fetches.
 
-Keep `~/avalon` as the primary worktree -- the systemd units address it by path
--- and create the development one alongside. A second full clone works too, with
+Keep `~/avalon` as the primary worktree -- some systemd units still address it
+by path -- and create the development one alongside. A second full clone works too, with
 stronger isolation and a second remote to keep in step; at this size the
 worktree is less to think about.
 
@@ -243,7 +244,7 @@ worktree is less to think about.
 
 A host that was rebooting or offline when the trigger was published never sees
 it, and would otherwise stay stale indefinitely. The `avalon-update.timer` unit
-runs the same script hourly to close that gap:
+runs the same external controller hourly to close that gap:
 
 ```bash
 systemctl --user link ~/avalon/deploy/avalon-update.service
