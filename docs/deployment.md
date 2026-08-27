@@ -119,6 +119,8 @@ artifact without changing its format.
 jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
 A client newer than its server fails the protocol check and closes the lobby, so
 the server takes each commit first and the client is published only if it did.
+The workflow and production host both use Node 24, so the test gate exercises
+the runtime family the server will actually execute.
 
 CI never connects to this host. The two sides meet on an ntfy topic:
 
