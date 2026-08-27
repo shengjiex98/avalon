@@ -6,16 +6,16 @@ umask 077
 controller_dir=$(cd -- "$(dirname "$0")" >/dev/null && pwd)
 . "$controller_dir/lib.sh"
 
-source_repo=${AVALON_SOURCE_REPO:-"$HOME/avalon"}
 release_root=${AVALON_RELEASE_ROOT:-"$HOME/.local/lib/avalon"}
 releases="$release_root/releases"
 artifact_base=${AVALON_ARTIFACT_BASE:-"https://github.com/shengjiex98/avalon/releases/download/deployment-artifacts"}
+main_url=${AVALON_MAIN_URL:-"https://api.github.com/repos/shengjiex98/avalon/commits/main"}
 node_bin=${AVALON_NODE:-"$HOME/.local/bin/node"}
 systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
 export AVALON_NODE="$node_bin"
 
 usage() {
-  echo 'Usage: controller.sh prepare <commit> | deploy <commit> [rollback-commit] | deploy-main' >&2
+  echo 'Usage: controller.sh prepare <commit> | deploy <commit> [rollback-commit] | deploy-main | deploy-trigger <commit>' >&2
   exit 64
 }
 
@@ -219,8 +219,18 @@ deploy_target() {
 }
 
 deploy_main() {
-  git -C "$source_repo" fetch --quiet origin main
-  target=$(git -C "$source_repo" rev-parse origin/main)
+  target=$("$node_bin" "$controller_dir/resolve-main.mjs" "$main_url") || return 1
+  deploy_target "$target"
+}
+
+deploy_trigger() {
+  target=${1:-}
+  valid_target "$target" || usage
+  current_main=$("$node_bin" "$controller_dir/resolve-main.mjs" "$main_url") || return 1
+  if [ "$target" != "$current_main" ]; then
+    echo "ignored deployment trigger for $target; main is $current_main" >&2
+    return 0
+  fi
   deploy_target "$target"
 }
 
@@ -228,5 +238,6 @@ case "${1:-}" in
   prepare) shift; [ "$#" -eq 1 ] || usage; prepare "$1" ;;
   deploy) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; deploy_target "$@" ;;
   deploy-main) shift; [ "$#" -eq 0 ] || usage; deploy_main ;;
+  deploy-trigger) shift; [ "$#" -eq 1 ] || usage; deploy_trigger "$1" ;;
   *) usage ;;
 esac

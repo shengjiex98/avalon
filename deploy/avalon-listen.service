@@ -1,5 +1,4 @@
-# Install without copying, so the unit stays version-controlled:
-#   systemctl --user link  %h/avalon/deploy/avalon-listen.service
+# The controller installer owns this unit outside the source checkout.
 #   systemctl --user enable --now avalon-listen
 #
 # NTFY_TOPIC (and optionally NTFY_SERVER) come from ~/.config/avalon.env,
@@ -12,9 +11,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/avalon
+WorkingDirectory=%h/.local/libexec/avalon-deploy/current
 EnvironmentFile=%h/.config/avalon.env
-ExecStart=%h/.local/bin/node %h/avalon/deploy/listen.mjs
+ExecStart=%h/.local/bin/node %h/.local/libexec/avalon-deploy/current/listen.mjs
 
 # The subscription is a long-lived HTTP stream; it ends whenever the network
 # hiccups, which is normal rather than a fault. Reconnecting is the whole job.

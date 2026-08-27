@@ -3,9 +3,9 @@
 // The channel is deliberately untrusted. Anyone who learns the topic name can
 // publish to it, so nothing here interprets what a message says: a body has to
 // match one exact shape, and the only thing a match can do is start a fixed
-// unit. Worst case, a stranger makes this host run `git fetch` and find
-// nothing new. Authority over *what* gets deployed lives in the external
-// release controller, which only ever selects origin/main.
+// unit template. Worst case, a stranger makes the controller compare one SHA
+// with GitHub's current main. Authority over *what* gets deployed remains in
+// the controller; the message is never sufficient authority by itself.
 //
 // Reconnection is systemd's job (Restart=always); this exits on any stream
 // error and is started again a few seconds later.
@@ -19,16 +19,16 @@ if (!topic) {
   process.exit(78); // EX_CONFIG
 }
 
-// The SHA is matched but never used: it is what lets this ignore the
-// `deployed …` and `busy …` messages the controller publishes to the same topic.
-const TRIGGER = /^deploy [0-9a-f]{40}$/;
+// Capturing the SHA lets systemd preserve which trigger CI sent. The controller
+// independently requires it to equal GitHub's current main before deployment.
+const TRIGGER = /^deploy ([0-9a-f]{40})$/;
 
 let running = false;
 
-function startUpdate() {
+function startUpdate(commit) {
   if (running) return console.log('update already running; ignoring trigger');
   running = true;
-  const child = spawn('systemctl', ['--user', 'start', 'avalon-update.service'], {
+  const child = spawn('systemctl', ['--user', 'start', `avalon-update@${commit}.service`], {
     stdio: 'inherit',
   });
   child.on('exit', (code) => {
@@ -62,8 +62,10 @@ for await (const chunk of response.body) {
     }
     if (event.event !== 'message') continue;
 
-    if (TRIGGER.test(String(event.message ?? ''))) startUpdate();
-    else console.log(`ignored: ${String(event.message ?? '').slice(0, 60)}`);
+    const message = String(event.message ?? '');
+    const trigger = TRIGGER.exec(message);
+    if (trigger) startUpdate(trigger[1]);
+    else console.log(`ignored: ${message.slice(0, 60)}`);
   }
 }
 

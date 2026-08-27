@@ -1,4 +1,4 @@
-# Reconcile this host with origin/main. Paired with avalon-update.timer.
+# Reconcile this host with GitHub main. Paired with avalon-update.timer.
 #
 # Deployments normally arrive from CI the moment a commit lands. This is the
 # safety net for the times CI cannot reach the host at all -- a reboot, a
@@ -11,6 +11,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+EnvironmentFile=-%h/.config/avalon.env
 ExecStart=%h/.local/libexec/avalon-deploy/current/controller.sh deploy-main
 
 # Exit 75 means a game was in progress. That is a healthy outcome, not a
