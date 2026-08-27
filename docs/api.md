@@ -19,13 +19,13 @@ game while a room is in its lobby.
 Shared actions are `leave` and `setGame`.
 
 For a new seat, `avatar` may be a PNG, JPEG, or WebP data URL up to 256 KiB
-after decoding. When it is omitted and the server has `OPENAI_API_KEY`, the
-seat is returned immediately and a name-based avatar is generated in the
-background. A later SSE view adds `avatar` to that player. The value in views
-is a same-server `/api/avatars/…` path, not image data; clients served from a
-different origin resolve it against their configured game server. Missing
-`avatar` remains valid and is rendered as the player's initial, so this is an
-additive protocol change.
+after decoding. When it is omitted and the server has both
+`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, the seat is returned
+immediately and a name-based avatar is generated in the background. A later SSE
+view adds `avatar` to that player. The value in views is a same-server
+`/api/avatars/…` path, not image data; clients served from a different origin
+resolve it against their configured game server. Missing `avatar` remains valid
+and is rendered as the player's initial, so this is an additive protocol change.
 
 Avalon actions are `options`, `start`, `confirm`, `propose`, `vote`, `card`,
 `assassinate`, and `again`.

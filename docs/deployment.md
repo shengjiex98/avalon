@@ -14,12 +14,13 @@ PORT=8420
 HOST=0.0.0.0
 # Optional override; normally supplied by systemd's StateDirectory.
 AVALON_STATE_FILE=/path/to/rooms.json
-# Enables automatic name-based player avatars. Never expose this to the browser.
-OPENAI_API_KEY=sk-...
+# Enables free-tier automatic name-based player avatars. Never expose the token.
+CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+CLOUDFLARE_API_TOKEN=...
 # Optional; these are the defaults.
-OPENAI_IMAGE_MODEL=gpt-image-2
 AVALON_AVATAR_GENERATIONS_PER_HOUR=30
-AVALON_AVATAR_MIN_INTERVAL_MS=12000
+AVALON_AVATAR_GENERATIONS_PER_DAY=200
+AVALON_AVATAR_MIN_INTERVAL_MS=1000
 ```
 
 Point a public URL or reverse proxy at that port and share the URL with
@@ -36,14 +37,21 @@ Rooms idle for six hours are removed.
 
 Uploaded and generated player avatars are content-addressed under an `avatars/`
 directory beside `rooms.json`. Room snapshots contain only their short URLs.
-With `OPENAI_API_KEY` configured, a player who does not upload a picture gets a
-background `gpt-image-2` generation based on their name; without it, the client
-uses a name initial. Generated names are cached, and the server defaults to 30
-new generations per hour so an unauthenticated room endpoint cannot create an
-unbounded API bill. Cache misses are started at least 12 seconds apart to fit
-the entry-tier image rate limit while players join immediately in the
-foreground. Set `AVALON_AVATAR_GENERATIONS_PER_HOUR=-1` only behind trusted
-access control if an unlimited rate is intentional.
+With both Cloudflare values configured, a player who does not upload a picture
+gets a background generation based on their name from Workers AI's
+`@cf/black-forest-labs/flux-1-schnell`; without them, the client uses a name
+initial. Create the token from the Workers AI dashboard's **Use REST API** flow
+and keep its permissions limited to Workers AI.
+
+Generated names are cached. The server defaults to 30 new generations per hour
+and 200 per rolling 24 hours so an unauthenticated room endpoint stays within
+the model's free allocation under its current four-step pricing, with some
+headroom for other account activity. Cache misses start at least one second
+apart while players join immediately in the foreground. The free allocation is
+account-wide and can change, so monitor it in the Workers AI dashboard. Set a
+limit to `-1` only behind trusted access control if removing that guard is
+intentional. See Cloudflare's [REST API setup](https://developers.cloudflare.com/workers-ai/get-started/rest-api/)
+and [current Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/).
 
 Keep `/api/health` as the container or service liveness check. It reports both
 `activeGames` and `stateVersion`. A restart on code with the same state version
@@ -109,7 +117,8 @@ Put host-specific values and secrets in `~/.config/avalon.env`, outside the repo
 ```sh
 PORT=8420
 HOST=0.0.0.0
-OPENAI_API_KEY=sk-...
+CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
+CLOUDFLARE_API_TOKEN=...
 ```
 
 ## Optional GitHub Pages client
