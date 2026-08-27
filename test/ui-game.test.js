@@ -425,7 +425,7 @@ test('the lobby offers the house rules, and only the host may throw them', () =>
   let view = show(game, 'p0');
   assert.match(view.text, /House rules/);
   assert.deepEqual(view.byClass('house-rule-name').map((n) => n.text),
-    ['Random leader', 'Hidden votes', 'Quest washout']);
+    ['Random leader', 'Hidden votes', 'Reset rejection count']);
   assert.match(view.text, /never who voted which way/, 'a variant explains itself, switch untouched');
   assert.equal(view.byClass('role-option').length, 4, 'a house rule is not one of the cards');
   assert.equal(view.byClass('house-rule').filter((r) => r.className.includes('selected')).length, 0,
@@ -448,21 +448,21 @@ test('the lobby offers the house rules, and only the host may throw them', () =>
 
 test('the house rules in force are named in the reference panel, in both languages', () => {
   const game = lobby(5);
-  g.setOptions(game, 'p0', { houseRules: { questHang: true } });
+  g.setOptions(game, 'p0', { houseRules: { resetRejects: true } });
   g.startGame(game, 'p0', { shuffle: (l) => l });
   for (const p of game.players) g.confirmRole(game, p.id);
 
   let view = show(game, 'p0');
-  assert.doesNotMatch(view.text, /Quest washout/, 'it lives behind the reference button');
+  assert.doesNotMatch(view.text, /Reset rejection count/, 'it lives behind the reference button');
   view.byId('avalonRefToggle').dispatch('click');
   view = dom.fixtures.view;
-  assert.match(view.text, /Quest washout/);
+  assert.match(view.text, /Reset rejection count/);
   assert.doesNotMatch(view.text, /Hidden votes/, 'only the ones this table agreed to');
   assertNoRawKeys(view, 'the reference panel with a house rule');
 
   view = show(game, 'p0', 'zh');
   view.byId('avalonRefToggle').dispatch('click');
-  assert.match(dom.fixtures.view.text, /任务流局/);
+  assert.match(dom.fixtures.view.text, /重置流局计数/);
 });
 
 // ---------------------------------------------------------------- hidden votes
@@ -497,11 +497,11 @@ test('a hidden vote shows the tally and no ballots at all', () => {
   assertNoRawKeys(view, 'a hidden vote');
 });
 
-test('the washout rule changes what the last-chance banner threatens', () => {
-  const game = voted({ questHang: true });
+test('the reset rule still warns that the fifth rejection gives evil the game', () => {
+  const game = voted({ resetRejects: true });
   for (let i = 0; i < 3; i++) {          // four rejections in all: one to go
     g.proposeTeam(game, game.players[game.leaderIndex].id, ['p0', 'p1']);
     for (const p of game.players) g.castVote(game, p.id, false);
   }
-  assert.match(show(game, 'p2').byClass('banner')[0].text, /this quest is lost/);
+  assert.match(show(game, 'p2').byClass('banner')[0].text, /evil wins/);
 });

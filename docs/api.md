@@ -54,7 +54,7 @@ will not answer produces no offer rather than a false one.
 
 ## Protocol compatibility
 
-The current client protocol is `1`. `/api/health` reports it, and the optional
+The current client protocol is `2`. `/api/health` reports it, and the optional
 GitHub Pages client checks it before opening a lobby. This makes independently
 deployed incompatible clients and servers fail with a clear error.
 

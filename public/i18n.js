@@ -66,8 +66,8 @@ const STRINGS = {
     'avalon.houseDesc.randomLeader': 'Shuffle the seating and hand the first leader token to anyone. Off, the table plays in the order it joined, starting with the host.',
     'avalon.house.hiddenVotes': 'Hidden votes',
     'avalon.houseDesc.hiddenVotes': 'Publish the tally only: how many approved and how many rejected, never who voted which way.',
-    'avalon.house.questHang': 'Quest washout',
-    'avalon.houseDesc.questHang': 'A fifth rejection washes the quest out as a failure and play moves on, instead of handing evil the game. The count runs within one quest and clears when the next begins.',
+    'avalon.house.resetRejects': 'Reset rejection count',
+    'avalon.houseDesc.resetRejects': 'Off, rejected teams accumulate across the whole game and the fifth gives evil the win. On, every approved team resets the count to zero.',
 
     'role.merlin': 'Merlin',
     'role.percival': 'Percival',
@@ -101,7 +101,6 @@ const STRINGS = {
     'board.twoFails': 'needs 2 fails',
     'board.rejects': 'Rejected proposals: {n}/{max}',
     'board.rejectWarn': 'One more rejection and evil wins.',
-    'board.rejectWarnHang': 'One more rejection and this quest is lost.',
     'board.evilCount': '{n} evil among {total}',
 
     'phase.reveal': 'Look at your role',
@@ -146,7 +145,7 @@ const STRINGS = {
 
     'over.goodWins': 'Good wins!',
     'over.evilWins': 'Evil wins!',
-    'win.hammer': 'Five team proposals were rejected in a row.',
+    'win.hammer': 'Five team proposals were rejected.',
     'win.threeFails': 'Three quests failed.',
     'win.threeSuccesses': 'Three quests succeeded and the Assassin missed Merlin.',
     'win.merlinSlain': 'The Assassin found Merlin.',
@@ -164,7 +163,6 @@ const STRINGS = {
     'log.voteRejected': 'Team rejected ({yes}–{no})',
     'log.questSucceeded': 'Quest {round} succeeded ({fails} fail cards)',
     'log.questFailed': 'Quest {round} failed ({fails} fail cards)',
-    'log.questHung': 'Quest {round} was washed out — five proposals rejected',
     'log.assassinTurn': 'The Assassin must name Merlin',
     'log.assassinHit': 'The Assassin named {name} — Merlin!',
     'log.assassinMiss': 'The Assassin named {name} — not Merlin',
@@ -411,11 +409,11 @@ You belong to whatever card you are holding at the end — not the one you were 
     'rules.title': 'How to play',
     'rules.body': `Avalon is a hidden-role game for 5–10 players. Most players are loyal servants of Arthur (good); the rest are minions of Mordred (evil), and they know each other.
 
-Five quests are attempted. Each round the leader proposes a team; everyone votes to approve or reject it. Five rejections in a row and evil wins outright. If a team is approved, its members secretly play Success or Fail — good must play Success, evil may play either. One Fail card sinks the quest (two are needed on the fourth quest in games of 7 or more).
+Five quests are attempted. Each round the leader proposes a team; everyone votes to approve or reject it. Five rejected teams over the course of the game and evil wins outright. If a team is approved, its members secretly play Success or Fail — good must play Success, evil may play either. One Fail card sinks the quest (two are needed on the fourth quest in games of 7 or more).
 
 Evil wins by failing three quests. If good succeeds three times, the Assassin gets one guess at who Merlin is: guess right and evil still wins.
 
-The lobby picks the standard deck for the number of players who have joined, and the host can change it. The host can also switch on house rules: a random leader instead of the order people joined in, hidden votes that publish only the tally, and quest washout, which turns a fifth rejection into a lost quest rather than a lost game.`,
+The lobby picks the standard deck for the number of players who have joined, and the host can change it. Whenever the player count changes, those choices reset to the defaults for the new count. The host can also switch on house rules: a random leader instead of the order people joined in, hidden votes that publish only the tally, and rejection-count reset, which clears the count whenever a team is approved.`,
   },
 
   zh: {
@@ -480,8 +478,8 @@ The lobby picks the standard deck for the number of players who have joined, and
     'avalon.houseDesc.randomLeader': '打乱顺序随机分配队长，默认为顺序分配。',
     'avalon.house.hiddenVotes': '隐藏投票',
     'avalon.houseDesc.hiddenVotes': '隐藏投票后，统计投票数，投票行为不可见。',
-    'avalon.house.questHang': '任务流局',
-    'avalon.houseDesc.questHang': '累计单次任务流局，新任务流局清零。第五次否决时本轮任务直接流局判负，游戏继续，坏人不会立即获胜。',
+    'avalon.house.resetRejects': '重置流局计数',
+    'avalon.houseDesc.resetRejects': '关闭时，流局次数会跨任务累计，累计 5 次后坏人直接获胜。开启后，每次组队通过都会将流局计数清零。',
 
     'role.merlin': '梅林',
     'role.percival': '派西维尔',
@@ -513,9 +511,8 @@ The lobby picks the standard deck for the number of players who have joined, and
     'board.quest': '第 {n} 轮',
     'board.players': '{n} 人',
     'board.twoFails': '需 2 张失败',
-    'board.rejects': '连续否决：{n}/{max}',
+    'board.rejects': '流局计数：{n}/{max}',
     'board.rejectWarn': '再被否决一次，坏人直接获胜。',
-    'board.rejectWarnHang': '再被否决一次，本轮任务流局判负。',
     'board.evilCount': '{total} 人中有 {n} 名坏人',
 
     'phase.reveal': '查看身份',
@@ -560,7 +557,7 @@ The lobby picks the standard deck for the number of players who have joined, and
 
     'over.goodWins': '好人获胜！',
     'over.evilWins': '坏人获胜！',
-    'win.hammer': '队伍连续五次被否决。',
+    'win.hammer': '累计五次组队流局。',
     'win.threeFails': '三次任务失败。',
     'win.threeSuccesses': '三次任务成功，且刺客未能找出梅林。',
     'win.merlinSlain': '刺客找到了梅林。',
@@ -578,7 +575,6 @@ The lobby picks the standard deck for the number of players who have joined, and
     'log.voteRejected': '队伍被否决（{yes}–{no}）',
     'log.questSucceeded': '第 {round} 轮任务成功（{fails} 张失败牌）',
     'log.questFailed': '第 {round} 轮任务失败（{fails} 张失败牌）',
-    'log.questHung': '第 {round} 轮任务流局 —— 队伍连续五次被否决',
     'log.assassinTurn': '刺客需要指认梅林',
     'log.assassinHit': '刺客指认了 {name} —— 正是梅林！',
     'log.assassinMiss': '刺客指认了 {name} —— 并非梅林',
@@ -823,11 +819,11 @@ The lobby picks the standard deck for the number of players who have joined, and
     'rules.title': '玩法说明',
     'rules.body': `阿瓦隆是一款 5–10 人的身份隐藏游戏。多数玩家是亚瑟的忠臣（好人阵营），其余是莫德雷德的爪牙（坏人阵营），坏人彼此认识。
 
-全场共进行五轮任务。每轮由队长提名队伍，全体投票赞成或反对；若连续五次被否决，坏人直接获胜。队伍通过后，队员秘密出牌：好人只能出「成功」，坏人两者皆可。只要出现一张「失败」牌，任务即告失败（7 人以上的第四轮任务需要两张）。
+全场共进行五轮任务。每轮由队长提名队伍，全体投票赞成或反对；若累计五次组队流局，坏人直接获胜。队伍通过后，队员秘密出牌：好人只能出「成功」，坏人两者皆可。只要出现一张「失败」牌，任务即告失败（7 人以上的第四轮任务需要两张）。
 
 坏人只要让三轮任务失败即获胜；若好人成功三轮，刺客有一次机会指认梅林，猜中则坏人反败为胜。
 
-等待室会按已加入的人数自动配好标准角色，房主也可以自行增减。房主还可以开启规则变体：随机队长（默认按加入顺序）、隐藏投票（只公布票数）、任务流局（第五次否决时本轮任务判负，游戏继续，而不是坏人直接获胜）。`,
+等待室会按已加入的人数自动配好标准角色，房主也可以自行增减；每当玩家人数变化时，角色选择都会重置为新人数的默认配置。房主还可以开启规则变体：随机队长（默认按加入顺序）、隐藏投票（只公布票数）、重置流局计数（每次组队通过后清零；关闭时则跨任务累计）。`,
   },
 };
 

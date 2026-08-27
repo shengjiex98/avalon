@@ -177,9 +177,9 @@ test('the Pages client remembers a compatible server', async () => {
 test('an incompatible server reports both protocol versions', () => {
   home();
   app.serverStatus = 'incompatible';
-  app.serverProtocol = 2;
+  app.serverProtocol = 3;
   render();
-  assert.match(dom.fixtures.view.text, /protocol 1.*server uses 2/);
+  assert.match(dom.fixtures.view.text, /protocol 2.*server uses 3/);
 });
 
 test('the lobby shows the room code and every player', () => {

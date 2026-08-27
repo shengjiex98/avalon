@@ -82,6 +82,6 @@ Pages client can be deployed independently, so it probes `/api/health` and
 compares the reported protocol before opening a lobby. A protocol mismatch is
 shown as an explicit compatibility error.
 
-The current browser/server protocol is `1`. See [the API reference](api.md)
+The current browser/server protocol is `2`. See [the API reference](api.md)
 for endpoint details and [deployment](deployment.md) for the two supported
 entry points.
