@@ -96,11 +96,17 @@ test('the controller installer atomically selects an immutable version', async (
     AVALON_SYSTEMD_USER_DIR: unitDir,
   });
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/5');
-  assert.equal(await readFile(join(root, 'versions/5/controller-version'), 'utf8'), '5\n');
-  assert.match(await readFile(join(root, 'versions/5/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/5/wait-for-health.mjs'), 'utf8'), /api\/health/);
-  for (const unit of ['avalon.service', 'avalon-update.service', 'avalon-update.timer']) {
+  assert.equal(await readlink(join(root, 'current')), 'versions/6');
+  assert.equal(await readFile(join(root, 'versions/6/controller-version'), 'utf8'), '6\n');
+  assert.match(await readFile(join(root, 'versions/6/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
+  assert.match(await readFile(join(root, 'versions/6/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  for (const unit of [
+    'avalon.service',
+    'avalon-listen.service',
+    'avalon-update.service',
+    'avalon-update@.service',
+    'avalon-update.timer',
+  ]) {
     assert.equal(await readlink(join(unitDir, unit)), join(root, 'current', unit));
   }
 
@@ -128,7 +134,7 @@ test('the controller downloads a verified artifact without moving the source che
   assert.match(source, /mktemp -d "\$releases\/\.staging-\$target/);
   assert.match(source, /"\$node_bin" --test "test\/\*\*\/\*\.test\.js"/);
   assert.match(source, /chmod -R a-w "\$stage"/);
-  assert.doesNotMatch(source, /git -C "\$source_repo" (?:archive|reset|checkout|switch|pull)/);
+  assert.doesNotMatch(source, /\bgit\b|source_repo/);
 });
 
 test('artifact preparation verifies, tests, and stages the downloaded bytes', async () => {
@@ -144,12 +150,36 @@ test('artifact preparation verifies, tests, and stages the downloaded bytes', as
     AVALON_NODE: process.execPath,
     AVALON_RELEASE_ROOT: releaseRoot,
     AVALON_ARTIFACT_BASE: `file://${artifactDir}`,
-    AVALON_SOURCE_REPO: join(dir, 'no-source-checkout'),
   });
   assert.equal(result.code, 0, `${result.stderr}\n${result.stdout}`);
   const prepared = result.stdout.trim().split('\n').at(-1);
   assert.equal(prepared, join(releaseRoot, 'releases', target));
   assert.equal(JSON.parse(await readFile(join(prepared, 'release.json'))).commit, target);
+});
+
+test('main resolution accepts only a commit-shaped GitHub response', async () => {
+  const expected = 'd'.repeat(40);
+  let body = { sha: expected };
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  try {
+    const script = join(deployDir, 'resolve-main.mjs');
+    const url = `http://127.0.0.1:${server.address().port}/main`;
+    const result = await run(process.execPath, [script, url]);
+    assert.equal(result.code, 0, result.stderr);
+    assert.equal(result.stdout.trim(), expected);
+
+    body = { sha: 'main' };
+    const invalid = await run(process.execPath, [script, url]);
+    assert.equal(invalid.code, 1);
+    assert.match(invalid.stderr, /no valid commit/);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+  }
 });
 
 test('health verification requires the selected release commit', async () => {
@@ -190,6 +220,9 @@ test('activation stops, snapshots, switches, verifies, and can roll back in that
   const updater = await readFile(join(deployDir, 'avalon-update.service'), 'utf8');
   assert.match(updater, /libexec\/avalon-deploy\/current\/controller\.sh deploy-main/);
   assert.doesNotMatch(updater, /%h\/avalon\/deploy\/update\.sh/);
+
+  const triggered = await readFile(join(deployDir, 'avalon-update@.service'), 'utf8');
+  assert.match(triggered, /controller\.sh deploy-trigger %i/);
 });
 
 test('a failed target restores the previous release, snapshot, and healthy process', async () => {

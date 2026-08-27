@@ -3,13 +3,13 @@
 See [README.md](README.md) for what the project is, [docs/architecture.md](docs/architecture.md)
 for how it fits together, and [docs/deployment.md](docs/deployment.md) for how it ships.
 
-## The checkout on the game server is deployment infrastructure
+## The checkout on the game server is not the live deployment
 
-`~/avalon` on the server host is not a development directory. It is what
-the external release controller uses as its source repository, and its
-deployment listener remains addressed by path. The controller fetches
-`origin/main` but does not reset this checkout, and the application itself runs
-from an immutable release under `~/.local/lib/avalon`.
+No running service or deployment controller reads `~/avalon`. The application
+runs from an immutable release under `~/.local/lib/avalon`, and the versioned
+controller, listener, and systemd units live under
+`~/.local/libexec/avalon-deploy`. The checkout is retained only as an audited
+recovery and administration clone.
 
 So on that host, never edit files in `~/avalon` directly. Use a worktree:
 
@@ -18,8 +18,8 @@ git worktree add ~/avalon-dev -b some-feature
 ```
 
 One clone, one object store, shared history, and a directory isolated from the
-deployment control plane. Git also refuses to check out a branch that is
-already active in another worktree, so deployment infrastructure cannot be
+recovery checkout. Git also refuses to check out a branch that is already
+active in another worktree, so repository administration cannot be
 accidentally coupled to a feature branch.
 
 Anywhere other than the server host, an ordinary clone is fine.

@@ -1,5 +1,4 @@
-# The controller installer owns this unit outside the source checkout:
-#   %h/avalon/deploy/install-controller.sh
+# The controller installer owns this unit outside the source checkout.
 #   systemctl --user enable --now avalon
 #   loginctl enable-linger "$USER"        # survive logout / reboot
 #

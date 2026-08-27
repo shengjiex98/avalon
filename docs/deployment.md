@@ -114,7 +114,7 @@ for a release directory, tarball, or image.
 
 `deploy/install-controller.sh` installs a separately versioned control plane at
 `~/.local/libexec/avalon-deploy/current` and atomically points the Avalon,
-update, and timer units at that external bundle. Its `prepare <sha>` operation
+listener, update, and timer units at that external bundle. Its `prepare <sha>` operation
 downloads `avalon-<sha>.tar.gz` and its checksum from the
 `deployment-artifacts` GitHub release, verifies both checksum and manifest with
 controller-owned code, reruns the host test suite from the extracted tree, and
@@ -130,9 +130,9 @@ switches `current`, starts Avalon, and requires the target commit from
 `/api/health`. Failed health verification restores the previous release pointer
 and snapshot and proves the rollback commit is serving.
 
-The source checkout is still fetched in this migration stage only to resolve
-the current `origin/main` SHA; it is never reset and the application does not
-execute, test, or serve files from it. A later step removes that last lookup.
+The controller resolves `main` through GitHub's HTTPS API and downloads the
+corresponding published artifact. Neither deployments nor hourly reconciliation
+read, move, execute, test, or serve files from a source checkout.
 
 `.github/workflows/deploy.yml` runs on every push to `main` as four ordered
 jobs: `test`, `publish-artifact`, `deploy-server`, then `deploy-pages`. The test
@@ -155,12 +155,14 @@ The notification only makes the deployment prompt; it is never what convinces
 CI that anything happened. A run succeeds when the **server itself** reports the
 commit, so the topic can be public without granting anyone the ability to
 publish a client against a server that never updated. The worst a stranger who
-learns the topic can do is make this host run `git fetch` and find nothing new.
+learns the topic can do is make the controller compare a supplied SHA with
+GitHub's current `main`.
 
 `deploy/listen.mjs` holds the subscription, started by `avalon-listen.service`.
 It never interprets a message: a body must match `deploy <40 hex>` exactly, and
-the only thing a match does is start `avalon-update.service`. Reconnection is
-`Restart=always`.
+the only thing a match does is start `avalon-update@<sha>.service`. The
+controller independently requires that SHA to equal GitHub's current `main`;
+an old or forged trigger is ignored. Reconnection is `Restart=always`.
 
 The external release controller publishes what happened, each message carrying
 the target commit so concurrent runs cannot read each other's results:
@@ -193,8 +195,8 @@ question entirely, for when a restart cannot wait. A server that does not
 answer within five seconds is treated as down -- nothing to protect.
 
 The release controller is the mechanism around that decision. It prepares and
-tests a read-only candidate without changing either the running release or the
-source checkout. It reads `STATE_VERSION` from the verified manifest, asks the
+tests a read-only candidate without changing the running release. It reads
+`STATE_VERSION` from the verified manifest, asks the
 gate, then performs the stop, snapshot backup, atomic pointer switch, start,
 and health proof described above. A candidate never becomes visible before it
 passes host tests, and a failed start restores the previous code and snapshot.
@@ -212,7 +214,8 @@ This host needs the same `NTFY_TOPIC` (and optionally `NTFY_SERVER`) in
 `~/.config/avalon.env`, next to `PORT`:
 
 ```bash
-systemctl --user link ~/avalon/deploy/avalon-listen.service
+~/avalon/deploy/install-controller.sh
+systemctl --user daemon-reload
 systemctl --user enable --now avalon-listen
 ```
 
@@ -222,11 +225,9 @@ from the internet for CI to confirm a deployment. That is already true here via
 
 ### Developing on the server host
 
-`~/avalon` belongs to the deployment control plane. The external controller
-fetches it as a source repository, and the listener is still addressed there
-during this migration. The application and its update units do not run from
-the checkout and the controller does not reset it, but local edits can still
-change deployment infrastructure outside review.
+No running service or deployment controller reads `~/avalon`. It may be
+removed; while retained as the host's recovery and administration clone, keep
+ordinary development isolated from it.
 
 Give development its own directory instead:
 
@@ -235,12 +236,12 @@ git worktree add ~/avalon-dev -b some-feature
 ```
 
 One clone, one object store, shared history, and a working tree isolated from
-the deployment control plane. Git also refuses to check out a branch that is
-already active in another worktree, preventing accidental coupling between a
-feature branch and the source repository the controller fetches.
+the recovery checkout. Git also refuses to check out a branch that is already
+active in another worktree, preventing accidental coupling between a feature
+branch and repository administration.
 
-Keep `~/avalon` as the primary worktree -- the listener still addresses it by
-path -- and create the development one alongside. A second full clone works too, with
+Keep `~/avalon` as the primary recovery worktree and create the development one
+alongside. A second full clone works too, with
 stronger isolation and a second remote to keep in step; at this size the
 worktree is less to think about.
 

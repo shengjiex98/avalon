@@ -1,10 +1,7 @@
-# Install without copying, so the timer stays version-controlled:
-#   systemctl --user link  %h/avalon/deploy/avalon-update.service
-#   systemctl --user link  %h/avalon/deploy/avalon-update.timer
-#   systemctl --user enable --now avalon-update.timer
+# The controller installer owns this timer outside the source checkout.
 
 [Unit]
-Description=Poll origin/main for Avalon deployments
+Description=Poll GitHub main for Avalon deployments
 
 [Timer]
 OnBootSec=5min
