@@ -13,6 +13,7 @@ export function rolePortrait(role, { small = false } = {}) {
 /** A player's chamfered badge; deliberately unlike the round role medallions. */
 export function playerAvatar(player, server = '') {
   const initial = [...String(player?.name ?? '?').trim()][0]?.toLocaleUpperCase() ?? '?';
+  const seat = Number.isInteger(player?.seat) ? player.seat + 1 : null;
   const src = typeof player?.avatar === 'string' && player.avatar.startsWith('/api/avatars/')
     ? `${server}${player.avatar}`
     : null;
@@ -22,6 +23,7 @@ export function playerAvatar(player, server = '') {
       src, alt: '', loading: 'lazy', decoding: 'async',
       onerror: (event) => { event.target.hidden = true; },
     }) : null,
+    seat === null ? null : h('span', { class: 'player-number', text: seat }),
   );
 }
 

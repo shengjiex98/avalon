@@ -340,16 +340,19 @@ function centreRow({ pickable = false, picked = [], onpick } = {}) {
 function pickList({ picked = [], onpick, exclude = [], tags } = {}) {
   const v = app.view;
   return h('div', { class: 'players' }, v.players.map((p) => {
+    const isYou = p.id === v.you?.id;
     const inner = [
       avatarOf(p),
-      h('span', { class: 'seat', text: p.seat + 1 }),
       h('span', { class: 'name', text: p.name }),
-      p.id === v.you?.id ? h('span', { class: 'tag you', text: T('lobby.you') }) : null,
+      isYou ? h('span', { class: 'visually-hidden', text: T('lobby.you') }) : null,
       ...(tags ? tags(p) : []),
     ];
-    if (!onpick) return h('div', { class: 'player' }, inner);
+    if (!onpick) return h('div', {
+      class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
+    }, inner);
     return h('button', {
-      class: `player ${picked.includes(p.id) ? 'selected' : ''}`, type: 'button',
+      class: `player ${isYou ? 'is-you' : ''} ${picked.includes(p.id) ? 'selected' : ''}`, type: 'button',
+      'aria-current': isYou ? 'true' : null,
       disabled: exclude.includes(p.id), onclick: () => onpick(p),
     }, inner);
   }));
@@ -671,10 +674,13 @@ function paneOver() {
         const cardLabel = moved ? `${dealt} → ${ended}` : dealt;
         const votedFor = p.votedFor && v.players.find((q) => q.id === p.votedFor)?.name;
         const voteLabel = votedFor && T('onuw.over.votedFor', { name: votedFor });
-        return h('div', { class: `player ${p.dead ? 'dead' : ''}` },
+        const isYou = p.id === v.you?.id;
+        return h('div', {
+          class: `player ${isYou ? 'is-you' : ''} ${p.dead ? 'dead' : ''}`,
+          'aria-current': isYou ? 'true' : null,
+        },
           avatarOf(p),
           rolePortrait(p.finalRole, { small: true }),
-          h('span', { class: 'seat', text: p.seat + 1 }),
           h('span', { class: 'name', text: p.name }),
           h('div', { class: 'player-tags' },
             h('span', { class: `tag ${teamTag(p.finalRole)}`, role: 'img', title: cardLabel, 'aria-label': cardLabel },

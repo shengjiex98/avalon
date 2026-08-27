@@ -378,19 +378,23 @@ function paneOver() {
     h('p', { text: T(v.winReason) }),
     v.assassinTarget ? h('p', { class: 'muted', text: T('over.assassinPicked', { name: nameOf(v.assassinTarget) }) }) : null,
     h('h3', { text: T('over.roles') }),
-    h('div', { class: 'players' }, v.players.map((p) => h('div', { class: 'player' },
-      avatarOf(p),
-      rolePortrait(p.role, { small: true }),
-      h('span', { class: 'seat', text: p.seat + 1 }),
-      h('span', { class: 'name', text: p.name }),
-      h('span', { class: `tag ${sideOfRole(p.role)}`, text: T(`role.${p.role}`) }),
-      h('span', {
-        class: `faction-sigil mini ${sideOfRole(p.role)}`,
-        title: T(`side.${sideOfRole(p.role)}`),
-        'aria-label': T(`side.${sideOfRole(p.role)}`),
-        text: sideOfRole(p.role) === 'evil' ? '☾' : '☀',
-      }),
-    ))),
+    h('div', { class: 'players' }, v.players.map((p) => {
+      const isYou = p.id === v.you?.id;
+      return h('div', {
+        class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
+      },
+        avatarOf(p),
+        rolePortrait(p.role, { small: true }),
+        h('span', { class: 'name', text: p.name }),
+        h('span', { class: `tag ${sideOfRole(p.role)}`, text: T(`role.${p.role}`) }),
+        h('span', {
+          class: `faction-sigil mini ${sideOfRole(p.role)}`,
+          title: T(`side.${sideOfRole(p.role)}`),
+          'aria-label': T(`side.${sideOfRole(p.role)}`),
+          text: sideOfRole(p.role) === 'evil' ? '☾' : '☀',
+        }),
+      );
+    })),
     v.you.id === v.hostId
       ? h('button', { class: 'btn primary wide', onclick: () => send('again') }, T('over.again'))
       : h('p', { class: 'muted', text: T('lobby.waitingHost') }),
