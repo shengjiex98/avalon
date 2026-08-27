@@ -61,26 +61,33 @@ test('the controller installer atomically selects an immutable version', async (
   const dir = await mkdtemp(join(tmpdir(), 'avalon-controller-'));
   const source = join(dir, 'source');
   const root = join(dir, 'installed');
+  const unitDir = join(dir, 'systemd');
   await cp(deployDir, source, { recursive: true });
   await chmod(join(source, 'install-controller.sh'), 0o755);
 
   const first = await run('sh', [join(source, 'install-controller.sh')], {
     AVALON_CONTROLLER_ROOT: root,
+    AVALON_SYSTEMD_USER_DIR: unitDir,
   });
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/3');
-  assert.equal(await readFile(join(root, 'versions/3/controller-version'), 'utf8'), '3\n');
-  assert.match(await readFile(join(root, 'versions/3/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/3/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  assert.equal(await readlink(join(root, 'current')), 'versions/4');
+  assert.equal(await readFile(join(root, 'versions/4/controller-version'), 'utf8'), '4\n');
+  assert.match(await readFile(join(root, 'versions/4/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
+  assert.match(await readFile(join(root, 'versions/4/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  for (const unit of ['avalon.service', 'avalon-update.service', 'avalon-update.timer']) {
+    assert.equal(await readlink(join(unitDir, unit)), join(root, 'current', unit));
+  }
 
   const second = await run('sh', [join(source, 'install-controller.sh')], {
     AVALON_CONTROLLER_ROOT: root,
+    AVALON_SYSTEMD_USER_DIR: unitDir,
   });
   assert.equal(second.code, 0, second.stderr);
 
   await writeFile(join(source, 'controller.sh'), '# changed\n');
   const collision = await run('sh', [join(source, 'install-controller.sh')], {
     AVALON_CONTROLLER_ROOT: root,
+    AVALON_SYSTEMD_USER_DIR: unitDir,
   });
   assert.equal(collision.code, 65);
   assert.match(collision.stderr, /different contents/);

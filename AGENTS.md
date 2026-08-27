@@ -6,8 +6,8 @@ for how it fits together, and [docs/deployment.md](docs/deployment.md) for how i
 ## The checkout on the game server is deployment infrastructure
 
 `~/avalon` on the server host is not a development directory. It is what
-the external release controller uses as its source repository, and its unit
-files and listener remain addressed by path. The controller fetches
+the external release controller uses as its source repository, and its
+deployment listener remains addressed by path. The controller fetches
 `origin/main` but does not reset this checkout, and the application itself runs
 from an immutable release under `~/.local/lib/avalon`.
 

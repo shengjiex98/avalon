@@ -1,5 +1,5 @@
-# The application runs from the immutable release selected by the controller:
-#   systemctl --user link  %h/avalon/deploy/avalon.service
+# The controller installer owns this unit outside the source checkout:
+#   %h/avalon/deploy/install-controller.sh
 #   systemctl --user enable --now avalon
 #   loginctl enable-linger "$USER"        # survive logout / reboot
 #
