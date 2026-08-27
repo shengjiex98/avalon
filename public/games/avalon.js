@@ -226,7 +226,7 @@ function paneBoard() {
 function voteResult() {
   const v = app.view;
   const tally = v.voteTally ?? (v.lastVote ? {
-    attempt: v.lastVote.attempt,
+    round: v.lastVote.round,
     approved: v.lastVote.approved,
     yes: Object.values(v.lastVote.votes).filter(Boolean).length,
     no: Object.values(v.lastVote.votes).filter((x) => !x).length,
@@ -235,7 +235,7 @@ function voteResult() {
 
   return h('div', { class: 'stack tight vote-result' },
     h('p', { class: 'muted', text: T('vote.result', {
-      n: tally.attempt,
+      n: tally.round + 1,
       yes: tally.yes,
       no: tally.no,
       outcome: T(tally.approved ? 'vote.approved' : 'vote.rejected'),

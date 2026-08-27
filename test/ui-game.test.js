@@ -229,6 +229,25 @@ test('the vote screen offers approve and reject, then reports the tally', () => 
   assert.equal(token('张三').getAttribute('aria-label'), 'Reject');
 });
 
+test('the vote result shows the quest round instead of resetting to vote one', () => {
+  const game = newGame();
+  const finishQuest = () => {
+    const team = game.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
+    g.proposeTeam(game, game.players[game.leaderIndex].id, team);
+    for (const p of game.players) g.castVote(game, p.id, true);
+    for (const id of team) g.playCard(game, id, true);
+  };
+
+  finishQuest();
+  finishQuest();
+  g.proposeTeam(game, game.players[game.leaderIndex].id, ['p0', 'p1']);
+  for (const p of game.players) g.castVote(game, p.id, true);
+
+  const result = show(game, 'p2', 'zh').byClass('vote-result')[0];
+  assert.match(result.text, /第 3 次表决/);
+  assert.doesNotMatch(result.text, /第 1 次表决/);
+});
+
 test('only evil players are offered a fail card', () => {
   const game = newGame();
   const evil = evilId(game);
