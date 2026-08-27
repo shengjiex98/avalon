@@ -46,15 +46,13 @@ the printed game is what a new table plays — and the ones in force are listed
 in the roles panel during the game.
 
 - **Random leader** shuffles the seating and drops the first leader token
-  anywhere in it. Off, the table plays in the order it joined and the host
-  leads first. Roles are dealt from a shuffled deck either way, so seating
-  never says anything about who is who.
+  anywhere in it. Roles are dealt from a shuffled deck, so seating never says
+  anything about who is who.
 - **Hidden votes** publish the tally only — how many approved and how many
   rejected. The ballots never leave the server, at the end of the game either.
   Who has yet to vote is still shown, so the table knows who it is waiting on.
 - **Reset rejection count** clears the rejection count whenever a team is
-  approved. Off, rejections accumulate across quests; either way, the fifth
-  rejection in the current count gives evil the win.
+  approved. The fifth rejection in the current count still gives evil the win.
 
 Hidden information is filtered on the server. Merlin does not see Mordred;
 Percival cannot distinguish Merlin from Morgana; Oberon and the other evil

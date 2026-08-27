@@ -3,6 +3,9 @@
 # Deployments normally arrive from CI the moment a commit lands. This is the
 # safety net for the times CI cannot reach the host at all -- a reboot, a
 # dropped tailnet -- which would otherwise leave the server stale indefinitely.
+#
+# The bootstrap resolves main, downloads that commit's verified artifact, and
+# runs the controller shipped inside it.
 
 [Unit]
 Description=Update the Avalon server from origin/main
@@ -12,7 +15,7 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 EnvironmentFile=-%h/.config/avalon.env
-ExecStart=%h/.local/libexec/avalon-deploy/current/controller.sh deploy-main
+ExecStart=%h/.local/libexec/avalon-deploy/bootstrap.sh deploy-main
 
 # Exit 75 means a game was in progress. That is a healthy outcome, not a
 # failure: the next hourly run tries again.

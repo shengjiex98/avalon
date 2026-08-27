@@ -58,11 +58,24 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the deploy workflow tests an exact server artifact and publishes the browser client', async () => {
+test('the deploy workflow gates an exact server artifact through the host code path', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
-  assert.match(workflow, /npm test/);
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
-  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C tested-release/);
+
+  // The gate is the release's own controller preparing the artifact, staged
+  // outside the checkout and under the bootstrap's environment allowlist, so
+  // CI can only diverge from the host through a controller change -- which
+  // ships through this very gate.
+  assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
+  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C "\$tree"/);
+  assert.match(workflow, /env -i HOME="\$HOME" PATH="\$PATH"/);
+  assert.match(workflow, /"\$tree\/deploy\/controller\.sh" prepare "\$GITHUB_SHA"/);
+
+  // The host carries a real NTFY_TOPIC, so CI carries a canary wired to a
+  // local sink: a test run that publishes fails here, not on a phone.
+  assert.match(workflow, /NTFY_TOPIC=ci-canary NTFY_SERVER=http:\/\/127\.0\.0\.1:8642/);
+  assert.match(workflow, /\[ -s "\$sink" \]/);
+
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
   assert.match(workflow, /gh release upload "\$release_tag"/);
@@ -117,26 +130,14 @@ test('the deployment listener cannot be talked into running anything', async () 
   assert.doesNotMatch(listener, /shell:\s*true|execSync|import \{[^}]*\bexec\b/,
     'no shell may see a message');
 
+  // A trigger is a request, never an authority: the bootstrap deploys the
+  // named commit only while GitHub still calls it main.
+  const bootstrap = await read('../deploy/bootstrap.sh');
+  assert.match(bootstrap, /\[ "\$requested" != "\$sha" \]/);
+  assert.match(bootstrap, /ignored deployment trigger/);
+
   const controller = await read('../deploy/controller.sh');
-  assert.match(controller, /\[ "\$target" != "\$current_main" \]/);
   assert.doesNotMatch(controller, /source_repo|git -C/);
-});
-
-test('a current tree with stale code running still gets restarted', async () => {
-  const update = await read('../deploy/update.sh');
-
-  // Comparing only the tree calls a stale process "already current" and never
-  // restarts it -- the tree can move without this script (a manual pull, or a
-  // checkout whose restart failed).
-  const lib = await read('../deploy/lib.sh');
-  assert.match(update, /running=\$\(avalon_health \| sed -n '1p'\)/);
-  assert.match(lib, /api\/health/);
-  assert.match(lib, /h\.commit \?\? ""/);
-  assert.match(update, /\[ -z "\$running" \] && exit 0/, 'an unknown commit must not force a restart');
-
-  // A reset when the tree is already right buys nothing and destroys anything
-  // uncommitted sitting in it.
-  assert.match(update, /\[ "\$previous" = "\$target" \] \|\| git reset --hard --quiet "\$target"/);
 });
 
 /**
@@ -214,31 +215,29 @@ test('AVALON_FORCE skips the question entirely', async () => {
 });
 
 test('the gate is asked before anything is replaced', async () => {
-  const update = await read('../deploy/update.sh');
+  const controller = await read('../deploy/controller.sh');
   const gate = await read('../deploy/gate.sh');
 
-  // The checkout itself changes what open browsers are served, so both the
-  // host check and the gate have to run before it, not merely before the
-  // restart. A node version this host cannot run is not worth moving for.
-  const node = update.indexOf('case "$(node -v)"');
-  const asked = update.indexOf('"$here/gate.sh"');
-  const reset = update.indexOf('git reset --hard --quiet "$target"');
-  assert.ok(node !== -1 && asked !== -1 && reset !== -1);
-  assert.ok(node < asked && asked < reset,
-    'check the runtime, then the gate, then move the working tree');
+  // A candidate is prepared and tested without touching the running release,
+  // and the gate answers before anything the players can see moves. A host
+  // that is not on the release's Node major is not worth moving for either.
+  const node = controller.indexOf('case "$("$node_bin" -v)"');
+  const asked = controller.indexOf('"$controller_dir/gate.sh"');
+  const stopped = controller.indexOf('"$systemctl_bin" --user stop avalon');
+  const selected = controller.indexOf('select_release "$target"');
+  assert.ok(node !== -1 && asked !== -1 && stopped !== -1 && selected !== -1);
+  assert.ok(node < asked && asked < stopped && stopped < selected,
+    'check the runtime, then the gate, then replace the process');
 
   // The gate cannot answer without knowing what is being deployed, and it must
   // learn it as a version rather than a commit: nothing in it knows about git.
-  assert.match(update, /target_state_version=\$\(git show "\$target:src\/state-version\.js"/);
-  assert.match(update, /TARGET_STATE_VERSION="\$target_state_version" "\$here\/gate\.sh"/);
-  assert.doesNotMatch(update, /export TARGET_STATE_VERSION/,
+  assert.match(controller, /target_state_version=\$\(manifest_state_version "\$target_release"\)/);
+  assert.match(controller, /TARGET_STATE_VERSION="\$target_state_version" "\$controller_dir\/gate\.sh"/);
+  assert.doesNotMatch(controller, /export TARGET_STATE_VERSION/,
     'the gate input must not leak into the test environment');
-  assert.match(update, /env -u TARGET_STATE_VERSION -u AVALON_FORCE[\s\\]+node --test/,
-    'deployment controls inherited from the host must not affect tests');
-  assert.doesNotMatch(update, /node --test[^\n]*>\/dev\/null/,
+  assert.doesNotMatch(controller, /node --test[^\n]*>\/dev\/null/,
     'a failed deployment must leave its test diagnostics in the journal');
   assert.doesNotMatch(gate, /\bgit\b/, 'the gate stays usable for an image deployment');
-  assert.match(update, /systemctl --user restart avalon/);
 
   const unit = await read('../deploy/avalon.service');
   assert.match(unit, /StateDirectory=avalon/);

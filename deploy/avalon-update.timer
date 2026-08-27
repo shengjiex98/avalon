@@ -1,4 +1,5 @@
-# The controller installer owns this timer outside the source checkout.
+# This timer ships in the release; the controller keeps the installed copy
+# in step and deploy/install-bootstrap.sh installs it the first time.
 
 [Unit]
 Description=Poll GitHub main for Avalon deployments

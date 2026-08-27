@@ -28,14 +28,53 @@ jobs:
           node-version: '24'
       - name: Package the immutable release
         run: scripts/package-release.sh "$GITHUB_SHA" dist
-      - name: Test the exact release bytes
+      # The host never sees a checkout: the bootstrap extracts the artifact into
+      # a bare temp tree and that tree's own controller downloads, verifies,
+      # tests, and seals the release. Run the same code path here -- staged
+      # under $RUNNER_TEMP so no repository sits above it, under the bootstrap's
+      # environment allowlist -- so this gate can only diverge from the host's
+      # through a controller change, which ships through this very gate.
+      - name: Prepare the release exactly as the host will
         run: |
           set -eu
           archive="avalon-$GITHUB_SHA.tar.gz"
           (cd dist && sha256sum -c "$archive.sha256")
-          mkdir tested-release
-          tar -xzf "dist/$archive" --strip-components=1 -C tested-release
-          (cd tested-release && npm test)
+          tree="$RUNNER_TEMP/release-tree"
+          mkdir "$tree"
+          tar -xzf "dist/$archive" --strip-components=1 -C "$tree"
+
+          # The host carries a real NTFY_TOPIC, so CI carries a canary wired to
+          # a local sink: a release whose test run announces anything on the
+          # deployment topic must fail here, not on the maintainer's phone.
+          sink="$RUNNER_TEMP/ntfy-hits"
+          node -e '
+            require("http").createServer((req, res) => {
+              require("fs").appendFileSync(process.argv[1], `${req.method} ${req.url}\n`);
+              res.end();
+            }).listen(8642, "127.0.0.1");
+          ' "$sink" &
+          sink_pid=$!
+          trap 'kill "$sink_pid" 2>/dev/null || true' EXIT
+          tries=0
+          until curl -fsS -o /dev/null http://127.0.0.1:8642/ready; do
+            tries=$((tries + 1))
+            [ "$tries" -lt 50 ] || { echo '::error::the canary sink never came up'; exit 1; }
+            sleep 0.2
+          done
+          : > "$sink"
+
+          env -i HOME="$HOME" PATH="$PATH" \
+            NTFY_TOPIC=ci-canary NTFY_SERVER=http://127.0.0.1:8642 \
+            AVALON_NODE="$(command -v node)" \
+            AVALON_RELEASE_ROOT="$RUNNER_TEMP/avalon" \
+            AVALON_ARTIFACT_BASE="file://$PWD/dist" \
+            "$tree/deploy/controller.sh" prepare "$GITHUB_SHA"
+
+          if [ -s "$sink" ]; then
+            echo "::error::the release's test run reached the deployment topic:"
+            cat "$sink"
+            exit 1
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: avalon-${{ github.sha }}

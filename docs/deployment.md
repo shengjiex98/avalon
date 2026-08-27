@@ -64,14 +64,28 @@ Use HTTPS when players connect remotely. Common options are:
 
 ## systemd user service
 
-Install the versioned controller and its service units outside the checkout:
+Install the deployment bootstrap and the service units outside the checkout:
 
 ```bash
-~/avalon/deploy/install-controller.sh
+~/avalon/deploy/install-bootstrap.sh
 systemctl --user daemon-reload
 systemctl --user enable --now avalon
 loginctl enable-linger "$USER"
 ```
+
+On a host with no release yet, let a deployment create one before enabling the
+services that run from it:
+
+```bash
+~/avalon/deploy/install-bootstrap.sh
+systemctl --user daemon-reload
+systemctl --user enable --now avalon-update.timer
+systemctl --user start avalon-update.service     # creates the first release
+systemctl --user enable --now avalon avalon-listen
+```
+
+The listener's working directory is the selected release, so it needs
+`~/.local/lib/avalon/current` to exist first.
 
 Put host-specific values in `~/.config/avalon.env`, outside the repository:
 
@@ -112,36 +126,70 @@ The server reads the commit from that manifest when it is not running from a
 Git checkout, so `/api/health.commit` keeps the same deployment-proof contract
 for a release directory, tarball, or image.
 
-`deploy/install-controller.sh` installs a separately versioned control plane at
-`~/.local/libexec/avalon-deploy/current` and atomically points the Avalon,
-listener, update, and timer units at that external bundle. Its `prepare <sha>` operation
-downloads `avalon-<sha>.tar.gz` and its checksum from the
-`deployment-artifacts` GitHub release, verifies both checksum and manifest with
-controller-owned code, reruns the host test suite from the extracted tree, and
-makes `~/.local/lib/avalon/releases/<sha>` read-only. Application files never
-come from the source checkout.
+### Two layers, split by what changes
+
+The control plane is split by mutability rather than by subject. One static
+script is installed on the host; everything else rides in the release it
+deploys.
+
+`deploy/bootstrap.sh` is the static layer, installed once at
+`~/.local/libexec/avalon-deploy/bootstrap.sh` by `deploy/install-bootstrap.sh`
+and expected never to change. Both update units call it. It takes an exclusive
+lock so a trigger and the hourly timer cannot deploy at once, resolves `main`
+through GitHub's HTTPS API, downloads that commit's `avalon-<sha>.tar.gz` and
+checksum, verifies the checksum, extracts the archive to a temporary directory,
+and runs the controller it finds there. Nothing downloaded runs before its
+checksum verifies. The controller is invoked through an explicit environment
+allowlist, so host values such as `TARGET_STATE_VERSION` and `AVALON_FORCE`
+cannot answer the safety gate on the deployment's behalf.
+
+`deploy/controller.sh`, `gate.sh`, `lib.sh`, `listen.mjs`, `verify-release.mjs`,
+`wait-for-health.mjs`, and the five unit files are the versioned layer. They
+ship inside the artifact, because `scripts/package-release.sh` archives every
+tracked file. A change to deployment logic therefore goes through the same CI,
+the same test run, and the same health-gated rollout as a change to the game:
+no version file, no install step on the host, nothing that can drift from the
+repository.
+
+The candidate commit's own controller performs its deployment, rollback
+included. CI runs the deploy tests from the exact artifact before publishing
+it, and a controller that is broken anyway strands *deployments*, never the
+running server -- the next fix commit heals it through the same bootstrap.
+
+`controller.sh prepare <sha>` downloads the archive and checksum again into
+`~/.local/lib/avalon/releases/.staging-*`, verifies checksum and manifest,
+reruns the host test suite from the extracted tree, and makes
+`~/.local/lib/avalon/releases/<sha>` read-only. The second download keeps that
+directory holding only bytes this host verified, tested, and sealed itself.
+Application files never come from the source checkout.
 
 `avalon.service` runs the release selected by the atomic
-`~/.local/lib/avalon/current` symlink. `avalon-update.service` invokes the
-external controller, which prepares and tests the candidate before asking the
-same state-version gate used by the checkout updater. Once allowed, it stops
-the old process so its final room snapshot is complete, backs that snapshot up,
-switches `current`, starts Avalon, and requires the target commit from
-`/api/health`. Failed health verification restores the previous release pointer
-and snapshot and proves the rollback commit is serving.
+`~/.local/lib/avalon/current` symlink. `controller.sh deploy <sha>` prepares and
+tests the candidate, asks the state-version gate, and once allowed copies the
+target release's unit files into `~/.config/systemd/user`, reloads systemd,
+stops the old process so its final room snapshot is complete, backs that
+snapshot up, switches `current`, starts Avalon, and requires the target commit
+from `/api/health`. Failed health verification restores the previous release's
+pointer, snapshot, and unit files, and proves the rollback commit is serving.
+A successful deployment also restarts `avalon-listen`, so the listener runs the
+release it just installed.
 
-The controller resolves `main` through GitHub's HTTPS API and downloads the
-corresponding published artifact. Neither deployments nor hourly reconciliation
-read, move, execute, test, or serve files from a source checkout.
+The one file a release cannot replace is the bootstrap that is executing it. The
+controller compares the installed copy with the one in the release and warns --
+in the journal and on the ntfy topic -- when they differ; installing the new one
+is a human running `deploy/install-bootstrap.sh` from a clone.
 
 `.github/workflows/deploy.yml` runs on every push to `main` as four ordered
 jobs: `test`, `publish-artifact`, `deploy-server`, then `deploy-pages`. The test
-job packages first and runs the full suite from the extracted tarball; the next
-job promotes those exact bytes to durable release assets before the host is
-notified. A client newer than its server fails the protocol check and closes
-the lobby, so the server takes each commit first and the client is published
-only if it did. The workflow and production host both use Node 24, so the test
-gate exercises the runtime family the server will actually execute.
+job packages first, then hands the artifact to its own `controller.sh prepare`
+-- the exact code path the host runs -- staged outside any checkout, under the
+bootstrap's environment allowlist, with a canary ntfy topic that fails the run
+if the suite reaches it. The next job promotes those exact bytes to durable
+release assets before the host is notified. A client newer than its server
+fails the protocol check and closes the lobby, so the server takes each commit
+first and the client is published only if it did. The workflow and production
+host both use Node 24, so the test gate exercises the runtime family the server
+will actually execute.
 
 CI never connects to this host. The two sides meet on an ntfy topic:
 
@@ -158,13 +206,14 @@ publish a client against a server that never updated. The worst a stranger who
 learns the topic can do is make the controller compare a supplied SHA with
 GitHub's current `main`.
 
-`deploy/listen.mjs` holds the subscription, started by `avalon-listen.service`.
-It never interprets a message: a body must match `deploy <40 hex>` exactly, and
-the only thing a match does is start `avalon-update@<sha>.service`. The
-controller independently requires that SHA to equal GitHub's current `main`;
-an old or forged trigger is ignored. Reconnection is `Restart=always`.
+`deploy/listen.mjs` holds the subscription, started by `avalon-listen.service`
+from the selected release. It never interprets a message: a body must match
+`deploy <40 hex>` exactly, and the only thing a match does is start
+`avalon-update@<sha>.service`. The bootstrap independently requires that SHA to
+equal GitHub's current `main`; an old or forged trigger is ignored.
+Reconnection is `Restart=always`.
 
-The external release controller publishes what happened, each message carrying
+The release controller publishes what happened, each message carrying
 the target commit so concurrent runs cannot read each other's results:
 
 | Message | Meaning | What CI does |
@@ -200,8 +249,6 @@ tests a read-only candidate without changing the running release. It reads
 gate, then performs the stop, snapshot backup, atomic pointer switch, start,
 and health proof described above. A candidate never becomes visible before it
 passes host tests, and a failed start restores the previous code and snapshot.
-`deploy/update.sh` remains only as the one-time bootstrap path for hosts that
-have not installed the external controller yet.
 
 ### Repository configuration
 
@@ -214,7 +261,7 @@ This host needs the same `NTFY_TOPIC` (and optionally `NTFY_SERVER`) in
 `~/.config/avalon.env`, next to `PORT`:
 
 ```bash
-~/avalon/deploy/install-controller.sh
+~/avalon/deploy/install-bootstrap.sh
 systemctl --user daemon-reload
 systemctl --user enable --now avalon-listen
 ```
@@ -225,34 +272,25 @@ from the internet for CI to confirm a deployment. That is already true here via
 
 ### Developing on the server host
 
-No running service or deployment controller reads `~/avalon`. It may be
-removed; while retained as the host's recovery and administration clone, keep
-ordinary development isolated from it.
+Nothing on the host reads `~/avalon`. The application runs from an immutable
+release under `~/.local/lib/avalon`, and the only installed piece of the
+control plane is `~/.local/libexec/avalon-deploy/bootstrap.sh`, which a human
+puts there from a clone. So `~/avalon` is an ordinary development clone with no
+special status: work in it directly, or give a branch its own directory with
+`git worktree add ~/avalon-dev -b some-feature`, whichever suits the change.
 
-Give development its own directory instead:
-
-```bash
-git worktree add ~/avalon-dev -b some-feature
-```
-
-One clone, one object store, shared history, and a working tree isolated from
-the recovery checkout. Git also refuses to check out a branch that is already
-active in another worktree, preventing accidental coupling between a feature
-branch and repository administration.
-
-Keep `~/avalon` as the primary recovery worktree and create the development one
-alongside. A second full clone works too, with
-stronger isolation and a second remote to keep in step; at this size the
-worktree is less to think about.
+Its one remaining job is being somewhere to run `deploy/install-bootstrap.sh`
+from when the bootstrap itself changes, and a deployment says so in the journal
+and on the topic when the installed copy has drifted.
 
 ### Hourly fallback
 
 A host that was rebooting or offline when the trigger was published never sees
 it, and would otherwise stay stale indefinitely. The `avalon-update.timer` unit
-runs the same external controller hourly to close that gap:
+runs the same bootstrap hourly to close that gap:
 
 ```bash
-~/avalon/deploy/install-controller.sh
+~/avalon/deploy/install-bootstrap.sh
 systemctl --user daemon-reload
 systemctl --user enable --now avalon-update.timer
 ```

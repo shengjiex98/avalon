@@ -1,5 +1,10 @@
-# The controller installer owns this unit outside the source checkout.
+# This unit ships in the release it belongs to: the controller copies it into
+# ~/.config/systemd/user during each switch, and restores the previous one on a
+# rollback. deploy/install-bootstrap.sh installs it the first time.
 #   systemctl --user enable --now avalon-listen
+#
+# The listener runs the selected release's copy of listen.mjs and is restarted
+# after each successful deployment, so it upgrades with the server.
 #
 # NTFY_TOPIC (and optionally NTFY_SERVER) come from ~/.config/avalon.env,
 # which is deliberately outside the repo.
@@ -11,9 +16,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/libexec/avalon-deploy/current
+WorkingDirectory=%h/.local/lib/avalon/current
 EnvironmentFile=%h/.config/avalon.env
-ExecStart=%h/.local/bin/node %h/.local/libexec/avalon-deploy/current/listen.mjs
+ExecStart=%h/.local/bin/node %h/.local/lib/avalon/current/deploy/listen.mjs
 
 # The subscription is a long-lived HTTP stream; it ends whenever the network
 # hiccups, which is normal rather than a fault. Reconnecting is the whole job.

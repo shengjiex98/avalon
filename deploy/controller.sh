@@ -1,5 +1,13 @@
 #!/bin/sh
-# Stable host-side controller for immutable Avalon application releases.
+# Host-side controller for immutable Avalon application releases.
+#
+# This runs from the candidate release itself: deploy/bootstrap.sh downloads a
+# verified artifact and executes *that commit's* copy of this script. So a
+# change here ships like any other change -- through CI, the host test run, and
+# the health gate below -- and nothing has to be installed on the host.
+#
+# Target selection lives in the bootstrap, not here. By the time this runs, the
+# commit has already been decided.
 set -eu
 umask 077
 
@@ -9,13 +17,15 @@ controller_dir=$(cd -- "$(dirname "$0")" >/dev/null && pwd)
 release_root=${AVALON_RELEASE_ROOT:-"$HOME/.local/lib/avalon"}
 releases="$release_root/releases"
 artifact_base=${AVALON_ARTIFACT_BASE:-"https://github.com/shengjiex98/avalon/releases/download/deployment-artifacts"}
-main_url=${AVALON_MAIN_URL:-"https://api.github.com/repos/shengjiex98/avalon/commits/main"}
 node_bin=${AVALON_NODE:-"$HOME/.local/bin/node"}
 systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
+unit_dir=${AVALON_SYSTEMD_USER_DIR:-"$HOME/.config/systemd/user"}
+controller_root=${AVALON_CONTROLLER_ROOT:-"$HOME/.local/libexec/avalon-deploy"}
+units='avalon.service avalon-listen.service avalon-update.service avalon-update@.service avalon-update.timer'
 export AVALON_NODE="$node_bin"
 
 usage() {
-  echo 'Usage: controller.sh prepare <commit> | deploy <commit> [rollback-commit] | deploy-main | deploy-trigger <commit>' >&2
+  echo 'Usage: controller.sh prepare <commit> | deploy <commit> [rollback-commit]' >&2
   exit 64
 }
 
@@ -74,9 +84,14 @@ prepare() (
   tar -xzf "$download/$archive" --strip-components=1 -C "$stage" || return 1
   "$node_bin" "$controller_dir/verify-release.mjs" "$stage" "$target" >/dev/null || return 1
 
+  # The suite drills deployment and rollback against stub hosts, and those
+  # drills run the real publish(). NTFY_TOPIC goes with the gate inputs: a
+  # release under test must not be able to announce fixture commits on the
+  # topic CI is watching.
   (
     cd "$stage"
     env -u TARGET_STATE_VERSION -u AVALON_FORCE -u NODE_TEST_CONTEXT \
+      -u NTFY_TOPIC -u NTFY_SERVER \
       "$node_bin" --test "test/**/*.test.js"
   ) || return 1
 
@@ -137,6 +152,32 @@ restore_snapshot() {
   fi
 }
 
+# The units are part of the release, not of the host: whichever release is
+# selected owns the unit files, and a rollback puts the previous ones back. Copy
+# rather than symlink, so nothing systemd reads points into a release directory
+# that a later deployment may remove.
+install_units() {
+  mkdir -p "$unit_dir"
+  for unit in $units; do
+    [ -f "$1/deploy/$unit" ] || continue
+    staged="$unit_dir/.$unit.tmp-$$"
+    cp "$1/deploy/$unit" "$staged"
+    chmod 644 "$staged"
+    mv -f "$staged" "$unit_dir/$unit"
+  done
+}
+
+# The bootstrap is the one file a release cannot update: systemd is already
+# running it when this deployment starts. Say so and let a human install it;
+# overwriting a script mid-execution is exactly what the split avoids.
+warn_bootstrap_drift() {
+  installed="$controller_root/bootstrap.sh"
+  [ -f "$installed" ] && [ -f "$1/deploy/bootstrap.sh" ] || return 0
+  cmp -s "$installed" "$1/deploy/bootstrap.sh" && return 0
+  echo "warning: $installed differs from the bootstrap in $2; run deploy/install-bootstrap.sh from a clone" >&2
+  publish "bootstrap drift $2"
+}
+
 wait_for_commit() {
   "$node_bin" "$controller_dir/wait-for-health.mjs" \
     "$PORT" "$1" "${AVALON_HEALTH_TIMEOUT_SECONDS:-30}"
@@ -191,12 +232,18 @@ deploy_target() {
   fi
   [ "$gate" -eq 0 ] || return "$gate"
 
+  install_units "$target_release"
   "$systemctl_bin" --user daemon-reload
   "$systemctl_bin" --user stop avalon
   backup_snapshot "$target"
   select_release "$target"
 
   if "$systemctl_bin" --user start avalon && wait_for_commit "$target"; then
+    # The listener runs the selected release's listen.mjs, so it is one release
+    # behind until it is restarted. Its own unit is separate from the update
+    # unit this runs in, so restarting it cannot interrupt this deployment.
+    "$systemctl_bin" --user try-restart avalon-listen || true
+    warn_bootstrap_drift "$target_release" "$target"
     publish "deployed $target"
     echo "deployed $target"
     return 0
@@ -205,6 +252,8 @@ deploy_target() {
   echo "release $target failed health; rolling back to ${rollback:-unknown}" >&2
   "$systemctl_bin" --user stop avalon || true
   if valid_target "$rollback" && [ -d "$releases/$rollback" ]; then
+    install_units "$releases/$rollback"
+    "$systemctl_bin" --user daemon-reload
     select_release "$rollback"
     restore_snapshot "$target"
     "$systemctl_bin" --user start avalon
@@ -218,26 +267,8 @@ deploy_target() {
   return 1
 }
 
-deploy_main() {
-  target=$("$node_bin" "$controller_dir/resolve-main.mjs" "$main_url") || return 1
-  deploy_target "$target"
-}
-
-deploy_trigger() {
-  target=${1:-}
-  valid_target "$target" || usage
-  current_main=$("$node_bin" "$controller_dir/resolve-main.mjs" "$main_url") || return 1
-  if [ "$target" != "$current_main" ]; then
-    echo "ignored deployment trigger for $target; main is $current_main" >&2
-    return 0
-  fi
-  deploy_target "$target"
-}
-
 case "${1:-}" in
   prepare) shift; [ "$#" -eq 1 ] || usage; prepare "$1" ;;
   deploy) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; deploy_target "$@" ;;
-  deploy-main) shift; [ "$#" -eq 0 ] || usage; deploy_main ;;
-  deploy-trigger) shift; [ "$#" -eq 1 ] || usage; deploy_trigger "$1" ;;
   *) usage ;;
 esac
