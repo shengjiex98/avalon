@@ -111,9 +111,18 @@ contains only tracked files and a generated `release.json` with the commit,
 
 The server reads the commit from that manifest when it is not running from a
 Git checkout, so `/api/health.commit` keeps the same deployment-proof contract
-for a release directory, tarball, or image. The checkout updater remains the
-active deployment mechanism for now; later migration steps will consume this
-artifact without changing its format.
+for a release directory, tarball, or image.
+
+`deploy/install-controller.sh` installs a separately versioned control plane at
+`~/.local/libexec/avalon-deploy/current`. Its `prepare <sha>` operation exports
+that exact commit into `~/.local/lib/avalon/releases/<sha>`, validates the
+manifest with controller-owned code, runs the host test suite from the staged
+tree, and makes the result read-only. The source checkout is never moved.
+
+At this migration stage the checkout updater remains active and the running
+service still uses `~/avalon`. Preparing a release is deliberately not enough
+to select or start it; the atomic service switch and rollback arrive in the
+next independently deployable step.
 
 `.github/workflows/deploy.yml` runs on every push to `main` as three ordered
 jobs: `test`, then `deploy-server`, then `deploy-pages`. The order is the point.
