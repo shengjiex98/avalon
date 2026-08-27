@@ -16,7 +16,7 @@ import { STATE_VERSION } from './state-version.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
-export const API_PROTOCOL = 1;
+export const API_PROTOCOL = 2;
 
 /**
  * The commit this process is serving, read from the checkout rather than from

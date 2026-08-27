@@ -17,7 +17,7 @@ export const SETUPS = {
 
 export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 10;
-export const MAX_REJECTS = 5; // fifth consecutive rejection hands the game to evil
+export const MAX_REJECTS = 5; // fifth rejection hands the game to evil
 
 /** Roles. `optional` roles are chosen in the lobby; the rest fill the remaining seats. */
 export const ROLES = {
@@ -71,12 +71,12 @@ export function defaultOptions(playerCount) {
  * but never who voted which way, which is the read most of the game's talking
  * is built on.
  *
- * `questHang` softens the hammer. By the book a fifth rejection hands evil the
- * whole game; under this rule it washes the quest out as a failure instead and
- * play moves on to the next one. Evil still wins on three failures, so the
- * hammer costs good a mission rather than the match.
+ * `resetRejects` clears the rejection count whenever a team is approved. With
+ * it off, rejected proposals accumulate across the whole game and the fifth
+ * hands evil the match. With it on, evil needs five rejections without an
+ * approved team in between.
  */
-export const HOUSE_RULES = { randomLeader: false, hiddenVotes: false, questHang: false };
+export const HOUSE_RULES = { randomLeader: false, hiddenVotes: false, resetRejects: false };
 export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
 /** How a table plays before anybody touches the switches. */

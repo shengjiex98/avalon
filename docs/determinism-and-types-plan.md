@@ -17,7 +17,7 @@ of Part B remain for later.
 
 **Relationship to room persistence:** the plans are independent, but Part A
 steps A1–A2 add fields to game state. Those fields are included in the initial
-`STATE_VERSION = 1` snapshot shape, so each snapshot carries its own seed and
+`STATE_VERSION = 2` snapshot shape, so each snapshot carries its own seed and
 input record.
 
 Work in a worktree, not the deployment checkout (see [AGENTS.md](../AGENTS.md)).

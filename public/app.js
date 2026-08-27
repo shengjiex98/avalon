@@ -8,7 +8,7 @@ const VERSION_URL = new URL('./version.json', import.meta.url);
 const VERSION_CHECK_MS = 60_000;
 const RETRY_STEPS = 6;              // 0.5s, 1s, 2s … 16s, then 16s for as long as it takes
 const PROBE_RETRY_MS = 15_000;
-const API_PROTOCOL = 1;
+const API_PROTOCOL = 2;
 const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 
 // ---------------------------------------------------------------- state

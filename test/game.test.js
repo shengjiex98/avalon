@@ -97,7 +97,7 @@ test('pending Avalon votes reveal participation but not choices', () => {
   assert.ok(!JSON.stringify(view).includes('"p1":false'));
 });
 
-test('five rejections in a row hand the game to evil', () => {
+test('five rejections hand the game to evil', () => {
   const game = setup(5);
   for (let i = 0; i < 5; i++) {
     g.proposeTeam(game, leaderId(game), ['p0', 'p1']);
@@ -108,8 +108,18 @@ test('five rejections in a row hand the game to evil', () => {
   assert.equal(game.winReason, 'win.hammer');
 });
 
-test('an approved vote resets the rejection counter', () => {
+test('an approved vote does not reset the rejection counter by default', () => {
   const game = setup(5);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  for (const p of game.players) g.castVote(game, p.id, false);
+  assert.equal(game.rejects, 1);
+  approveTeam(game, ['p0', 'p1']);
+  assert.equal(game.rejects, 1);
+  assert.equal(game.phase, 'quest');
+});
+
+test('the house rule resets the rejection counter on an approved vote', () => {
+  const game = setup(5, { houseRules: { resetRejects: true } });
   g.proposeTeam(game, 'p0', ['p0', 'p1']);
   for (const p of game.players) g.castVote(game, p.id, false);
   assert.equal(game.rejects, 1);
@@ -300,7 +310,7 @@ test('leaving is a lobby-only move and hands the host role on', () => {
 
 // ---------------------------------------------------------------- the lobby's own choices
 
-test('the lobby follows the table size until the host touches a switch', () => {
+test('every player-count change reapplies the default optional roles', () => {
   const game = g.createGame('TEST');
   for (let i = 0; i < 7; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
   let view = g.viewFor(game, 'p0');
@@ -308,17 +318,36 @@ test('the lobby follows the table size until the host touches a switch', () => {
   assert.deepEqual(view.deck,
     { merlin: 1, percival: 1, servant: 2, morgana: 1, assassin: 1, oberon: 1 });
 
-  // A player joining moves the deck with the table, since nobody has chosen.
+  // A player joining moves the deck with the table.
   g.addPlayer(game, { id: 'p7', name: 'P7' });
   assert.deepEqual(g.viewFor(game, 'p0').options,
     { percival: true, morgana: true, mordred: false, oberon: false });
 
-  // One switch thrown pins the rest of that deck rather than the empty one.
-  g.setOptions(game, 'p0', { mordred: true });
+  // Manual choices last while the count is stable.
+  g.setOptions(game, 'p0', { oberon: true });
   view = g.viewFor(game, 'p0');
-  assert.deepEqual(view.options, { percival: true, morgana: true, mordred: true, oberon: false });
+  assert.deepEqual(view.options, { percival: true, morgana: true, mordred: false, oberon: true });
+
+  // A later join discards those choices and applies the nine-player defaults.
   g.addPlayer(game, { id: 'p8', name: 'P8' });
-  assert.deepEqual(g.viewFor(game, 'p0').options.mordred, true, 'a later joiner does not undo it');
+  assert.deepEqual(g.viewFor(game, 'p0').options,
+    { percival: true, morgana: true, mordred: true, oberon: false });
+
+  // A departure does the same in the other direction.
+  g.setOptions(game, 'p0', { percival: false, oberon: true });
+  g.removePlayer(game, 'p8');
+  assert.deepEqual(g.viewFor(game, 'p0').options,
+    { percival: true, morgana: true, mordred: false, oberon: false });
+});
+
+test('rejoining an existing seat does not reset manual role choices', () => {
+  const game = g.createGame('TEST');
+  for (let i = 0; i < 5; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
+  g.setOptions(game, 'p0', { percival: false, oberon: true });
+
+  g.addPlayer(game, { id: 'p2', name: 'Renamed' });
+  assert.deepEqual(g.viewFor(game, 'p0').options,
+    { percival: false, morgana: true, mordred: false, oberon: true });
 });
 
 test('a lobby whose roles do not fit shows no deck rather than an error', () => {
@@ -395,7 +424,7 @@ test('open votes still name who voted which way', () => {
   assert.deepEqual(view.voteTally, { round: 0, attempt: 1, approved: true, yes: 5, no: 0 });
 });
 
-/** Reject five proposals in a row, whoever happens to be leading. */
+/** Reject five proposals, whoever happens to be leading. */
 function hammer(game) {
   for (let i = 0; i < 5; i++) {
     const size = g.currentTeamSize(game);
@@ -405,7 +434,7 @@ function hammer(game) {
   }
 }
 
-test('five rejections hand evil the game by the book', () => {
+test('five rejections hand evil the game with the reset rule off', () => {
   const game = houseGame({});
   g.startGame(game, 'p0', { shuffle: (l) => l });
   for (const p of game.players) g.confirmRole(game, p.id);
@@ -414,37 +443,46 @@ test('five rejections hand evil the game by the book', () => {
   assert.equal(game.winReason, 'win.hammer');
 });
 
-test('the washout rule loses the quest instead of the game', () => {
-  const game = houseGame({ questHang: true });
+test('rejections accumulate across approved teams when the reset rule is off', () => {
+  const game = houseGame({});
   g.startGame(game, 'p0', { shuffle: (l) => l });
   for (const p of game.players) g.confirmRole(game, p.id);
 
-  hammer(game);
-  assert.equal(game.phase, 'team', 'play carries on');
-  assert.equal(game.round, 1, 'on the next quest');
-  assert.equal(game.rejects, 0, 'with a clear count');
-  assert.deepEqual(game.quests, [{ round: 0, team: [], fails: 0, success: false, hung: true }]);
-  assert.equal(g.viewFor(game, 'p0').quests[0].hung, true);
+  g.proposeTeam(game, 'p0', ['p0', 'p1']);
+  for (const p of game.players) g.castVote(game, p.id, false);
+  runQuest(game);
+  assert.equal(game.round, 1);
+  assert.equal(game.rejects, 1, 'an approved and completed quest does not clear the count');
 
-  hammer(game);
-  assert.equal(game.phase, 'team');
-  hammer(game);
-  assert.equal(game.phase, 'over', 'three failures are still three failures');
-  assert.equal(game.winReason, 'win.threeFails');
+  for (let i = 0; i < 4; i++) {
+    const team = game.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
+    g.proposeTeam(game, leaderId(game), team);
+    for (const p of game.players) g.castVote(game, p.id, false);
+  }
+  assert.equal(game.phase, 'over');
+  assert.equal(game.winReason, 'win.hammer');
 });
 
-test('a washout on the last quest can still hand good the assassin phase', () => {
-  const game = houseGame({ questHang: true });
+test('the reset rule clears on approval, but five later rejections still give evil the game', () => {
+  const game = houseGame({ resetRejects: true });
   g.startGame(game, 'p0', { shuffle: (l) => l });
   for (const p of game.players) g.confirmRole(game, p.id);
-  runQuest(game); runQuest(game);            // two successes
-  hammer(game);                              // quest 3 washes out
-  runQuest(game);                            // three successes
-  assert.equal(game.phase, 'assassin');
+
+  for (let i = 0; i < 4; i++) {
+    g.proposeTeam(game, leaderId(game), ['p0', 'p1']);
+    for (const p of game.players) g.castVote(game, p.id, false);
+  }
+  approveTeam(game, ['p0', 'p1']);
+  assert.equal(game.rejects, 0);
+  for (const id of game.team) g.playCard(game, id, true);
+
+  hammer(game);
+  assert.equal(game.phase, 'over');
+  assert.equal(game.winReason, 'win.hammer');
 });
 
 test('a game restored without house rules plays by the book', () => {
-  const game = houseGame({ questHang: true, hiddenVotes: true });
+  const game = houseGame({ resetRejects: true, hiddenVotes: true });
   g.startGame(game, 'p0', { shuffle: (l) => l });
   for (const p of game.players) g.confirmRole(game, p.id);
   delete game.houseRules;                    // a snapshot from before the rules existed

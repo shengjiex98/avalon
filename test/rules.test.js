@@ -112,6 +112,6 @@ test('the default deck for each table size is the standard setup', () => {
 });
 
 test('house rules all start off, and an unknown one is simply absent', () => {
-  assert.deepEqual(defaultHouseRules(), { randomLeader: false, hiddenVotes: false, questHang: false });
+  assert.deepEqual(defaultHouseRules(), { randomLeader: false, hiddenVotes: false, resetRejects: false });
   assert.deepEqual(noHouseRules(), defaultHouseRules());
 });

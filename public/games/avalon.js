@@ -24,7 +24,7 @@ export function paneKey() { return String(app.view.round); }
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const HOUSE_RULES = ['randomLeader', 'hiddenVotes', 'questHang'];
+const HOUSE_RULES = ['randomLeader', 'hiddenVotes', 'resetRejects'];
 const houseRuleName = (rule) => T(`avalon.house.${rule}`);
 
 /** The role toggles and house rules the host sets before starting. */
@@ -211,7 +211,7 @@ function paneBoard() {
       }))),
     ),
     v.rejects === v.maxRejects - 1
-      ? h('div', { class: 'banner evil', text: T(v.houseRules?.questHang ? 'board.rejectWarnHang' : 'board.rejectWarn') })
+      ? h('div', { class: 'banner evil', text: T('board.rejectWarn') })
       : null,
     voteResult(),
   );

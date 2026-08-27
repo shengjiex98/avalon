@@ -12,13 +12,13 @@ game starts.
 Avalon supports 5–10 players.
 
 - Merlin and the Assassin are always included.
-- Percival, Morgana, Mordred, and Oberon are optional. Until the host touches a
-  switch, the lobby picks the standard deck for the number of players who have
-  joined (see below) and follows the table as people come and go. A combination
-  that does not fit the player count shows no deck at all, and starting with it
-  is refused.
+- Percival, Morgana, Mordred, and Oberon are optional. The lobby picks the
+  standard deck for the number of players who have joined (see below). The host
+  may customize it, but every join or departure reapplies the defaults for the
+  new player count. A combination that does not fit the current count shows no
+  deck at all, and starting with it is refused.
 - The leader proposes a team and everyone votes on it.
-- Five rejected teams in a row give evil the win.
+- Five rejected teams over the course of the game give evil the win.
 - An approved team secretly plays Success or Fail cards. Good players cannot
   choose Fail.
 - Quest four requires two Fail cards with seven or more players.
@@ -52,9 +52,9 @@ in the roles panel during the game.
 - **Hidden votes** publish the tally only — how many approved and how many
   rejected. The ballots never leave the server, at the end of the game either.
   Who has yet to vote is still shown, so the table knows who it is waiting on.
-- **Quest washout** turns a fifth rejection into a failed quest rather than the
-  end of the game: play moves on to the next quest with the count cleared, and
-  evil still wins on three failures.
+- **Reset rejection count** clears the rejection count whenever a team is
+  approved. Off, rejections accumulate across quests; either way, the fifth
+  rejection in the current count gives evil the win.
 
 Hidden information is filtered on the server. Merlin does not see Mordred;
 Percival cannot distinguish Merlin from Morgana; Oberon and the other evil

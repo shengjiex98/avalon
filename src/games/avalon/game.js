@@ -15,7 +15,7 @@ export function createGame(code, { now = Date.now, seed } = {}) {
   return {
     ...lobby.baseState(code, 'avalon', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
-    optionsTouched: false,  // until the host picks, follow the table size
+    optionsTouched: false,  // manual choices last only until the table size changes
     houseRules: defaultHouseRules(),   // variants, as a new table plays them
     roles: {},              // playerId -> role key
     round: 0,               // 0-based quest index
@@ -37,8 +37,7 @@ const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'ev
 
 /**
  * The deck the lobby is currently describing. Once the cards are out, it is
- * whatever they were dealt from — including in a game restored from a snapshot
- * taken before the lobby followed the table size on its own.
+ * whatever they were dealt from.
  */
 const liveOptions = (g) =>
   (g.phase !== 'lobby' || g.optionsTouched ? g.options : defaultOptions(g.players.length));
@@ -53,8 +52,23 @@ const houseRulesOf = (g) => ({ ...noHouseRules(), ...g.houseRules });
 
 // ---------------------------------------------------------------- lobby
 
-export const addPlayer = (g, player) => lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
-export const removePlayer = lobby.removePlayer;
+function resetOptionsForPlayerCount(g) {
+  g.options = defaultOptions(g.players.length);
+  g.optionsTouched = false;
+}
+
+export function addPlayer(g, player) {
+  const count = g.players.length;
+  const joined = lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
+  if (g.players.length !== count) resetOptionsForPlayerCount(g);
+  return joined;
+}
+
+export function removePlayer(g, playerId) {
+  const count = g.players.length;
+  lobby.removePlayer(g, playerId);
+  if (g.players.length !== count) resetOptionsForPlayerCount(g);
+}
 
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
@@ -153,7 +167,9 @@ function resolveVote(g) {
   });
 
   if (approved) {
-    g.rejects = 0;
+    // With the switch off, rejections accumulate across quests until the fifth
+    // hands evil the game. An approved team clears them only when requested.
+    if (houseRulesOf(g).resetRejects) g.rejects = 0;
     g.cards = {};
     g.phase = 'quest';
     return;
@@ -161,10 +177,6 @@ function resolveVote(g) {
 
   g.rejects += 1;
   if (g.rejects >= MAX_REJECTS) {
-    // By the book the hammer ends the whole game. Under `questHang` it costs
-    // good the mission instead: the quest is washed out as a failure and the
-    // table moves on, so three of them still hand evil the win.
-    if (houseRulesOf(g).questHang) return hangQuest(g);
     finish(g, 'evil', 'win.hammer');
     return;
   }
@@ -172,13 +184,6 @@ function resolveVote(g) {
   g.team = [];
   g.phase = 'team';
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
-}
-
-/** A quest nobody was ever sent on: no team, no cards, counted as a failure. */
-function hangQuest(g) {
-  g.quests.push({ round: g.round, team: [], fails: 0, success: false, hung: true });
-  logEvent(g, 'log.questHung', { round: g.round + 1 });
-  afterQuest(g);
 }
 
 function nextLeader(g) {
@@ -206,7 +211,7 @@ function resolveQuest(g) {
   afterQuest(g);
 }
 
-/** Where a settled quest — played out or washed out — leaves the game. */
+/** Where a settled quest leaves the game. */
 function afterQuest(g) {
   const successes = g.quests.filter((q) => q.success).length;
   const failures = g.quests.length - successes;
@@ -220,7 +225,6 @@ function afterQuest(g) {
   }
 
   g.round += 1;
-  g.rejects = 0;
   g.team = [];
   g.cards = {};
   nextLeader(g);
@@ -330,7 +334,6 @@ export function viewFor(g, viewerId) {
     team: g.team.slice(),
     quests: g.quests.map((q) => ({
       round: q.round, success: q.success, fails: q.fails, team: q.team,
-      ...(q.hung ? { hung: true } : {}),
     })),
     // Under hidden votes the per-player ballot never leaves the server: the
     // table gets the tally, which is what decides the mission, and nothing
