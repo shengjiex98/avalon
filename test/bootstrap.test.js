@@ -75,6 +75,9 @@ async function fixture(sha, stub = {}) {
     main,
     env: {
       HOME: dir,
+      // The failure paths publish. Empty rather than absent: the host exports
+      // a real topic, and publish() must find nothing to publish to.
+      NTFY_TOPIC: '',
       AVALON_NODE: process.execPath,
       AVALON_RELEASE_ROOT: join(dir, 'lib'),
       AVALON_ARTIFACT_BASE: `file://${artifacts}`,

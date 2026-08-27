@@ -84,9 +84,14 @@ prepare() (
   tar -xzf "$download/$archive" --strip-components=1 -C "$stage" || return 1
   "$node_bin" "$controller_dir/verify-release.mjs" "$stage" "$target" >/dev/null || return 1
 
+  # The suite drills deployment and rollback against stub hosts, and those
+  # drills run the real publish(). NTFY_TOPIC goes with the gate inputs: a
+  # release under test must not be able to announce fixture commits on the
+  # topic CI is watching.
   (
     cd "$stage"
     env -u TARGET_STATE_VERSION -u AVALON_FORCE -u NODE_TEST_CONTEXT \
+      -u NTFY_TOPIC -u NTFY_SERVER \
       "$node_bin" --test "test/**/*.test.js"
   ) || return 1
 

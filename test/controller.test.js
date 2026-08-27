@@ -160,6 +160,20 @@ test('the update units call the static bootstrap, which owns target selection', 
     'the controller deploys the commit it is given; the bootstrap chooses it');
 });
 
+test('a release under test cannot publish to the deployment topic', async () => {
+  const controller = await readFile(join(deployDir, 'controller.sh'), 'utf8');
+
+  // The suite drills deployment and rollback, publish() included, and the
+  // update units carry the host's real NTFY_TOPIC. Without this the host
+  // announces fixture commits on the topic CI is watching.
+  assert.match(controller, /env -u TARGET_STATE_VERSION -u AVALON_FORCE -u NODE_TEST_CONTEXT[\s\\]+-u NTFY_TOPIC -u NTFY_SERVER/);
+
+  // And the drills say so themselves, for anyone running the suite by hand
+  // with a topic exported.
+  const drills = await readFile(new URL(import.meta.url), 'utf8');
+  assert.match(drills, /NTFY_TOPIC: ''/);
+});
+
 test('the controller downloads a verified artifact without moving the source checkout', async () => {
   const source = await readFile(join(deployDir, 'controller.sh'), 'utf8');
   assert.match(source, /prepare\(\) \(/);
@@ -358,6 +372,9 @@ async function deploymentDrill(prefix, { failCommit } = {}) {
   const { fakeServer, fakeSystemctl } = await writeFakeHost(dir);
   const env = {
     HOME: dir,
+    // A drill announces fixture commits. Empty rather than absent: the host
+    // exports a real topic, and publish() must find nothing to publish to.
+    NTFY_TOPIC: '',
     PORT: String(await freePort()),
     AVALON_NODE: process.execPath,
     AVALON_SYSTEMCTL: fakeSystemctl,
