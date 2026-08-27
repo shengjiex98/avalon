@@ -72,6 +72,10 @@ test('the reveal screen shows your own role and waits for everyone', () => {
   const merlin = roleId(game, 'merlin');
   const view = show(game, merlin);
 
+  const self = view.byClass('player').find((row) => row.byClass('name')[0]?.text === game.players.find((p) => p.id === merlin).name);
+  assert.match(self.className, /is-you/, 'the current player is a styled row, not another tag');
+  assert.equal(self.byClass('tag').some((tag) => tag.text === 'you'), false);
+  assert.ok(self.byClass('player-number').length, 'the seat number rides on the avatar');
   assert.doesNotMatch(view.text, /Merlin/, 'the role starts hidden');
   view.byId('roleToggle').dispatch('click');
   const open = dom.fixtures.view;

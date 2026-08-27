@@ -218,6 +218,12 @@ test('the lobby shows the room code and every player', () => {
   assert.match(view.text, /Ann/);
   assert.match(view.text, /张三/, 'a Chinese name renders in the English UI');
   assert.match(view.text, /Players \(2\)/);
+  const self = view.byClass('player').find((row) => row.byClass('name')[0]?.text === 'Ann');
+  assert.match(self.className, /is-you/, 'your seat is indicated by the row styling');
+  assert.equal(self.getAttribute('aria-current'), 'true');
+  assert.equal(self.byClass('seat').length, 0, 'the seat number is not a separate chip');
+  assert.equal(self.byClass('player-number')[0].text, '1', 'the seat number is integrated into the avatar');
+  assert.equal(self.byClass('tag').some((tag) => tag.text === 'you'), false, 'there is no visible you tag');
   // Two players is not a game, so the host's button says why rather than lying.
   const action = buttons(view).find((b) => /Need at least|Start game/.test(b.text));
   assert.equal(action.text, 'Need at least 5 players (2 so far)');
@@ -236,6 +242,7 @@ test('a player avatar is loaded from the configured game server', () => {
   const badge = dom.fixtures.view.byClass('player-avatar')[0];
   const image = badge.find((node) => node.tagName === 'IMG');
   assert.equal(image.getAttribute('src'), 'https://games.example.com/api/avatars/g-example.webp');
+  assert.equal(badge.byClass('player-number')[0].text, '1');
 });
 
 test('the host can start once five players are in', () => {

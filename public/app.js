@@ -798,13 +798,17 @@ function paneLobby(game) {
     ),
     h('div', { class: 'card stack' },
       h('h2', { text: T('lobby.players', { n: v.players.length }) }),
-      h('div', { class: 'players' }, v.players.map((p) => h('div', { class: 'player' },
-        playerAvatar(p, app.server),
-        h('span', { class: 'seat', text: p.seat + 1 }),
-        h('span', { class: 'name', text: p.name }),
-        p.id === v.hostId ? h('span', { class: 'tag', text: T('lobby.host') }) : null,
-        p.id === v.you?.id ? h('span', { class: 'tag you', text: T('lobby.you') }) : null,
-      ))),
+      h('div', { class: 'players' }, v.players.map((p) => {
+        const isYou = p.id === v.you?.id;
+        return h('div', {
+          class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
+        },
+          playerAvatar(p, app.server),
+          h('span', { class: 'name', text: p.name }),
+          p.id === v.hostId ? h('span', { class: 'tag', text: T('lobby.host') }) : null,
+          isYou ? h('span', { class: 'visually-hidden', text: T('lobby.you') }) : null,
+        );
+      })),
     ),
     game.lobbyOptions(),
     h('div', { class: 'row' },
@@ -838,18 +842,21 @@ function playerList({ selectable = false, selected = [], onpick, tags, only, exc
     .map((p) => {
       const picked = selected.includes(p.id);
       const blocked = exclude.includes(p.id);
+      const isYou = p.id === v.you?.id;
       const inner = [
         playerAvatar(p, app.server),
-        h('span', { class: 'seat', text: p.seat + 1 }),
         h('span', { class: 'name', text: p.name }),
-        p.id === v.you?.id ? h('span', { class: 'tag you', text: T('lobby.you') }) : null,
+        isYou ? h('span', { class: 'visually-hidden', text: T('lobby.you') }) : null,
         p.isLeader ? h('span', { class: 'tag leader', text: '👑' }) : null,
         p.onTeam && v.phase !== 'quest' ? h('span', { class: 'tag team', text: '⚔' }) : null,
         ...(tags ? tags(p) : []),
       ];
-      if (!selectable) return h('div', { class: 'player' }, inner);
+      if (!selectable) return h('div', {
+        class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
+      }, inner);
       return h('button', {
-        class: `player ${picked ? 'selected' : ''}`, type: 'button',
+        class: `player ${isYou ? 'is-you' : ''} ${picked ? 'selected' : ''}`, type: 'button',
+        'aria-current': isYou ? 'true' : null,
         disabled: blocked, onclick: () => onpick(p),
       }, inner);
     });
