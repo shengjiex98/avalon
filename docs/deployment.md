@@ -269,25 +269,16 @@ from the internet for CI to confirm a deployment. That is already true here via
 
 ### Developing on the server host
 
-No running service or deployment controller reads `~/avalon`. It may be
-removed; while retained as the host's recovery and administration clone, keep
-ordinary development isolated from it.
+Nothing on the host reads `~/avalon`. The application runs from an immutable
+release under `~/.local/lib/avalon`, and the only installed piece of the
+control plane is `~/.local/libexec/avalon-deploy/bootstrap.sh`, which a human
+puts there from a clone. So `~/avalon` is an ordinary development clone with no
+special status: work in it directly, or give a branch its own directory with
+`git worktree add ~/avalon-dev -b some-feature`, whichever suits the change.
 
-Give development its own directory instead:
-
-```bash
-git worktree add ~/avalon-dev -b some-feature
-```
-
-One clone, one object store, shared history, and a working tree isolated from
-the recovery checkout. Git also refuses to check out a branch that is already
-active in another worktree, preventing accidental coupling between a feature
-branch and repository administration.
-
-Keep `~/avalon` as the primary recovery worktree and create the development one
-alongside. A second full clone works too, with
-stronger isolation and a second remote to keep in step; at this size the
-worktree is less to think about.
+Its one remaining job is being somewhere to run `deploy/install-bootstrap.sh`
+from when the bootstrap itself changes, and a deployment says so in the journal
+and on the topic when the installed copy has drifted.
 
 ### Hourly fallback
 

@@ -5,24 +5,23 @@ for how it fits together, and [docs/deployment.md](docs/deployment.md) for how i
 
 ## The checkout on the game server is not the live deployment
 
-No running service or deployment controller reads `~/avalon`. The application
-runs from an immutable release under `~/.local/lib/avalon`, and the versioned
-controller, listener, and systemd units live under
-`~/.local/libexec/avalon-deploy`. The checkout is retained only as an audited
-recovery and administration clone.
+No running service reads `~/avalon`. The application runs from an immutable
+release under `~/.local/lib/avalon`, selected by a `current` symlink, and the
+only installed piece of the deployment control plane is
+`~/.local/libexec/avalon-deploy/bootstrap.sh`. Everything else -- the
+controller, the gate, the listener, the systemd units -- ships inside the
+release it deploys.
 
-So on that host, never edit files in `~/avalon` directly. Use a worktree:
+So `~/avalon` on that host is an ordinary development clone with no special
+status. Nothing resets it, and editing it directly is fine. A worktree
+(`git worktree add ~/avalon-dev -b some-feature`) is still convenient when a
+branch deserves its own directory, and Git will refuse to check out a branch
+that is already active in another worktree.
 
-```bash
-git worktree add ~/avalon-dev -b some-feature
-```
-
-One clone, one object store, shared history, and a directory isolated from the
-recovery checkout. Git also refuses to check out a branch that is already
-active in another worktree, so repository administration cannot be
-accidentally coupled to a feature branch.
-
-Anywhere other than the server host, an ordinary clone is fine.
+Changing `deploy/bootstrap.sh` is the one change that does not deploy itself: a
+human runs `deploy/install-bootstrap.sh` from a clone afterwards. A deployment
+warns, in the journal and on the topic, when the installed copy has drifted
+from the release's.
 
 ## Verification
 

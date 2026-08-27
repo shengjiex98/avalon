@@ -206,31 +206,6 @@ test('artifact preparation verifies, tests, and stages the downloaded bytes', as
   assert.equal(JSON.parse(await readFile(join(prepared, 'release.json'))).commit, target);
 });
 
-test('main resolution accepts only a commit-shaped GitHub response', async () => {
-  const expected = 'd'.repeat(40);
-  let body = { sha: expected };
-  const server = createServer((_req, res) => {
-    res.writeHead(200, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
-  });
-  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
-
-  try {
-    const script = join(deployDir, 'resolve-main.mjs');
-    const url = `http://127.0.0.1:${server.address().port}/main`;
-    const result = await run(process.execPath, [script, url]);
-    assert.equal(result.code, 0, result.stderr);
-    assert.equal(result.stdout.trim(), expected);
-
-    body = { sha: 'main' };
-    const invalid = await run(process.execPath, [script, url]);
-    assert.equal(invalid.code, 1);
-    assert.match(invalid.stderr, /no valid commit/);
-  } finally {
-    await new Promise((resolve) => server.close(resolve));
-  }
-});
-
 test('health verification requires the selected release commit', async () => {
   const expected = 'd'.repeat(40);
   const server = createServer((_req, res) => {
