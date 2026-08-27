@@ -58,11 +58,24 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the deploy workflow tests an exact server artifact and publishes the browser client', async () => {
+test('the deploy workflow gates an exact server artifact through the host code path', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
-  assert.match(workflow, /npm test/);
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
-  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C tested-release/);
+
+  // The gate is the release's own controller preparing the artifact, staged
+  // outside the checkout and under the bootstrap's environment allowlist, so
+  // CI can only diverge from the host through a controller change -- which
+  // ships through this very gate.
+  assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
+  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C "\$tree"/);
+  assert.match(workflow, /env -i HOME="\$HOME" PATH="\$PATH"/);
+  assert.match(workflow, /"\$tree\/deploy\/controller\.sh" prepare "\$GITHUB_SHA"/);
+
+  // The host carries a real NTFY_TOPIC, so CI carries a canary wired to a
+  // local sink: a test run that publishes fails here, not on a phone.
+  assert.match(workflow, /NTFY_TOPIC=ci-canary NTFY_SERVER=http:\/\/127\.0\.0\.1:8642/);
+  assert.match(workflow, /\[ -s "\$sink" \]/);
+
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
   assert.match(workflow, /gh release upload "\$release_tag"/);
