@@ -64,6 +64,7 @@ test('the deploy workflow tests an exact server artifact and publishes the brows
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
   assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C tested-release/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
   assert.match(workflow, /gh release upload "\$release_tag"/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
   assert.match(workflow, /writeFileSync\("public\/config\.js"/);

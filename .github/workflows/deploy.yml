@@ -58,6 +58,7 @@ jobs:
       - name: Publish the exact tested release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           release_tag=deployment-artifacts
