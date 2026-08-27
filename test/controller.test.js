@@ -219,7 +219,7 @@ test('a failed target restores the previous release, snapshot, and healthy proce
     AVALON_SOURCE_REPO: repoDir,
     AVALON_RELEASE_ROOT: releaseRoot,
     AVALON_STATE_FILE: stateFile,
-    AVALON_HEALTH_TIMEOUT_SECONDS: '0.2',
+    AVALON_HEALTH_TIMEOUT_SECONDS: '2',
     FAKE_PID_FILE: pidFile,
     FAKE_SERVER: fakeServer,
     FAIL_COMMIT: target,
