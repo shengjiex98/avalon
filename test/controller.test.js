@@ -68,10 +68,10 @@ test('the controller installer atomically selects an immutable version', async (
     AVALON_CONTROLLER_ROOT: root,
   });
   assert.equal(first.code, 0, first.stderr);
-  assert.equal(await readlink(join(root, 'current')), 'versions/2');
-  assert.equal(await readFile(join(root, 'versions/2/controller-version'), 'utf8'), '2\n');
-  assert.match(await readFile(join(root, 'versions/2/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
-  assert.match(await readFile(join(root, 'versions/2/wait-for-health.mjs'), 'utf8'), /api\/health/);
+  assert.equal(await readlink(join(root, 'current')), 'versions/3');
+  assert.equal(await readFile(join(root, 'versions/3/controller-version'), 'utf8'), '3\n');
+  assert.match(await readFile(join(root, 'versions/3/gate.sh'), 'utf8'), /TARGET_STATE_VERSION/);
+  assert.match(await readFile(join(root, 'versions/3/wait-for-health.mjs'), 'utf8'), /api\/health/);
 
   const second = await run('sh', [join(source, 'install-controller.sh')], {
     AVALON_CONTROLLER_ROOT: root,
