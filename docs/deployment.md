@@ -64,11 +64,10 @@ Use HTTPS when players connect remotely. Common options are:
 
 ## systemd user service
 
-The checked-in `deploy/avalon.service` keeps the service definition with the
-repository:
+Install the versioned controller and its service units outside the checkout:
 
 ```bash
-systemctl --user link ~/avalon/deploy/avalon.service
+~/avalon/deploy/install-controller.sh
 systemctl --user daemon-reload
 systemctl --user enable --now avalon
 loginctl enable-linger "$USER"
@@ -114,7 +113,8 @@ Git checkout, so `/api/health.commit` keeps the same deployment-proof contract
 for a release directory, tarball, or image.
 
 `deploy/install-controller.sh` installs a separately versioned control plane at
-`~/.local/libexec/avalon-deploy/current`. Its `prepare <sha>` operation exports
+`~/.local/libexec/avalon-deploy/current` and atomically points the Avalon,
+update, and timer units at that external bundle. Its `prepare <sha>` operation exports
 that exact commit into `~/.local/lib/avalon/releases/<sha>`, validates the
 manifest with controller-owned code, runs the host test suite from the staged
 tree, and makes the result read-only. The source checkout is never moved.
@@ -219,8 +219,8 @@ from the internet for CI to confirm a deployment. That is already true here via
 ### Developing on the server host
 
 `~/avalon` belongs to the deployment control plane. The external controller
-fetches it as a source repository, and the listener and linked unit files are
-still addressed there during this migration. The application does not run from
+fetches it as a source repository, and the listener is still addressed there
+during this migration. The application and its update units do not run from
 the checkout and the controller does not reset it, but local edits can still
 change deployment infrastructure outside review.
 
@@ -235,8 +235,8 @@ the deployment control plane. Git also refuses to check out a branch that is
 already active in another worktree, preventing accidental coupling between a
 feature branch and the source repository the controller fetches.
 
-Keep `~/avalon` as the primary worktree -- some systemd units still address it
-by path -- and create the development one alongside. A second full clone works too, with
+Keep `~/avalon` as the primary worktree -- the listener still addresses it by
+path -- and create the development one alongside. A second full clone works too, with
 stronger isolation and a second remote to keep in step; at this size the
 worktree is less to think about.
 
@@ -247,8 +247,8 @@ it, and would otherwise stay stale indefinitely. The `avalon-update.timer` unit
 runs the same external controller hourly to close that gap:
 
 ```bash
-systemctl --user link ~/avalon/deploy/avalon-update.service
-systemctl --user link ~/avalon/deploy/avalon-update.timer
+~/avalon/deploy/install-controller.sh
+systemctl --user daemon-reload
 systemctl --user enable --now avalon-update.timer
 ```
 
