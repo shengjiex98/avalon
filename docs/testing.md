@@ -1,44 +1,24 @@
 # Testing
 
-Run all tests with Node's built-in test runner:
+Run the complete gate with:
 
 ```bash
 npm test
 ```
 
-The suite does not need network access or a browser.
+The project uses Node's built-in test runner, needs no dependency installation,
+network access, or browser, and discovers `test/**/*.test.js`. CI and release
+packaging run the same gate on Node 24; see [`package.json`](../package.json),
+[`.github/workflows/ci.yml`](../.github/workflows/ci.yml), and
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 
-## Test groups
+The suite covers:
 
-- **rules:** role setup, role fitting, and each role's knowledge.
-- **game:** deterministic Avalon games, including rejected teams, the fifth
-  rejection, two-fail quests, assassination outcomes, and hidden-role views.
-- **onuw:** deterministic nights on a controlled clock, deck-derived scripts,
-  center roles, fixed step timing, hidden actor state, forced Drunk swaps, win
-  conditions, and card privacy.
-- **rooms:** timer-driven night steps, broadcasts, and timer cleanup when rooms
-  expire, plus action recording and persistence hooks.
-- **determinism:** seeded deals, seating, and leader selection.
-- **persistence:** JSON-state invariants, atomic snapshot round trips, restored
-  timers and idle age, and corrupt or incompatible snapshot handling.
-- **server:** real HTTP on an ephemeral port, including a complete five-player
-  game over SSE.
-- **i18n-coverage:** every client key, server error, win reason, and log event
-  exists in English and Chinese.
-- **ui:** home, invitations, language switching, and joining, rendered with the
-  lightweight DOM shim in `test/dom-shim.js`.
-- **ui-game / ui-onuw:** every phase of both games, rendered from real engine
-  views in both languages, including countdown redraw regressions.
-- **ui-connect:** cold joins, reconnection, and failures inside game view hooks.
-- **ui-reconnect:** what a deployment restart does to an open game -- recovering
-  when the room survived, re-taking a seat it did not, ending cleanly when the
-  room is gone, and waking on `online`/`focus` rather than sitting out a backoff.
-- **ui-reload:** reloading for a new client build mid-game, including a reload
-  that arrives without the URL fragment and one that lands while the server is
-  still restarting.
-- **ui-testmode:** adding and switching seats through normal join and event
-  paths, including rejected joins.
-- **deploy / pointer / updater:** archive publication and stable-pointer
-  ordering, wake-only notifications, frontend version stamping, compatibility
-  gating, unsafe archive rejection, atomic activation, snapshot rollback, and
-  static installer behavior.
+- both game engines, deterministic randomness, rules, and hidden views;
+- rooms, timers, persistence, reconnection, and real HTTP/SSE behavior;
+- browser rendering and interaction through the lightweight DOM shim;
+- translation coverage in English and Chinese; and
+- release packaging, pointer validation, activation, deferral, and rollback.
+
+Test filenames describe their scope. UI tests use
+[`test/dom-shim.js`](../test/dom-shim.js) rather than a browser dependency.

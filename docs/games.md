@@ -1,146 +1,49 @@
-# Game guide
+# Game behavior
 
-Avalon includes two hidden-role games. They use the same room, player,
-reconnection, and language controls, but each game has its own rules.
+Avalon supports The Resistance: Avalon and One Night Ultimate Werewolf. They
+share rooms, seats, reconnection, test mode, and per-player language selection,
+but each game has its own state machine and filtered player views.
 
-The game switcher on the home screen decides what a new room plays. The host
-can change the game while the room is in the lobby; the selection locks once a
-game starts.
+The host chooses a game and its options in the lobby. Starting locks the player
+count and game choice; **Play again** returns the same seats to a fresh lobby.
 
 ## The Resistance: Avalon
 
-Avalon supports 5–10 players.
+Avalon supports 5–10 players. Players propose and approve quest teams, then the
+selected team secretly submits quest cards. Evil wins through failed quests;
+after three successful quests, the Assassin can still win by identifying
+Merlin.
 
-- Merlin and the Assassin are always included.
-- Percival, Morgana, Mordred, and Oberon are optional. The lobby picks the
-  standard deck for the number of players who have joined (see below). The host
-  may customize it, but every join or departure reapplies the defaults for the
-  new player count. A combination that does not fit the current count shows no
-  deck at all, and starting with it is refused.
-- The leader proposes a team and everyone votes on it.
-- Five rejected teams over the course of the game give evil the win.
-- An approved team secretly plays Success or Fail cards. Good players cannot
-  choose Fail.
-- Quest four requires two Fail cards with seven or more players.
-- Evil wins after three failed quests.
-- After three successful quests, the Assassin can still win for evil by
-  identifying Merlin. Any player but the Assassin is a legal target; naming
-  anyone other than Merlin hands the game to good.
-- **Play again** returns the same players to the lobby and deals new roles.
-
-### The default deck
-
-| Players | Good | Evil |
-| --- | --- | --- |
-| 5 | Merlin, Percival, Servant | Morgana, Assassin |
-| 6 | Merlin, Percival, Servant ×2 | Morgana, Assassin |
-| 7 | Merlin, Percival, Servant ×2 | Morgana, Assassin, Oberon |
-| 8 | Merlin, Percival, Servant ×3 | Morgana, Assassin, Minion |
-| 9 | Merlin, Percival, Servant ×4 | Morgana, Assassin, Mordred |
-| 10 | Merlin, Percival, Servant ×4 | Morgana, Assassin, Mordred, Oberon |
-
-### House rules
-
-Variants the host may switch on in the lobby. All three are off by default —
-the printed game is what a new table plays — and the ones in force are listed
-in the roles panel during the game.
-
-- **Random leader** shuffles the seating and drops the first leader token
-  anywhere in it. Roles are dealt from a shuffled deck, so seating never says
-  anything about who is who.
-- **Hidden votes** publish the tally only — how many approved and how many
-  rejected. The ballots never leave the server, at the end of the game either.
-  Who has yet to vote is still shown, so the table knows who it is waiting on.
-- **Reset rejection count** clears the rejection count whenever a team is
-  approved. The fifth rejection in the current count still gives evil the win.
-
-Hidden information is filtered on the server. Merlin does not see Mordred;
-Percival cannot distinguish Merlin from Morgana; Oberon and the other evil
-players do not see one another. No player's role is revealed to another player
-before the game ends.
+Optional roles and house rules change information, seating, or voting without
+changing the room model. Exact decks, quest sizes, knowledge rules, rejection
+behavior, and win conditions are defined in
+[`src/games/avalon/rules.js`](../src/games/avalon/rules.js) and enforced by
+[`src/games/avalon/game.js`](../src/games/avalon/game.js). The corresponding UI
+is [`public/games/avalon.js`](../public/games/avalon.js).
 
 ## One Night Ultimate Werewolf
 
-One Night Ultimate Werewolf supports 3–10 players. The selected deck always
-contains three more cards than the number of players. Those extra cards are
-placed face down in the center.
+One Night Ultimate Werewolf supports 3–10 players and always uses three center
+cards. Players receive private night actions on a shared clock, discuss after
+the night, and vote simultaneously. The final card held by each player—not the
+original deal—determines their team.
 
-Available roles are Werewolf ×2, Minion, Mason ×2, Seer, Robber,
-Troublemaker, Drunk, Insomniac, Hunter, Tanner, and Villager.
+Exact roles, night order, timing, house rules, and winner calculation are in
+[`src/games/onuw/rules.js`](../src/games/onuw/rules.js) and
+[`src/games/onuw/game.js`](../src/games/onuw/game.js). The corresponding UI is
+[`public/games/onuw.js`](../public/games/onuw.js), and checked-in narration is
+under [`public/audio/onuw/`](../public/audio/onuw/).
 
-After the deal, each player inspects their role and marks themselves ready.
-The night begins when everyone is ready and follows one shared clock on every
-device. The host chooses a brisk, normal, or relaxed pace; narration can be
-muted on each device.
+## Privacy and language
 
-The night script follows these privacy rules:
+Only the acting player receives private controls or knowledge. The server
+derives every player's view independently; the browser never receives the full
+game state. Tests under [`test/`](../test/) exercise role knowledge, hidden
+actions, and post-game disclosure.
 
-- A role is called when its card is in the selected deck.
-- A role is still called if its card is one of the three center cards.
-- A role's step never ends early when its player finishes acting.
-- Screens never identify who is awake, who has acted, or who is being waited
-  on.
+English and Chinese strings are rendered by the browser from translation keys.
+The canonical catalog is [`public/i18n.js`](../public/i18n.js), with coverage in
+[`test/i18n-coverage.test.js`](../test/i18n-coverage.test.js).
 
-Only the player acting in the current step receives controls. Information such
-as the Seer's view, the Robber's new card, or the lone Werewolf's center-card
-peek is shown while that player is still awake. A reference panel shows the
-deck, role descriptions, night order, and current step.
-
-English and Mandarin night announcements are checked into
-`public/audio/onuw/`. Their source lines and regeneration command are in
-`scripts/generate-onuw-audio.py`.
-
-After the night, players discuss and vote at the same time. The player or
-players with the most votes die. If every player receives exactly one vote,
-nobody dies. A player's final team is determined by the card they hold at the
-end of the night, not the card originally dealt to them.
-
-The vote is then scored:
-
-- The Tanner wins by dying, and a dead Tanner denies the werewolf team the win.
-- The village wins if at least one werewolf dies.
-- If every werewolf card ended up in the center, the village wins when nobody
-  dies, and the Minion wins when anyone other than the Minion dies.
-- Otherwise the werewolf team wins.
-- Any other ending has no winner: with no werewolf and no Minion in play, a
-  table that hangs someone loses together.
-
-### House rules
-
-House rules are variants the host controls in the lobby, next to the optional
-roles. They change only how the vote is scored, and a table's choice carries
-into the next deal. A game shows the ones in force in its reference panel.
-
-**Decisive vote.** On unless the host switches it off. With every werewolf card
-in the center, the Minion leads the pack. Killing the Minion is a village win,
-whoever else dies in the same vote, and killing anyone else is a werewolf-team
-win whether or not a Minion was dealt. A dead Tanner still outranks both, and a
-table holding a werewolf card is scored exactly as the printed rules say. The
-two endings this replaces are the game's flattest: by the book, hanging the
-lone Minion wins for nobody, and so does hanging an innocent with no Minion in
-play. Killing nobody is untouched — with no werewolf in play that is still a
-village win, Minion in play or not. A lone Minion is told at night that the
-hunt is now for him.
-
-A room restored from a snapshot older than a house rule keeps playing without
-it: a table that never agreed to a variant does not have one switched on
-underneath it by a deployment.
-
-The Doppelgänger is intentionally unsupported. Its action depends on a copied
-role and night information, which does not fit the shared fixed-step model.
-
-## Language
-
-Every player chooses English or Chinese independently. The server sends
-translation keys and parameters instead of user-facing sentences, and each
-browser renders them in its selected language.
-
-## Test mode
-
-Turn on **test mode** at the bottom of a room to run a game from one browser.
-It can add players and switch between their seats. Each seat is a real player
-using the normal join endpoint and filtered event stream, rather than a mocked
-view.
-
-Seats are remembered per room, so refreshing the page returns to the last
-selected seat.
+Test mode creates real seats through the normal API and lets one browser switch
+between them. It does not bypass server rules or view filtering.
