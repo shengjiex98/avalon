@@ -1,10 +1,7 @@
 name: Deploy
 
-# One pipeline so the two halves of a release stay ordered: the game server
-# takes the commit first, then the Pages client that talks to it. A client
-# newer than its server is the case players notice, because the protocol check
-# closes the lobby.
-
+# Publish one immutable server release, wake the host, prove that exact commit
+# through the public application, and only then publish its Pages client.
 on:
   push:
     branches: [main]
@@ -15,7 +12,7 @@ permissions:
 
 concurrency:
   group: deploy
-  cancel-in-progress: true   # a run still waiting for an idle server is superseded
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -24,63 +21,28 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          # Match the runtime the release manifest requires on the server host.
           node-version: '24'
       - name: Package the immutable release
         run: scripts/package-release.sh "$GITHUB_SHA" dist
-      # The host never sees a checkout: the bootstrap extracts the artifact into
-      # a bare temp tree and that tree's own controller downloads, verifies,
-      # tests, and seals the release. Run the same code path here -- staged
-      # under $RUNNER_TEMP so no repository sits above it, under the bootstrap's
-      # environment allowlist -- so this gate can only diverge from the host's
-      # through a controller change, which ships through this very gate.
-      - name: Prepare the release exactly as the host will
+      - name: Test the exact packaged release
         run: |
           set -eu
-          archive="avalon-$GITHUB_SHA.tar.gz"
-          (cd dist && sha256sum -c "$archive.sha256")
+          archive="dist/avalon-$GITHUB_SHA.tar.gz"
           tree="$RUNNER_TEMP/release-tree"
           mkdir "$tree"
-          tar -xzf "dist/$archive" --strip-components=1 -C "$tree"
+          tar -xzf "$archive" --strip-components=1 -C "$tree"
 
-          # The host carries a real NTFY_TOPIC, so CI carries a canary wired to
-          # a local sink: a release whose test run announces anything on the
-          # deployment topic must fail here, not on the maintainer's phone.
-          sink="$RUNNER_TEMP/ntfy-hits"
-          node -e '
-            require("http").createServer((req, res) => {
-              require("fs").appendFileSync(process.argv[1], `${req.method} ${req.url}\n`);
-              res.end();
-            }).listen(8642, "127.0.0.1");
-          ' "$sink" &
-          sink_pid=$!
-          trap 'kill "$sink_pid" 2>/dev/null || true' EXIT
-          tries=0
-          until curl -fsS -o /dev/null http://127.0.0.1:8642/ready; do
-            tries=$((tries + 1))
-            [ "$tries" -lt 50 ] || { echo '::error::the canary sink never came up'; exit 1; }
-            sleep 0.2
-          done
-          : > "$sink"
-
-          env -i HOME="$HOME" PATH="$PATH" \
-            NTFY_TOPIC=ci-canary NTFY_SERVER=http://127.0.0.1:8642 \
-            AVALON_NODE="$(command -v node)" \
-            AVALON_RELEASE_ROOT="$RUNNER_TEMP/avalon" \
-            AVALON_ARTIFACT_BASE="file://$PWD/dist" \
-            "$tree/deploy/controller.sh" prepare "$GITHUB_SHA"
-
-          if [ -s "$sink" ]; then
-            echo "::error::the release's test run reached the deployment topic:"
-            cat "$sink"
-            exit 1
-          fi
+          # This verifier comes from the trusted checked-out workflow revision,
+          # never from inside the candidate tree.
+          node scripts/verify-packaged-release.mjs "$tree" "$GITHUB_SHA"
+          (
+            cd "$tree"
+            node --test "test/**/*.test.js"
+          )
       - uses: actions/upload-artifact@v4
         with:
           name: avalon-${{ github.sha }}
-          path: |
-            dist/avalon-${{ github.sha }}.tar.gz
-            dist/avalon-${{ github.sha }}.tar.gz.sha256
+          path: dist/avalon-${{ github.sha }}.tar.gz
           if-no-files-found: error
           retention-days: 1
 
@@ -89,38 +51,88 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      published: ${{ steps.publish.outputs.published }}
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: avalon-${{ github.sha }}
           path: dist
-      - name: Publish the exact tested release
+      - id: publish
+        name: Publish the exact tested release and stable pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          echo 'published=false' >>"$GITHUB_OUTPUT"
+          release_tag=deployment-artifacts
+          archive="avalon-$GITHUB_SHA.tar.gz"
+
+          # A superseded run must never move the mutable pointer backward.
+          main_sha=$(gh api "repos/$GH_REPO/commits/main" --jq '.sha')
+          if [ "$main_sha" != "$GITHUB_SHA" ]; then
+            echo "::notice::superseded by $main_sha; not publishing $GITHUB_SHA"
+            exit 0
+          fi
+
+          digest=$(sha256sum "dist/$archive" | sed 's/[[:space:]].*//')
+          node -e '
+            const fs = require("node:fs");
+            const [commit, sha256, output] = process.argv.slice(1);
+            if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error("invalid commit");
+            if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error("invalid sha256");
+            fs.writeFileSync(output, `${JSON.stringify({ schema: 1, commit, sha256 }, null, 2)}\n`);
+          ' "$GITHUB_SHA" "$digest" dist/latest.json
+
+          if ! gh release view "$release_tag" >/dev/null 2>&1; then
+            gh release create "$release_tag" --target "$GITHUB_SHA" \
+              --title "Avalon deployment artifacts" \
+              --notes "Immutable artifacts consumed by the Avalon static updater." \
+              --latest=false
+          fi
+
+          # The immutable payload must exist before latest.json can select it.
+          gh release upload "$release_tag" "dist/$archive" --clobber
+          gh release upload "$release_tag" dist/latest.json --clobber
+          echo 'published=true' >>"$GITHUB_OUTPUT"
+
+      - name: Prune unreachable release assets
+        if: steps.publish.outputs.published == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           release_tag=deployment-artifacts
-          archive="avalon-$GITHUB_SHA.tar.gz"
-          (cd dist && sha256sum -c "$archive.sha256")
-          if ! gh release view "$release_tag" >/dev/null 2>&1; then
-            gh release create "$release_tag" --target "$GITHUB_SHA" \
-              --title "Avalon deployment artifacts" \
-              --notes "Immutable artifacts consumed by the Avalon release controller." \
-              --latest=false
-          fi
-          gh release upload "$release_tag" \
-            "dist/$archive" "dist/$archive.sha256" --clobber
+          skip() { echo "::warning::$1; skipped pruning"; exit 0; }
+
+          # Only the archive latest.json names is reachable. Read the pointer
+          # back, so a superseding run's archive is never the one deleted.
+          keep=$(gh release download "$release_tag" -p latest.json -O - \
+            | jq -r '"avalon-\(.commit).tar.gz"') || skip 'cannot read latest.json'
+          assets=$(gh api "repos/$GH_REPO/releases/tags/$release_tag") \
+            || skip 'cannot list release assets'
+
+          # Never strip the release down to a pointer nothing can satisfy.
+          printf '%s' "$assets" | jq -e --arg keep "$keep" 'any(.assets[]; .name == $keep)' \
+            >/dev/null || skip "the pointer names a missing $keep"
+
+          printf '%s' "$assets" | jq -r --arg keep "$keep" \
+            '.assets[] | select(.name != "latest.json" and .name != $keep) | "\(.id) \(.name)"' \
+            >"$RUNNER_TEMP/doomed"
+          while read -r id name; do
+            # Housekeeping never fails a rollout that already published.
+            gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null \
+              && echo "::notice::pruned $name" || echo "::warning::could not prune $name"
+          done <"$RUNNER_TEMP/doomed"
 
   deploy-server:
     needs: publish-artifact
+    if: needs.publish-artifact.outputs.published == 'true'
     runs-on: ubuntu-latest
     steps:
-      # The topic is a channel, not an authority. A stranger who learns it can
-      # make the Pi run `git fetch` and find nothing, or claim a deployment that
-      # did not happen -- which is why success below is decided by the server's
-      # own /api/health, never by a message.
-      - name: Ask the server to deploy, then wait for it to serve this commit
+      - name: Wake the server, then wait for it to serve this commit
         env:
           NTFY_SERVER: https://ntfy.sh
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
@@ -131,50 +143,30 @@ jobs:
           : "${API_BASE:?set the API_BASE repository variable}"
 
           publish() {
-            curl -fsS --max-time 10 -d "deploy $GITHUB_SHA" "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null
+            curl -fsS --max-time 10 -d deploy "$NTFY_SERVER/$NTFY_TOPIC" >/dev/null
           }
 
-          # Captured before publishing: if the Pi finishes before the first poll,
-          # `since` replays the result rather than leaving us waiting on a
-          # message that has already been and gone.
-          since=$(date +%s)
           publish
-          echo "::notice::asked the server to deploy $GITHUB_SHA"
+          echo "::notice::asked the server to reconcile with $GITHUB_SHA"
 
-          for i in $(seq 1 360); do          # 360 x 10s = one hour
+          for i in $(seq 1 360); do
             sleep 10
-
             commit=$(curl -fsS --max-time 10 "$API_BASE/api/health" | jq -r '.commit // empty') || commit=
             if [ "$commit" = "$GITHUB_SHA" ]; then
               echo "the server is serving $GITHUB_SHA"
               exit 0
             fi
 
-            # Status messages are for diagnosis and for failing fast; ntfy.sh
-            # rate-limits per visitor, so ask a third as often as health.
-            if [ $((i % 3)) -eq 0 ]; then
-              status=$(curl -fsS --max-time 10 "$NTFY_SERVER/$NTFY_TOPIC/json?poll=1&since=$since" \
-                | jq -r --arg sha "$GITHUB_SHA" \
-                  'select(.event == "message") | .message | select(contains($sha))') || status=
-              case "$status" in
-                *"failed $GITHUB_SHA"*)
-                  echo "::error::the server rejected this commit and rolled back: $status"
-                  exit 1 ;;
-                *"busy $GITHUB_SHA"*)
-                  echo "::notice::a game is in progress; waiting for the table to clear" ;;
-              esac
-            fi
-
-            # Re-ask every five minutes, so a deploy refused mid-game lands as
-            # soon as the game ends rather than waiting for the hourly timer.
+            # Re-wake every five minutes. A deferred incompatible update then
+            # lands as soon as the active table becomes safe.
             if [ $((i % 30)) -eq 0 ]; then publish; fi
           done
 
-          echo "::error::the server never reported $GITHUB_SHA; nothing was published"
+          echo "::error::the server never reported $GITHUB_SHA; Pages was not published"
           exit 1
 
   deploy-pages:
-    needs: deploy-server   # skipped when the server did not take the commit
+    needs: deploy-server
     runs-on: ubuntu-latest
     permissions:
       contents: read

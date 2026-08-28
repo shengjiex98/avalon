@@ -26,6 +26,4 @@ timestamp=$(git -C "$root" show -s --format=%ct "$commit")
 tar --sort=name --mtime="@$timestamp" --owner=0 --group=0 --numeric-owner \
   -C "$stage" -cf - "avalon-$commit" | gzip -n >"$archive"
 
-digest=$(sha256sum "$archive" | sed 's/[[:space:]].*//')
-printf '%s  %s\n' "$digest" "$(basename "$archive")" >"$archive.sha256"
 printf '%s\n' "$archive"

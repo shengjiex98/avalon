@@ -1,326 +1,113 @@
 # Deployment
 
-The simplest deployment is one Node process serving both the browser client
-and API from the same origin.
+`npm start` runs a single Node process that serves both the browser client and
+API. Production adds an immutable-release updater and, optionally, a GitHub
+Pages client.
 
-```bash
-npm start
-```
+## Runtime state
 
-The server reads these environment variables:
+Rooms live in memory and are atomically snapshotted. A clean restart restores
+rooms and timers only when `STATE_VERSION` is compatible; an unreadable or
+incompatible snapshot starts empty. The persistence contract is implemented in
+[`src/persistence.js`](../src/persistence.js) and
+[`src/state-version.js`](../src/state-version.js).
 
-```sh
-PORT=8420
-HOST=0.0.0.0
-# Optional override; normally supplied by systemd's StateDirectory.
-AVALON_STATE_FILE=/path/to/rooms.json
-# Enables free-tier automatic name-based player avatars. Never expose the token.
-CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
-CLOUDFLARE_API_TOKEN=...
-# Optional; these are the defaults.
-AVALON_AVATAR_GENERATIONS_PER_HOUR=30
-AVALON_AVATAR_GENERATIONS_PER_DAY=200
-AVALON_AVATAR_MIN_INTERVAL_MS=1000
-```
+Use `/api/health` for liveness and exact-version checks. SSE proxies must not
+buffer `/api/rooms/*/events`. Server configuration defaults and optional avatar
+settings live in [`src/server.js`](../src/server.js),
+[`src/persistence.js`](../src/persistence.js), and
+[`src/avatars.js`](../src/avatars.js).
 
-Point a public URL or reverse proxy at that port and share the URL with
-players. The server generates `/version.json`; open clients check it once a
-minute and offer to reload after a new deployment.
+## Static host control plane
 
-## Important operating behavior
-
-Live state is held in memory and atomically snapshotted to `rooms.json`. The
-checked-in systemd unit stores it at `~/.local/state/avalon/rooms.json`; outside
-systemd the default is `$XDG_STATE_HOME/avalon/rooms.json` (or
-`~/.local/state/avalon/rooms.json`). `AVALON_STATE_FILE` overrides the path.
-Rooms idle for six hours are removed.
-
-Uploaded and generated player avatars are content-addressed under an `avatars/`
-directory beside `rooms.json`. Room snapshots contain only their short URLs.
-With both Cloudflare values configured, a player who does not upload a picture
-gets a background generation based on their name from Workers AI's
-`@cf/black-forest-labs/flux-1-schnell`; without them, the client uses a name
-initial. Create the token from the Workers AI dashboard's **Use REST API** flow
-and keep its permissions limited to Workers AI.
-
-Generated names are cached. The server defaults to 30 new generations per hour
-and 200 per rolling 24 hours so an unauthenticated room endpoint stays within
-the model's free allocation under its current four-step pricing, with some
-headroom for other account activity. Cache misses start at least one second
-apart while players join immediately in the foreground. The free allocation is
-account-wide and can change, so monitor it in the Workers AI dashboard. Set a
-limit to `-1` only behind trusted access control if removing that guard is
-intentional. See Cloudflare's [REST API setup](https://developers.cloudflare.com/workers-ai/get-started/rest-api/)
-and [current Workers AI pricing](https://developers.cloudflare.com/workers-ai/platform/pricing/).
-
-Keep `/api/health` as the container or service liveness check. It reports both
-`activeGames` and `stateVersion`. A restart on code with the same state version
-restores live games, including their timers. A missing, corrupt, or differently
-versioned snapshot starts empty, so an updater must call `/api/health/update`
-before a restart whenever running and target state versions are not known to be
-equal. A `409` then means an incompatible update must wait. Lobby rooms do not
-block it, and a finished game stops blocking three minutes after the last
-interaction.
-
-SSE response buffering must be disabled for `/api/rooms/*/events`. For nginx,
-use `proxy_buffering off;`; otherwise clients will not receive room updates
-promptly.
-
-What a restart looks like in an open browser: the stream drops, the banner says
-the connection was lost, and the client retries with a backoff -- asking
-`/api/rooms/:code?playerId=` each time, so it can tell a server that is still
-booting from a room the restart did not restore. A restored room reconnects
-without anyone touching the page, and a room that is gone says so once and
-returns to the home screen rather than promising a reconnection that cannot
-happen. Reloading for a new client build keeps the seat: the room code lives in
-the URL fragment and in `localStorage`, and only the server saying the seat is
-gone gives it up.
-
-## Remote players and HTTPS
-
-Use HTTPS when players connect remotely. Common options are:
-
-| Route | Access | Notes |
-| --- | --- | --- |
-| `tailscale funnel 8420` | Anyone with the link | Public HTTPS on the host's `*.ts.net` name. |
-| `tailscale serve 8420` | Tailnet members | HTTPS limited to the tailnet. |
-| Cloudflare Tunnel | Anyone allowed by the tunnel | Configure the tunnel for port 8420. |
-| nginx and Let's Encrypt | Anyone allowed by the proxy | Disable proxy buffering for SSE. |
-
-## systemd user service
-
-Install the deployment bootstrap and the service units outside the checkout:
-
-```bash
-~/avalon/deploy/install-bootstrap.sh
-systemctl --user daemon-reload
-systemctl --user enable --now avalon
-loginctl enable-linger "$USER"
-```
-
-On a host with no release yet, let a deployment create one before enabling the
-services that run from it:
-
-```bash
-~/avalon/deploy/install-bootstrap.sh
-systemctl --user daemon-reload
-systemctl --user enable --now avalon-update.timer
-systemctl --user start avalon-update.service     # creates the first release
-systemctl --user enable --now avalon avalon-listen
-```
-
-The listener's working directory is the selected release, so it needs
-`~/.local/lib/avalon/current` to exist first.
-
-Put host-specific values and secrets in `~/.config/avalon.env`, outside the repository:
-
-```sh
-PORT=8420
-HOST=0.0.0.0
-CLOUDFLARE_ACCOUNT_ID=0123456789abcdef0123456789abcdef
-CLOUDFLARE_API_TOKEN=...
-```
-
-## Optional GitHub Pages client
-
-[The official Pages client](https://shengjiex98.github.io/avalon/) provides a
-stable browser-client URL but still needs a reachable HTTPS Node server for
-rooms and game state.
-
-Its default server comes from the repository Actions variable `API_BASE`. A
-server supplied through a `?server=` room link or saved in the browser takes
-priority, and copied room links preserve the active server address. Node
-accepts cross-origin requests from this exact Pages origin; other browser
-origins are unsupported. A client served by Node always uses its own origin.
-
-The `deploy-pages` job runs after the server has taken the same commit. It
-writes `API_BASE` to `public/config.js`, stamps the JavaScript module graph with
-the commit SHA, and publishes `public/`.
-
-If maintaining both entry points is no longer useful, follow the
-[single-server reversion checklist](single-server.md).
-
-## Continuous deployment
-
-### Release artifact contract
-
-`scripts/package-release.sh` can package any commit as a deterministic,
-architecture-neutral `avalon-<sha>.tar.gz` plus a SHA-256 checksum. The archive
-contains only tracked files and a generated `release.json` with the commit,
-`STATE_VERSION`, `API_PROTOCOL`, required Node major, and deployer schema.
-
-The server reads the commit from that manifest when it is not running from a
-Git checkout, so `/api/health.commit` keeps the same deployment-proof contract
-for a release directory, tarball, or image.
-
-### Two layers, split by what changes
-
-The control plane is split by mutability rather than by subject. One static
-script is installed on the host; everything else rides in the release it
-deploys.
-
-`deploy/bootstrap.sh` is the static layer, installed once at
-`~/.local/libexec/avalon-deploy/bootstrap.sh` by `deploy/install-bootstrap.sh`
-and expected never to change. Both update units call it. It takes an exclusive
-lock so a trigger and the hourly timer cannot deploy at once, resolves `main`
-through GitHub's HTTPS API, downloads that commit's `avalon-<sha>.tar.gz` and
-checksum, verifies the checksum, extracts the archive to a temporary directory,
-and runs the controller it finds there. Nothing downloaded runs before its
-checksum verifies. The controller is invoked through an explicit environment
-allowlist, so host values such as `TARGET_STATE_VERSION` and `AVALON_FORCE`
-cannot answer the safety gate on the deployment's behalf.
-
-`deploy/controller.sh`, `gate.sh`, `lib.sh`, `listen.mjs`, `verify-release.mjs`,
-`wait-for-health.mjs`, and the five unit files are the versioned layer. They
-ship inside the artifact, because `scripts/package-release.sh` archives every
-tracked file. A change to deployment logic therefore goes through the same CI,
-the same test run, and the same health-gated rollout as a change to the game:
-no version file, no install step on the host, nothing that can drift from the
-repository.
-
-The candidate commit's own controller performs its deployment, rollback
-included. CI runs the deploy tests from the exact artifact before publishing
-it, and a controller that is broken anyway strands *deployments*, never the
-running server -- the next fix commit heals it through the same bootstrap.
-
-`controller.sh prepare <sha>` downloads the archive and checksum again into
-`~/.local/lib/avalon/releases/.staging-*`, verifies checksum and manifest,
-reruns the host test suite from the extracted tree, and makes
-`~/.local/lib/avalon/releases/<sha>` read-only. The second download keeps that
-directory holding only bytes this host verified, tested, and sealed itself.
-Application files never come from the source checkout.
-
-`avalon.service` runs the release selected by the atomic
-`~/.local/lib/avalon/current` symlink. `controller.sh deploy <sha>` prepares and
-tests the candidate, asks the state-version gate, and once allowed copies the
-target release's unit files into `~/.config/systemd/user`, reloads systemd,
-stops the old process so its final room snapshot is complete, backs that
-snapshot up, switches `current`, starts Avalon, and requires the target commit
-from `/api/health`. Failed health verification restores the previous release's
-pointer, snapshot, and unit files, and proves the rollback commit is serving.
-A successful deployment also restarts `avalon-listen`, so the listener runs the
-release it just installed.
-
-The one file a release cannot replace is the bootstrap that is executing it. The
-controller compares the installed copy with the one in the release and warns --
-in the journal and on the ntfy topic -- when they differ; installing the new one
-is a human running `deploy/install-bootstrap.sh` from a clone.
-
-`.github/workflows/deploy.yml` runs on every push to `main` as four ordered
-jobs: `test`, `publish-artifact`, `deploy-server`, then `deploy-pages`. The test
-job packages first, then hands the artifact to its own `controller.sh prepare`
--- the exact code path the host runs -- staged outside any checkout, under the
-bootstrap's environment allowlist, with a canary ntfy topic that fails the run
-if the suite reaches it. The next job promotes those exact bytes to durable
-release assets before the host is notified. A client newer than its server
-fails the protocol check and closes the lobby, so the server takes each commit
-first and the client is published only if it did. The workflow and production
-host both use Node 24, so the test gate exercises the runtime family the server
-will actually execute.
-
-CI never connects to this host. The two sides meet on an ntfy topic:
+The running application and deployment authority are separate:
 
 ```text
-CI  --"deploy <sha>"-->  ntfy topic  -->  avalon-listen  -->  avalon-update
-CI  <--"deployed|busy|failed <sha>"--  release controller
-CI  confirms GET $API_BASE/api/health .commit == <sha>
+~/.local/lib/avalon/
+├── current -> releases/<commit>
+├── releases/<commit>/
+└── rollback/<target-commit>/
+
+~/.local/libexec/avalon-deploy/
+├── updater.sh
+├── verify-pointer.mjs
+└── listen.mjs
+
+~/.config/systemd/user/
+├── avalon.service
+├── avalon-listen.service
+├── avalon-update.service
+└── avalon-update.timer
 ```
 
-The notification only makes the deployment prompt; it is never what convinces
-CI that anything happened. A run succeeds when the **server itself** reports the
-commit, so the topic can be public without granting anyone the ability to
-publish a client against a server that never updated. The worst a stranger who
-learns the topic can do is make the controller compare a supplied SHA with
-GitHub's current `main`.
-
-`deploy/listen.mjs` holds the subscription, started by `avalon-listen.service`
-from the selected release. It never interprets a message: a body must match
-`deploy <40 hex>` exactly, and the only thing a match does is start
-`avalon-update@<sha>.service`. The bootstrap independently requires that SHA to
-equal GitHub's current `main`; an old or forged trigger is ignored.
-Reconnection is `Restart=always`.
-
-The release controller publishes what happened, each message carrying
-the target commit so concurrent runs cannot read each other's results:
-
-| Message | Meaning | What CI does |
-| --- | --- | --- |
-| `deployed <sha>` | Restarted on the new commit | Confirms via health, then publishes the client |
-| `busy <sha>` | A state-incompatible update found a game in progress | Logs it and keeps waiting |
-| `failed <sha> …` | Update failed and rolled back | Fails the run immediately |
-
-CI re-sends the trigger every five minutes for up to an hour, so a
-state-incompatible deployment refused mid-game lands as soon as the table
-clears. State-compatible deployments restart immediately and restore the game.
-If the hour runs out, the run fails and **nothing** is published, leaving client
-and server together on the older commit; re-run it from the Actions tab.
-
-`deploy/gate.sh` answers one question -- *may the running process be replaced
-right now?* -- and it is the only place that knows what makes a replacement
-safe. It says yes when the running and target `STATE_VERSION` values are both
-known and equal, because the snapshot then restores every room, so a game in
-progress is no reason to wait. Otherwise the rooms would be lost and it asks
-`/api/health/update` on localhost: `409` means a game is in progress and the
-gate exits 75. An unknown version on either side is not equal, so it fails
-closed through that check.
-
-The target version arrives as `TARGET_STATE_VERSION`, never as a commit:
-nothing in the gate knows about git, so an image-based deployment can pass a
-label or a build arg and keep using it unchanged. `AVALON_FORCE=1` skips the
-question entirely, for when a restart cannot wait. A server that does not
-answer within five seconds is treated as down -- nothing to protect.
-
-The release controller is the mechanism around that decision. It prepares and
-tests a read-only candidate without changing the running release. It reads
-`STATE_VERSION` from the verified manifest, asks the
-gate, then performs the stop, snapshot backup, atomic pointer switch, start,
-and health proof described above. A candidate never becomes visible before it
-passes host tests, and a failed start restores the previous code and snapshot.
-
-### Repository configuration
-
-| Kind | Name | Value |
-| --- | --- | --- |
-| Secret | `NTFY_TOPIC` | The deployment topic. On a public server the name is the only thing gating access, so treat it as a secret |
-| Variable | `API_BASE` | The server's public base URL, used both as the Pages client's default backend and as the deployment's proof of success |
-
-This host needs the same `NTFY_TOPIC` (and optionally `NTFY_SERVER`) in
-`~/.config/avalon.env`, next to `PORT`:
+Install or refresh the static files from a trusted clone:
 
 ```bash
-~/avalon/deploy/install-bootstrap.sh
+~/avalon/deploy/install-updater.sh
 systemctl --user daemon-reload
-systemctl --user enable --now avalon-listen
+systemctl --user enable --now avalon avalon-listen avalon-update.timer
 ```
 
-Because `API_BASE` doubles as the health URL, the server has to be reachable
-from the internet for CI to confirm a deployment. That is already true here via
-`tailscale funnel`; a tailnet-only server would need a different proof.
+On a new host, start `avalon-update.service` once before enabling Avalon so a
+release is selected. The installer is idempotent and does not deploy or restart
+the application. Changes under [`deploy/`](../deploy/) therefore require this
+manual installation step after merge. Exact installed paths and modes are
+defined by [`deploy/install-updater.sh`](../deploy/install-updater.sh); service
+behavior belongs to the adjacent unit files.
 
-### Developing on the server host
+Production requires Node 24. Host configuration and secrets live outside the
+repository in `~/.config/avalon.env`; consult the unit files and
+[`deploy/updater.sh`](../deploy/updater.sh) for accepted values.
 
-Nothing on the host reads `~/avalon`. The application runs from an immutable
-release under `~/.local/lib/avalon`, and the only installed piece of the
-control plane is `~/.local/libexec/avalon-deploy/bootstrap.sh`, which a human
-puts there from a clone. So `~/avalon` is an ordinary development clone with no
-special status: work in it directly, or give a branch its own directory with
-`git worktree add ~/avalon-dev -b some-feature`, whichever suits the change.
+## Release flow
 
-Its one remaining job is being somewhere to run `deploy/install-bootstrap.sh`
-from when the bootstrap itself changes, and a deployment says so in the journal
-and on the topic when the installed copy has drifted.
-
-### Hourly fallback
-
-A host that was rebooting or offline when the trigger was published never sees
-it, and would otherwise stay stale indefinitely. The `avalon-update.timer` unit
-runs the same bootstrap hourly to close that gap:
-
-```bash
-~/avalon/deploy/install-bootstrap.sh
-systemctl --user daemon-reload
-systemctl --user enable --now avalon-update.timer
+```text
+push main
+  -> package and test one immutable archive
+  -> publish archive, then latest.json
+  -> send an untrusted "deploy" wake-up
+  -> installed updater reconciles the host
+  -> prove the exact server commit
+  -> publish the Pages client
 ```
 
-The timer treats exit 75 as success, because "a game was running, try later" is
-a healthy outcome rather than a failure worth alerting on.
+The archive contains application bytes plus `release.json`. `latest.json`
+selects a commit and supplies the archive's SHA-256 digest. Publishing the
+archive before the pointer prevents selection of missing bytes.
+
+A published run then prunes every asset except `latest.json` and the archive it
+names. Nothing else is reachable.
+
+The workflow definition is authoritative for publication and ordering:
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
+manifest rules live in [`scripts/package-release.sh`](../scripts/package-release.sh),
+[`scripts/write-release-manifest.mjs`](../scripts/write-release-manifest.mjs),
+and [`scripts/verify-packaged-release.mjs`](../scripts/verify-packaged-release.mjs).
+
+## Reconciliation and rollback
+
+The installed listener treats ntfy only as a wake-up and starts the generic
+update service. The updater validates the pointer, archive, manifest, and
+rollback release before it stops Avalon. It deploys through an active game only
+when both state and API compatibility match; otherwise the server's update gate
+may defer it with exit 75. A failed exact-commit health check restores the
+previous release and snapshot.
+
+The transaction, safety decisions, retention policy, supported overrides, and
+operator force option are defined in [`deploy/updater.sh`](../deploy/updater.sh)
+and covered by [`test/updater.test.js`](../test/updater.test.js). Candidate
+release scripts are never executed.
+
+## Public access
+
+Expose only the application through an HTTPS reverse proxy, Tailscale Funnel,
+or an equivalent tunnel. Deployment uses outbound GitHub and ntfy connections
+and needs no public inbound control endpoint.
+
+The optional [public Pages client](https://shengjiex98.github.io/avalon/) uses
+the repository `API_BASE` variable. Its server-before-client ordering and
+generated configuration are defined in the deployment workflow.
+
+The checkout at `~/avalon` is not live. It is an ordinary clone used for
+development and as the trusted source for manually installing control-plane
+changes.

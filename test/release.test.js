@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { API_PROTOCOL, readDeployedCommit } from '../src/server.js';
@@ -57,22 +58,39 @@ test('an invalid release identity is rejected rather than reported', async () =>
   assert.equal(readDeployedCommit(dir), null);
 });
 
-// Self-deployment rests on these: the bootstrap runs the controller, the gate,
-// and the units out of the artifact. An export-ignore or a forgotten `git add`
-// would otherwise strand every deployment after it.
+test('the trusted workflow verifier checks the packaged manifest and required files', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
+  const commit = 'd'.repeat(40);
+  for (const name of ['package.json', 'src/server.js', 'public/index.html']) {
+    await mkdir(dirname(join(dir, name)), { recursive: true });
+    await writeFile(join(dir, name), name);
+  }
+  await writeFile(join(dir, 'release.json'), JSON.stringify({
+    commit,
+    stateVersion: STATE_VERSION,
+    apiProtocol: API_PROTOCOL,
+    nodeMajor: 24,
+    deployerSchema: 1,
+  }));
+
+  const verifier = join(root, 'scripts/verify-packaged-release.mjs');
+  assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 0);
+  assert.equal((await run(process.execPath, [verifier, dir, 'e'.repeat(40)])).code, 65);
+});
+
+// A release must carry the application and the files used to package, install,
+// and validate the static deployment path. An export-ignore or forgotten
+// `git add` would otherwise strand a manual updater upgrade.
 const CONTROL_PLANE = [
-  'deploy/bootstrap.sh',
-  'deploy/controller.sh',
-  'deploy/gate.sh',
-  'deploy/lib.sh',
+  'deploy/install-updater.sh',
   'deploy/listen.mjs',
-  'deploy/verify-release.mjs',
-  'deploy/wait-for-health.mjs',
+  'deploy/updater.sh',
+  'deploy/verify-pointer.mjs',
   'deploy/avalon.service',
   'deploy/avalon-listen.service',
   'deploy/avalon-update.service',
-  'deploy/avalon-update@.service',
   'deploy/avalon-update.timer',
+  'scripts/verify-packaged-release.mjs',
 ];
 
 test('the packaged release carries the control plane that deploys it', async () => {
@@ -95,6 +113,12 @@ test('the packaged release carries the control plane that deploys it', async () 
   const packaged = await run('sh', [join(root, 'scripts/package-release.sh'), 'HEAD', dir], { cwd: root });
   assert.equal(packaged.code, 0, packaged.stderr);
   const archive = packaged.stdout.trim().split('\n').at(-1);
+  assert.deepEqual(await readdir(dir), [basename(archive)],
+    'the packager emits one archive and no standalone checksum');
+  const digest = createHash('sha256').update(await readFile(archive)).digest('hex');
+  const reproduced = await run('sha256sum', [archive]);
+  assert.equal(reproduced.code, 0, reproduced.stderr);
+  assert.equal(reproduced.stdout.trim().split(/\s+/)[0], digest);
 
   const listed = await run('tar', ['-tzf', archive]);
   assert.equal(listed.code, 0, listed.stderr);

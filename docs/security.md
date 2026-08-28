@@ -1,19 +1,30 @@
 # Security and trust model
 
-Avalon is designed for a private game among people who know one another.
+Avalon is intended for private games among people who know one another. A room
+code grants access to a room, and an unguessable browser-held player ID
+represents a seat. There are no accounts or server-side authentication; add
+network or reverse-proxy access control when that model is insufficient.
 
-- Anyone with a room code can join the room.
-- A random ID stored by the browser represents a player's identity.
-- There are no accounts, passwords, or server-side authentication.
-- Use a private network or add access control at the reverse proxy if the
-  server should not be publicly reachable.
-- Automatic avatars send the player's display name to Cloudflare Workers AI.
-  They are disabled unless the server operator supplies a Cloudflare account ID
-  and Workers AI token, are cached by normalized name, and are capped at 30 new
-  generations per hour and 200 per rolling day by default. Uploaded photos are
-  cropped and re-encoded in the browser before being stored, which strips their
-  original metadata.
+The server—not the browser—enforces legal actions and derives filtered views,
+so modifying a client does not grant another player's hidden information or an
+illegal move. The authoritative boundaries are the action and view functions
+under [`src/games/`](../src/games/) and the request validation in
+[`src/server.js`](../src/server.js).
 
-The server still enforces game rules and hidden information. Editing the
-browser client cannot reveal another player's role, vote twice, or let a good
-Avalon character submit a Fail card.
+Uploaded avatars are processed before storage. Automatic avatars are disabled
+unless Cloudflare credentials are configured and send the display name to
+Cloudflare Workers AI. Storage, limits, and request behavior are implemented in
+[`src/avatars.js`](../src/avatars.js) and [`public/app.js`](../public/app.js).
+
+## Deployment authority
+
+Expose only the game application. The host reaches GitHub and ntfy outbound;
+deployment has no inbound control endpoint. An exact `deploy` notification can
+only wake the updater and cannot select code.
+
+The protected workflow publishes immutable bytes before changing `latest.json`.
+The permanently installed updater validates that pointer and archive, checks
+the release manifest, and never executes candidate deployment scripts. See
+[`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml),
+[`deploy/listen.mjs`](../deploy/listen.mjs), and
+[`deploy/updater.sh`](../deploy/updater.sh).
