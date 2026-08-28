@@ -4,7 +4,12 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { AVATAR_STYLE_PROMPT, AVATAR_SUBJECT_PROMPT, Avatars } from '../src/avatars.js';
+import {
+  AVATAR_SAFE_SUBJECT_PROMPT,
+  AVATAR_STYLE_PROMPT,
+  AVATAR_SUBJECT_PROMPT,
+  Avatars,
+} from '../src/avatars.js';
 
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -68,7 +73,8 @@ test('a name generates one cached low-cost portrait in the player style', async 
     'chat_template_kwargs', 'max_tokens', 'messages', 'temperature',
   ]);
   assert.match(requests[0].body.messages[1].content, /蓝莓骑士/);
-  assert.match(AVATAR_SUBJECT_PROMPT, /original language literally/);
+  assert.match(AVATAR_SUBJECT_PROMPT, /小白 means a small friendly white creature mascot/);
+  assert.match(AVATAR_SUBJECT_PROMPT, /大白 means a large friendly white creature mascot/);
   assert.equal(
     requests[1].url,
     'https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/black-forest-labs/flux-1-schnell',
@@ -83,6 +89,50 @@ test('a name generates one cached low-cost portrait in the player style', async 
   assert.ok(requests[1].body.prompt.length <= 2048, 'the full prompt fits the model limit');
   assert.equal(requests[1].body.prompt.match(/\./g).length, 3);
   assert.equal(AVATAR_STYLE_PROMPT, 'Create a square JRPG manga-style avatar.');
+});
+
+test('a provider-filtered subject is safely rewritten and retried', async () => {
+  const requests = [];
+  const fetchImpl = async (url, options) => {
+    const body = JSON.parse(options.body);
+    requests.push({ url, body });
+    if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
+      const retry = body.messages[0].content === AVATAR_SAFE_SUBJECT_PROMPT;
+      return {
+        ok: true, status: 200, headers: { get: () => null },
+        json: async () => ({
+          success: true,
+          result: { choices: [{ message: {
+            content: retry ? 'friendly silver-haired gentleman in a blue suit' : 'Joe Biden',
+            reasoning: null,
+          } }] },
+        }),
+      };
+    }
+    const rejected = requests.filter((request) => request.url.endsWith('/@cf/black-forest-labs/flux-1-schnell')).length === 1;
+    if (rejected) {
+      return {
+        ok: false, status: 400, headers: { get: () => 'cf-ray-filtered' },
+        json: async () => ({ errors: [{ code: 8007, message: 'filtered' }] }),
+      };
+    }
+    return {
+      ok: true, status: 200, headers: { get: () => null },
+      json: async () => ({ success: true, result: { image: jpeg.toString('base64') } }),
+    };
+  };
+  const avatars = new Avatars({
+    accountId: 'test-account', apiToken: 'test-token', fetchImpl, minGenerationInterval: 0,
+  });
+
+  assert.ok(await avatars.resolve({ name: '拜登' }));
+  assert.equal(requests.length, 4);
+  assert.match(requests[1].body.prompt, /Joe Biden/);
+  assert.equal(requests[2].body.messages[0].content, AVATAR_SAFE_SUBJECT_PROMPT);
+  assert.match(requests[2].body.messages[1].content, /拜登/);
+  assert.match(requests[2].body.messages[1].content, /Joe Biden/);
+  assert.match(requests[3].body.prompt, /friendly silver-haired gentleman in a blue suit/);
+  assert.deepEqual(Object.keys(requests[3].body).sort(), ['prompt', 'steps']);
 });
 
 test('missing credentials and generation ceilings fall back without blocking a seat', async () => {
