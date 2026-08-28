@@ -56,12 +56,11 @@ test('a name generates one cached low-cost portrait in the player style', async 
   assert.equal(requests[0].body.steps, 4);
   assert.match(requests[0].body.prompt, /蓝莓骑士/);
   assert.ok(requests[0].body.prompt.length <= 2048, 'the full prompt fits the model limit');
-  assert.match(AVATAR_STYLE_PROMPT, /CONTENT BRIEF, not merely a mood/);
-  assert.match(AVATAR_STYLE_PROMPT, /橙子 must visibly feature an orange\s+fruit/);
-  assert.match(AVATAR_STYLE_PROMPT, /read as a blueberry knight/);
-  assert.match(AVATAR_STYLE_PROMPT, /guess the\s+nickname at thumbnail size/);
-  assert.match(AVATAR_STYLE_PROMPT, /PLAYER identity badge/);
-  assert.match(AVATAR_STYLE_PROMPT, /no circle, no gold frame/);
+  assert.equal(AVATAR_STYLE_PROMPT.split(/\.\s*(?:\n|$)/).filter(Boolean).length, 3);
+  assert.match(AVATAR_STYLE_PROMPT, /橙子 should center on an orange/);
+  assert.match(AVATAR_STYLE_PROMPT, /look like a blueberry knight/);
+  assert.match(AVATAR_STYLE_PROMPT, /classic-JRPG/);
+  assert.match(AVATAR_STYLE_PROMPT, /distinct from role portraits/);
 });
 
 test('missing credentials and generation ceilings fall back without blocking a seat', async () => {
