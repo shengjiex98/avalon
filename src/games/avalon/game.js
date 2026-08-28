@@ -2,9 +2,8 @@
 // clock (beyond timestamps) or randomness it was not handed.
 
 import {
-  HOUSE_RULE_KEYS, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
-  buildRoleList, defaultHouseRules, defaultOptions, failsRequired, knowledgeFor,
-  noHouseRules, sideOf, teamSize,
+  HOUSE_RULES, HOUSE_RULE_KEYS, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
+  buildRoleList, defaultOptions, failsRequired, knowledgeFor, sideOf, teamSize,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
@@ -14,7 +13,7 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     ...lobby.baseState(code, 'avalon', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,  // manual choices last only until the table size changes
-    houseRules: defaultHouseRules(),   // variants, as a new table plays them
+    houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
     roles: {},              // playerId -> role key
     round: 0,               // 0-based quest index
     leaderIndex: 0,
@@ -40,13 +39,7 @@ const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'ev
 const liveOptions = (g) =>
   (g.phase !== 'lobby' || g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
-/**
- * The house rules in force. Filled in rather than read straight off the game,
- * so a room restored from a snapshot taken before a rule existed plays without
- * it, instead of having a variant it never agreed to switched on underneath it
- * mid-game.
- */
-const houseRulesOf = (g) => ({ ...noHouseRules(), ...g.houseRules });
+const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
 // ---------------------------------------------------------------- lobby
 
@@ -71,13 +64,7 @@ export function removePlayer(g, playerId) {
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
-  if (options.houseRules) {
-    const rules = houseRulesOf(g);
-    for (const rule of HOUSE_RULE_KEYS) {
-      if (rule in options.houseRules) rules[rule] = Boolean(options.houseRules[rule]);
-    }
-    g.houseRules = rules;
-  }
+  if (options.houseRules) lobby.setHouseRules(g, options.houseRules, HOUSE_RULE_KEYS);
   const next = { ...liveOptions(g) };
   let touched = g.optionsTouched;
   for (const r of OPTIONAL_ROLES) {
@@ -257,31 +244,19 @@ function finish(g, winner, reason) {
   logEvent(g, 'log.gameOver', { winner });
 }
 
-function rebuildLobby(g, { now = Date.now } = {}) {
-  const keep = {
-    code: g.code, players: g.players, hostId: g.hostId,
-    options: g.options, optionsTouched: Boolean(g.optionsTouched),
-    houseRules: houseRulesOf(g),
-    seed: g.seed, rng: g.rng, actions: g.actions,
-    ...(g.actionsDropped ? { actionsDropped: true } : {}),
-  };
-  const fresh = createGame(g.code, { now, seed: g.seed });
-  Object.assign(g, fresh, keep, { version: g.version });
-  logEvent(g, 'log.newGame', {});
-}
+/** What this table agreed to before the cards came out, and keeps. */
+const lobbyKeeps = (g) => ({
+  options: g.options,
+  optionsTouched: Boolean(g.optionsTouched),
+  houseRules: houseRulesOf(g),
+});
 
-/** Back to the lobby after a completed game, with the same table. */
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase === 'over', 'gameInProgress');
-  rebuildLobby(g, { now });
+  lobby.resetToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
 }
 
-/** Let the host abandon an active game and immediately return to its lobby. */
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
-  rebuildLobby(g, { now });
+  lobby.restartToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
 }
 
 // ---------------------------------------------------------------- views

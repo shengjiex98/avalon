@@ -19,9 +19,9 @@
 // role this model cannot represent honestly.
 
 import {
-  DEFAULT_PACE, HOUSE_RULE_KEYS, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES, PACES, ROLES,
-  buildDeck, decideWinners, defaultHouseRules, defaultOptions, nightLength, nightScript,
-  noHouseRules, roomForOptions, stepMillis, tallyVotes, teamOf,
+  DEFAULT_PACE, HOUSE_RULES, HOUSE_RULE_KEYS, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES,
+  PACES, ROLES, buildDeck, decideWinners, defaultOptions, nightLength, nightScript,
+  roomForOptions, stepMillis, tallyVotes, teamOf,
 } from './rules.js';
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
@@ -31,7 +31,7 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     ...lobby.baseState(code, 'onuw', { now, seed }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
-    houseRules: defaultHouseRules(),   // variants, as a new table plays them
+    houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
     pace: DEFAULT_PACE,
     script: [],              // this deck's night, decided when the cards are dealt
     step: -1,                // index into script
@@ -57,13 +57,7 @@ const nameOf = (g, id) => playerById(g, id)?.name ?? '?';
 /** The deck the lobby is currently describing. */
 const liveOptions = (g) => (g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
-/**
- * The house rules in force. Filled in rather than read straight off the game,
- * so a room restored from a snapshot taken before a rule existed plays without
- * it instead of scoring its vote against `undefined` — or having a variant it
- * never agreed to switched on underneath it mid-game.
- */
-const houseRulesOf = (g) => ({ ...noHouseRules(), ...g.houseRules });
+const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
@@ -72,13 +66,7 @@ export function setOptions(g, playerId, options) {
     require_(options.pace in PACES, 'badPace');
     g.pace = options.pace;
   }
-  if (options.houseRules) {
-    const rules = houseRulesOf(g);
-    for (const rule of HOUSE_RULE_KEYS) {
-      if (rule in options.houseRules) rules[rule] = Boolean(options.houseRules[rule]);
-    }
-    g.houseRules = rules;
-  }
+  if (options.houseRules) lobby.setHouseRules(g, options.houseRules, HOUSE_RULE_KEYS);
   const next = { ...liveOptions(g) };
   for (const role of OPTIONAL_ROLES) if (role in options) next[role] = Boolean(options[role]);
   buildDeck(g.players.length, next);   // throws before anything is committed
@@ -364,30 +352,20 @@ function resolveVote(g) {
   logEvent(g, 'log.gameOver', { winner: g.winners[0] ?? 'nobody' });
 }
 
-function rebuildLobby(g, { now = Date.now } = {}) {
-  const keep = {
-    code: g.code, players: g.players, hostId: g.hostId,
-    options: g.options, optionsTouched: g.optionsTouched,
-    houseRules: houseRulesOf(g), pace: g.pace,
-    seed: g.seed, rng: g.rng, actions: g.actions,
-    ...(g.actionsDropped ? { actionsDropped: true } : {}),
-  };
-  const fresh = createGame(g.code, { now, seed: g.seed });
-  Object.assign(g, fresh, keep, { version: g.version });
-  logEvent(g, 'log.newGame', {});
-}
+/** What this table agreed to before the cards came out, and keeps. */
+const lobbyKeeps = (g) => ({
+  options: g.options,
+  optionsTouched: g.optionsTouched,
+  houseRules: houseRulesOf(g),
+  pace: g.pace,
+});
 
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase === 'over', 'gameInProgress');
-  rebuildLobby(g, { now });
+  lobby.resetToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
 }
 
-/** Let the host abandon an active game and immediately return to its lobby. */
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
-  rebuildLobby(g, { now });
+  lobby.restartToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
 }
 
 // ---------------------------------------------------------------- views

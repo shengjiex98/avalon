@@ -104,6 +104,61 @@ export function removePlayer(g, id) {
   if (g.hostId === id) g.hostId = g.players[0]?.id ?? null;
 }
 
+// ------------------------------------------------------- house rules
+
+/**
+ * The house rules in force, given the keys this game offers. A key the stored
+ * rules do not mention is off: a table that never agreed to a variant keeps
+ * the game it started under, even when the server it is restored onto now
+ * offers one.
+ */
+export const houseRulesInForce = (g, keys) => ({
+  ...Object.fromEntries(keys.map((rule) => [rule, false])),
+  ...g.houseRules,
+});
+
+/** Switch the rules the host named, leaving keys this game does not offer alone. */
+export function setHouseRules(g, requested, keys) {
+  const rules = houseRulesInForce(g, keys);
+  for (const rule of keys) {
+    if (rule in requested) rules[rule] = Boolean(requested[rule]);
+  }
+  g.houseRules = rules;
+}
+
+// ------------------------------------------------------- back to the lobby
+
+/**
+ * Put the same table back in a lobby. `fresh` is the game's own new state and
+ * `keep` whatever that game carries across on top of the room's identity, its
+ * people, its random stream and its recorded actions. The revision survives
+ * too: a room's version only ever counts up, whatever happens inside it.
+ */
+function rebuildLobby(g, fresh, keep) {
+  const carried = {
+    code: g.code, players: g.players, hostId: g.hostId,
+    seed: g.seed, rng: g.rng, actions: g.actions,
+    ...(g.actionsDropped ? { actionsDropped: true } : {}),
+    ...keep,
+  };
+  Object.assign(g, fresh, carried, { version: g.version });
+  logEvent(g, 'log.newGame', {});
+}
+
+/** Back to the lobby after a completed game, with the same table. */
+export function resetToLobby(g, playerId, fresh, keep) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase === 'over', 'gameInProgress');
+  rebuildLobby(g, fresh, keep);
+}
+
+/** Let the host abandon an active game and immediately return to its lobby. */
+export function restartToLobby(g, playerId, fresh, keep) {
+  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
+  rebuildLobby(g, fresh, keep);
+}
+
 /** The part of a view that looks the same in every game. */
 export function baseView(g, viewerId) {
   const me = playerById(g, viewerId);
