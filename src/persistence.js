@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -18,8 +18,9 @@ export function save(rooms, file) {
     savedAt: Date.now(),
     rooms: rooms.snapshot(),
   });
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(`${file}.tmp`, body);
+  mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
+  writeFileSync(`${file}.tmp`, body, { mode: 0o600 });
+  chmodSync(`${file}.tmp`, 0o600);
   renameSync(`${file}.tmp`, file);
 }
 
@@ -36,8 +37,12 @@ export function load(rooms, file) {
     const reason = `snapshot is state version ${parsed.stateVersion}, expected ${STATE_VERSION}; discarding`;
     return { restored: 0, reason };
   }
-  const before = rooms.rooms.size;
-  rooms.restore(parsed.rooms ?? []);
-  const restored = rooms.rooms.size - before;
-  return { restored, reason: restored ? null : 'snapshot contained no usable rooms' };
+  const entries = parsed.rooms ?? [];
+  if (!rooms.restore(entries)) {
+    return { restored: 0, reason: 'snapshot is invalid; starting empty' };
+  }
+  return {
+    restored: entries.length,
+    reason: entries.length ? null : 'snapshot contained no rooms',
+  };
 }
