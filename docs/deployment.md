@@ -75,6 +75,13 @@ The archive contains application bytes plus `release.json`. `latest.json`
 selects a commit and supplies the archive's SHA-256 digest. Publishing the
 archive before the pointer prevents selection of missing bytes.
 
+The `deployment-artifacts` release keeps `latest.json` and the five newest
+archives; every other asset is pruned once a run has published. The host never
+fetches an older archive -- it downloads only the commit `latest.json` names,
+and rolls back to a release already on disk -- so the window exists purely so
+an operator can repoint the pointer by hand. A pruning failure warns and leaves
+the rollout alone.
+
 The workflow definition is authoritative for publication and ordering:
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
 manifest rules live in [`scripts/package-release.sh`](../scripts/package-release.sh),

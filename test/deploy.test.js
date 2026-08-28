@@ -101,6 +101,29 @@ test('publication moves latest.json only after the immutable archive is durable'
   assert.match(publish, /--latest=false/);
 });
 
+test('publication keeps a bounded window of archives and no other debris', async () => {
+  const workflow = await read('../.github/workflows/deploy.yml');
+  const publish = workflow.slice(workflow.indexOf('publish-artifact:'), workflow.indexOf('deploy-server:'));
+  const prune = publish.slice(publish.indexOf('Prune superseded release assets'));
+
+  // Pruning runs only for a run that actually published, and never before the
+  // pointer and its payload are durable.
+  assert.ok(publish.indexOf('dist/latest.json --clobber') < publish.indexOf('Prune superseded release assets'));
+  assert.match(prune, /if: steps\.publish\.outputs\.published == 'true'/);
+
+  // latest.json, the five newest archives, and this commit's own survive.
+  assert.match(prune, /new Set\(\["latest\.json", `avalon-\$\{commit\}\.tar\.gz`\]\)/);
+  assert.match(prune, /\.slice\(0, 5\)/);
+  assert.match(prune, /Date\.parse\(b\.created_at\) - Date\.parse\(a\.created_at\)/);
+
+  // Housekeeping never fails a deploy that already published.
+  assert.match(prune, /skip 'cannot resolve the release'/);
+  assert.match(prune, /skip 'cannot list release assets'/);
+  assert.match(prune, /skip 'cannot select assets to prune'/);
+  assert.match(prune, /skip\(\) \{ echo "::warning::\$1; skipped pruning"; exit 0; \}/);
+  assert.doesNotMatch(prune, /^\s*exit 1/m, 'a pruning failure warns rather than blocking the rollout');
+});
+
 test('the deploy job proves the server took the commit before publishing the client', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
 

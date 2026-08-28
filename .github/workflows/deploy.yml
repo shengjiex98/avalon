@@ -97,6 +97,56 @@ jobs:
           gh release upload "$release_tag" dist/latest.json --clobber
           echo 'published=true' >>"$GITHUB_OUTPUT"
 
+      - name: Prune superseded release assets
+        if: steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          release_tag=deployment-artifacts
+
+          # The host downloads only latest.json and the single archive that
+          # pointer names, and rolls back to a release already on disk, so no
+          # older asset is ever fetched. The few kept exist purely so an
+          # operator can repoint latest.json by hand. Housekeeping must never
+          # fail a deploy that already published: every failure is a warning.
+          skip() { echo "::warning::$1; skipped pruning"; exit 0; }
+
+          release_id=$(gh api "repos/$GH_REPO/releases/tags/$release_tag" --jq '.id') \
+            || skip 'cannot resolve the release'
+          gh api "repos/$GH_REPO/releases/$release_id/assets?per_page=100" \
+            --paginate --slurp >"$RUNNER_TEMP/assets.json" \
+            || skip 'cannot list release assets'
+
+          # Keep latest.json, the five newest archives, and this commit's own.
+          # This release carries nothing else by design, so anything unmatched
+          # is debris from a retired pipeline and goes.
+          node -e '
+            const fs = require("node:fs");
+            const [file, commit] = process.argv.slice(1);
+            const assets = JSON.parse(fs.readFileSync(file, "utf8")).flat();
+            const archive = /^avalon-[0-9a-f]{40}\.tar\.gz$/;
+            const keep = new Set(["latest.json", `avalon-${commit}.tar.gz`]);
+            assets
+              .filter((asset) => archive.test(asset.name))
+              .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
+              .slice(0, 5)
+              .forEach((asset) => keep.add(asset.name));
+            for (const asset of assets) {
+              if (!keep.has(asset.name)) console.log(`${asset.id} ${asset.name}`);
+            }
+          ' "$RUNNER_TEMP/assets.json" "$GITHUB_SHA" >"$RUNNER_TEMP/doomed" \
+            || skip 'cannot select assets to prune'
+
+          while read -r id name; do
+            if gh api -X DELETE "repos/$GH_REPO/releases/assets/$id" >/dev/null; then
+              echo "::notice::pruned $name"
+            else
+              echo "::warning::could not prune $name"
+            fi
+          done <"$RUNNER_TEMP/doomed"
+
   deploy-server:
     needs: publish-artifact
     if: needs.publish-artifact.outputs.published == 'true'
