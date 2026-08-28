@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { AVATAR_STYLE_PROMPT, Avatars } from '../src/avatars.js';
+import { AVATAR_STYLE_PROMPT, AVATAR_SUBJECT_PROMPT, Avatars } from '../src/avatars.js';
 
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -29,6 +29,17 @@ test('a name generates one cached low-cost portrait in the player style', async 
   const requests = [];
   const fetchImpl = async (url, options) => {
     requests.push({ url, options, body: JSON.parse(options.body) });
+    if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => 'cf-ray-subject' },
+        json: async () => ({
+          success: true,
+          result: { choices: [{ message: { content: null, reasoning: 'blueberry knight' } }] },
+        }),
+      };
+    }
     return {
       ok: true,
       status: 200,
@@ -48,19 +59,30 @@ test('a name generates one cached low-cost portrait in the player style', async 
   assert.equal(first, second, 'the normalized name reuses its generated portrait');
   assert.match(first, /^\/api\/avatars\/g-[a-f0-9]{64}\.jpeg$/);
   assert.equal((await avatars.read(first.split('/').pop())).mime, 'image/jpeg');
-  assert.equal(requests.length, 1);
+  assert.equal(requests.length, 2);
   assert.equal(
     requests[0].url,
+    'https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/qwen/qwen3-30b-a3b-fp8',
+  );
+  assert.deepEqual(Object.keys(requests[0].body).sort(), [
+    'chat_template_kwargs', 'max_tokens', 'messages', 'temperature',
+  ]);
+  assert.match(requests[0].body.messages[1].content, /蓝莓骑士/);
+  assert.match(AVATAR_SUBJECT_PROMPT, /original language literally/);
+  assert.equal(
+    requests[1].url,
     'https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/black-forest-labs/flux-1-schnell',
   );
-  assert.equal(requests[0].body.steps, 4);
-  assert.match(requests[0].body.prompt, /蓝莓骑士/);
-  assert.ok(requests[0].body.prompt.length <= 2048, 'the full prompt fits the model limit');
-  assert.equal(AVATAR_STYLE_PROMPT.split(/\.\s*(?:\n|$)/).filter(Boolean).length, 3);
-  assert.match(AVATAR_STYLE_PROMPT, /橙子 should center on an orange/);
-  assert.match(AVATAR_STYLE_PROMPT, /look like a blueberry knight/);
-  assert.match(AVATAR_STYLE_PROMPT, /classic-JRPG/);
-  assert.match(AVATAR_STYLE_PROMPT, /distinct from role portraits/);
+  assert.deepEqual(Object.keys(requests[1].body).sort(), ['prompt', 'steps']);
+  assert.equal(requests[1].body.steps, 4);
+  assert.equal(
+    requests[1].body.prompt,
+    'Create a square JRPG manga-style avatar. Make blueberry knight the obvious main subject. No text or letters.',
+  );
+  assert.ok(!('image' in requests[1].body), 'the image API receives no reference image');
+  assert.ok(requests[1].body.prompt.length <= 2048, 'the full prompt fits the model limit');
+  assert.equal(requests[1].body.prompt.match(/\./g).length, 3);
+  assert.equal(AVATAR_STYLE_PROMPT, 'Create a square JRPG manga-style avatar.');
 });
 
 test('missing credentials and generation ceilings fall back without blocking a seat', async () => {
@@ -76,8 +98,17 @@ test('missing credentials and generation ceilings fall back without blocking a s
     generationLimit: -1,
     dailyGenerationLimit: 1,
     minGenerationInterval: 0,
-    fetchImpl: async () => {
+    fetchImpl: async (url) => {
       calls += 1;
+      if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
+        return {
+          ok: true, status: 200, headers: { get: () => null },
+          json: async () => ({
+            success: true,
+            result: { choices: [{ message: { content: 'person', reasoning: null } }] },
+          }),
+        };
+      }
       return {
         ok: true, status: 200, headers: { get: () => null },
         json: async () => ({ success: true, result: { image: jpeg.toString('base64') } }),
@@ -86,7 +117,7 @@ test('missing credentials and generation ceilings fall back without blocking a s
   });
   assert.ok(await limited.resolve({ name: 'Ann' }));
   assert.equal(await limited.resolve({ name: 'Bob' }), null);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test('test-mode seats explicitly skip generation', async () => {
