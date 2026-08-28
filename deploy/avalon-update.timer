@@ -1,14 +1,9 @@
-# This timer ships in the release; the controller keeps the installed copy
-# in step and deploy/install-bootstrap.sh installs it the first time.
-
 [Unit]
-Description=Poll GitHub main for Avalon deployments
+Description=Reconcile Avalon with its published release pointer
 
 [Timer]
 OnBootSec=5min
 OnUnitActiveSec=1h
-# Hourly is deliberately unhurried: CI delivers the fast path, and every run
-# that finds a game in progress is a run that did nothing useful.
 Persistent=true
 
 [Install]

@@ -141,19 +141,19 @@ test('installing the static layer leaves one script and five real units', async 
   assert.equal(await readFile(installed, 'utf8'), await readFile(join(deployDir, 'bootstrap.sh'), 'utf8'));
 });
 
-test('the update units call the static bootstrap, which owns target selection', async () => {
+test('the steady-state units call only the installed updater and listener', async () => {
   const updater = await readFile(join(deployDir, 'avalon-update.service'), 'utf8');
-  assert.match(updater, /ExecStart=%h\/\.local\/libexec\/avalon-deploy\/bootstrap\.sh deploy-main$/m);
+  assert.match(updater, /ExecStart=%h\/\.local\/libexec\/avalon-deploy\/updater\.sh reconcile$/m);
   assert.match(updater, /SuccessExitStatus=75/);
 
+  // Retained for one emergency release only; no installed steady-state unit
+  // or listener references the commit-specific template.
   const triggered = await readFile(join(deployDir, 'avalon-update@.service'), 'utf8');
   assert.match(triggered, /ExecStart=%h\/\.local\/libexec\/avalon-deploy\/bootstrap\.sh deploy-trigger %i$/m);
-  assert.match(triggered, /SuccessExitStatus=75/);
 
-  // The listener is part of the release now, and upgrades with it.
   const listener = await readFile(join(deployDir, 'avalon-listen.service'), 'utf8');
-  assert.match(listener, /WorkingDirectory=%h\/\.local\/lib\/avalon\/current$/m);
-  assert.match(listener, /ExecStart=.*%h\/\.local\/lib\/avalon\/current\/deploy\/listen\.mjs$/m);
+  assert.doesNotMatch(listener, /WorkingDirectory=.*current/m);
+  assert.match(listener, /ExecStart=.*%h\/\.local\/libexec\/avalon-deploy\/listen\.mjs$/m);
 
   const controller = await readFile(join(deployDir, 'controller.sh'), 'utf8');
   assert.doesNotMatch(controller, /deploy-main|deploy-trigger|resolve-main/,

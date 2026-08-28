@@ -2,8 +2,8 @@
 //
 // The channel is deliberately untrusted. Anyone who learns the topic name can
 // publish to it, so nothing here interprets what a message says: a body has to
-// match one of the migration's exact wake-up shapes, and the only thing a
-// match can do is start one fixed reconciliation unit. Authority over *what*
+// match the exact wake-up word, and the only thing a match can do is start one
+// fixed reconciliation unit. Authority over *what*
 // gets deployed remains in the published release pointer; the message is never
 // sufficient authority by itself.
 //
@@ -19,10 +19,7 @@ if (!topic) {
   process.exit(78); // EX_CONFIG
 }
 
-// During the one-release migration window, accept both the future wake-only
-// message and the legacy commit-bearing message. The commit is deliberately
-// discarded: latest.json alone chooses what the generic updater deploys.
-const TRIGGER = /^(?:deploy|deploy [0-9a-f]{40})$/;
+const TRIGGER = /^deploy$/;
 
 let running = false;
 
