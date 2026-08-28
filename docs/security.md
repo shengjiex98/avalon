@@ -17,3 +17,14 @@ Avalon is designed for a private game among people who know one another.
 The server still enforces game rules and hidden information. Editing the
 browser client cannot reveal another player's role, vote twice, or let a good
 Avalon character submit a Fail card.
+
+## Deployment authority
+
+The Tailscale Funnel exposes only the Avalon application. Deployment has no
+public inbound endpoint: the host makes outbound GitHub and ntfy connections.
+An exact `deploy` ntfy message is only a wake-up and cannot name code. Authority
+comes from `latest.json` on the fixed `deployment-artifacts` GitHub Release;
+the default-branch workflow publishes the immutable archive before replacing
+that pointer. The installed updater derives the archive name from a validated
+commit, verifies the pointer's SHA-256, checks the embedded manifest, and never
+executes candidate deployment scripts.

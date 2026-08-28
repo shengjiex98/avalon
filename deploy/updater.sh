@@ -80,7 +80,10 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/avalon-update.XXXXXX")
 stage=
 cleanup() {
   code=$?
-  [ -z "${stage:-}" ] || [ ! -d "$stage" ] || rm -rf -- "$stage"
+  if [ -n "${stage:-}" ] && [ -d "$stage" ]; then
+    chmod -R u+w "$stage" 2>/dev/null || true
+    rm -rf -- "$stage"
+  fi
   [ ! -d "$work" ] || rm -rf -- "$work"
   exit "$code"
 }

@@ -354,17 +354,7 @@ test('the installer atomically installs only static files and never starts a dep
   assert.equal((await readFile(join(root, 'verify-pointer.mjs'), 'utf8')), await readFile(join(deployDir, 'verify-pointer.mjs'), 'utf8'));
   assert.equal((await readFile(join(root, 'listen.mjs'), 'utf8')), await readFile(join(deployDir, 'listen.mjs'), 'utf8'));
   for (const unit of ['avalon.service', 'avalon-listen.service', 'avalon-update.service', 'avalon-update.timer']) {
-    assert.equal(await readFile(join(units, unit), 'utf8'), await readFile(join(deployDir, 'static', unit), 'utf8'));
+    assert.equal(await readFile(join(units, unit), 'utf8'), await readFile(join(deployDir, unit), 'utf8'));
   }
   await assert.rejects(access(join(units, 'avalon-update@.service')));
-});
-
-test('the release copies of the units match the statically installed definitions', async () => {
-  for (const unit of ['avalon.service', 'avalon-listen.service', 'avalon-update.service', 'avalon-update.timer']) {
-    assert.equal(
-      await readFile(join(deployDir, unit), 'utf8'),
-      await readFile(join(deployDir, 'static', unit), 'utf8'),
-      `${unit} must not drift during the cutover release`,
-    );
-  }
 });

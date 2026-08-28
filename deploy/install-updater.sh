@@ -24,7 +24,7 @@ install_file "$here/updater.sh" "$root/updater.sh" 755
 install_file "$here/verify-pointer.mjs" "$root/verify-pointer.mjs" 644
 install_file "$here/listen.mjs" "$root/listen.mjs" 644
 for unit in $units; do
-  install_file "$here/static/$unit" "$unit_dir/$unit" 644
+  install_file "$here/$unit" "$unit_dir/$unit" 644
 done
 
 printf '%s\n' "$root/updater.sh" "$root/verify-pointer.mjs" "$root/listen.mjs"

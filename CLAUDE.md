@@ -8,11 +8,11 @@ specific to Claude Code.
 ## Merging
 
 Open a PR and merge it. Do not stall on whether a game is in progress, and do
-not ask the user to pick a safe moment: `deploy/gate.sh` decides whether the
-running process may be replaced, the controller asks it before selecting a
-release, and a refusal exits 75 for the hourly retry. A commit whose tests fail
-never becomes visible, and a release that fails its health check is rolled
-back. Low friction is the intended design, not a corner being cut.
+not ask the user to pick a safe moment: the installed updater compares state
+and API compatibility before selecting a release, and a refusal exits 75 for
+the hourly retry. A commit whose tests fail never becomes visible, and a
+release that fails exact-commit health is rolled back. Low friction is the
+intended design, not a corner being cut.
 
 If the session is in a worktree, `gh pr merge --delete-branch` can end in
 `fatal: 'main' is already checked out at ...` -- gh tries to switch some other
@@ -22,8 +22,7 @@ branch with `gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`.
 
 ## Deployment changes
 
-`deploy/` ships inside the release, so a change there deploys itself through
-CI, the host test run, and the health gate like any other change. The one
-exception is `deploy/bootstrap.sh`, which is installed on the host: it needs
-`deploy/install-bootstrap.sh` run from a clone, and until then a deployment
-warns about the drift.
+`deploy/` is the static host control plane. A change there still goes through
+CI and the normal release rollout, but a human must then run
+`deploy/install-updater.sh` from the host clone and reload systemd. Candidate
+releases never execute or overwrite deployment code.
