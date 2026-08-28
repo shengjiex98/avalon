@@ -142,3 +142,54 @@ test('the persistence hook runs only after registry mutations', () => {
   rooms.sweep();
   assert.equal(mutations, 3, 'a no-op sweep does not write another snapshot');
 });
+
+// ---------------------------------------------------------------- identity
+
+test('an unrecognized game id is refused rather than quietly played as Avalon', () => {
+  const rooms = new Rooms();
+  assert.throws(() => gameFor('werewolf'), { key: 'noSuchGame', params: { game: 'werewolf' } });
+  assert.throws(() => gameFor(undefined), { key: 'noSuchGame' });
+  assert.throws(() => rooms.create('werewolf'), { key: 'noSuchGame' });
+
+  const code = rooms.create('avalon', { code: 'SWAP' });
+  rooms.dispatch(code, 'p0', { type: 'join', id: 'p0', name: 'Ann' });
+  assert.throws(() => rooms.setGame(code, 'p0', 'werewolf'), { key: 'noSuchGame' });
+  assert.equal(rooms.get(code).game.gameId, 'avalon', 'a refused switch changes nothing');
+});
+
+test('a deadline of zero still schedules a tick', () => {
+  const rooms = new Rooms({ now: () => 0 });
+  const code = rooms.create('onuw', { code: 'ZERO' });
+  const room = rooms.get(code);
+
+  room.game.phase = 'night';
+  room.game.stepEndsAt = 0;
+  rooms.scheduleTick(code);
+  assert.notEqual(room.timer, null, 'zero is a deadline, not an absent one');
+  clearTimeout(room.timer);
+
+  room.game.phase = 'lobby';
+  rooms.scheduleTick(code);
+  assert.equal(room.timer, null, 'no deadline means no clock');
+});
+
+test('a colliding code is retried, and an exhausted space is reported', () => {
+  const candidates = ['AAAA', 'AAAA', 'AAAA', 'BBBB'];
+  let issued = 0;
+  const rooms = new Rooms({ newCode: () => candidates[Math.min(issued++, candidates.length - 1)] });
+
+  assert.equal(rooms.create('avalon'), 'AAAA');
+  assert.equal(rooms.create('avalon'), 'BBBB', 'a taken code is never handed out twice');
+  assert.equal(rooms.rooms.size, 2);
+
+  const stuck = new Rooms({ newCode: () => 'AAAA' });
+  stuck.create('avalon');
+  assert.throws(() => stuck.create('avalon'), { key: 'roomsFull' });
+  assert.equal(stuck.rooms.size, 1, 'a failed allocation leaves the registry alone');
+});
+
+test('allocated codes keep the four-character alphabet players read aloud', () => {
+  const rooms = new Rooms();
+  for (let i = 0; i < 200; i++) assert.match(rooms.create('avalon'), /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/);
+  assert.equal(rooms.rooms.size, 200, 'every host got a code of their own');
+});
