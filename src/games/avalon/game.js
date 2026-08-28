@@ -252,11 +252,17 @@ const lobbyKeeps = (g) => ({
 });
 
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
-  lobby.resetToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
+  lobby.resetToLobby(g, playerId, () => ({
+    fresh: createGame(g.code, { now, seed: g.seed }),
+    keep: lobbyKeeps(g),
+  }));
 }
 
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
-  lobby.restartToLobby(g, playerId, createGame(g.code, { now, seed: g.seed }), lobbyKeeps(g));
+  lobby.restartToLobby(g, playerId, () => ({
+    fresh: createGame(g.code, { now, seed: g.seed }),
+    keep: lobbyKeeps(g),
+  }));
 }
 
 // ---------------------------------------------------------------- views
