@@ -1,0 +1,10 @@
+[Unit]
+Description=Reconcile Avalon with its published release pointer
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

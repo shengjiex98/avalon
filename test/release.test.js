@@ -64,8 +64,11 @@ const CONTROL_PLANE = [
   'deploy/bootstrap.sh',
   'deploy/controller.sh',
   'deploy/gate.sh',
+  'deploy/install-updater.sh',
   'deploy/lib.sh',
   'deploy/listen.mjs',
+  'deploy/updater.sh',
+  'deploy/verify-pointer.mjs',
   'deploy/verify-release.mjs',
   'deploy/wait-for-health.mjs',
   'deploy/avalon.service',
@@ -73,6 +76,10 @@ const CONTROL_PLANE = [
   'deploy/avalon-update.service',
   'deploy/avalon-update@.service',
   'deploy/avalon-update.timer',
+  'deploy/static/avalon.service',
+  'deploy/static/avalon-listen.service',
+  'deploy/static/avalon-update.service',
+  'deploy/static/avalon-update.timer',
 ];
 
 test('the packaged release carries the control plane that deploys it', async () => {
