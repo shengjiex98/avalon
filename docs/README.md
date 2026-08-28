@@ -9,4 +9,5 @@ hosts. Detailed reference material lives here.
 - [HTTP API and client protocol](api.md)
 - [Test suite](testing.md)
 - [Security and trust model](security.md)
+- [Codebase cleanup tracker](codebase-cleanup.md)
 - [Single-server deployment decision](single-server.md)
