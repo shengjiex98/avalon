@@ -287,6 +287,17 @@ test('the host can abandon an active game and return the same table to the lobby
   assert.deepEqual(game.quests, []);
 });
 
+test('rejected lobby resets do not prepare replacement state', () => {
+  const game = g.createGame('TEST');
+  g.addPlayer(game, { id: 'host', name: 'Host' });
+  const now = () => { throw new Error('replacement state was prepared'); };
+
+  assert.throws(() => g.resetToLobby(game, 'other', { now }), { key: 'hostOnly' });
+  assert.throws(() => g.resetToLobby(game, 'host', { now }), { key: 'gameInProgress' });
+  assert.throws(() => g.restartToLobby(game, 'other', { now }), { key: 'hostOnly' });
+  assert.throws(() => g.restartToLobby(game, 'host', { now }), { key: 'wrongPhase' });
+});
+
 test('the active Avalon view exposes role counts but never role assignments', () => {
   const game = g.createGame('TEST');
   for (let i = 0; i < 5; i++) g.addPlayer(game, { id: `p${i}`, name: `P${i}` });
