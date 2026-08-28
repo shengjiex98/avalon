@@ -3,20 +3,18 @@
 
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
-let T, send, app, nameOf, namesOf, waitingNames, playerList, render;
-const avatarOf = (player) => playerAvatar(player, app.server);
-
-export function bind(ctx) {
-  ({ T, send, app, nameOf, namesOf, waitingNames, playerList, render } = ctx);
-}
-
 export const id = 'avalon';
 export const minPlayers = 5;
 export const rulesKey = 'rules.body';
 export const taglineKey = 'app.tagline';
 
+/** Construct one renderer with an explicit, immutable shell context. */
+export function createRenderer(ctx) {
+const { T, send, app, nameOf, namesOf, waitingNames, playerList, render } = ctx;
+const avatarOf = (player) => playerAvatar(player, app.server);
+
 /** Each round is a fresh screen, so the middle pane starts at the top again. */
-export function paneKey() { return String(app.view.round); }
+function paneKey() { return String(app.view.round); }
 
 /**
  * House rules are variants, not cards, so they sit under their own heading and
@@ -29,7 +27,7 @@ const HOUSE_RULES = ['randomLeader', 'hiddenVotes', 'resetRejects'];
 const houseRuleName = (rule) => T(`avalon.house.${rule}`);
 
 /** The role toggles and house rules the host sets before starting. */
-export function lobbyOptions() {
+function lobbyOptions() {
   const v = app.view;
   const isHost = v.you?.id === v.hostId;
   const optionRow = (key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
@@ -77,7 +75,7 @@ export function lobbyOptions() {
 }
 
 /** Everything above the phase panel, once a game is running. */
-export function header_() {
+function header_() {
   const popup = app.infoPopup === 'avalon-role'
     ? infoPopup({
         title: T('know.title'), closeLabel: T('reveal.hide'), onClose: closeInfoPopup,
@@ -106,7 +104,7 @@ export function header_() {
   ].filter(Boolean);
 }
 
-export function panes() {
+function panes() {
   const byPhase = {
     reveal: paneReveal, team: paneTeam, vote: paneVote,
     quest: paneQuest, assassin: paneAssassin, over: paneOver,
@@ -403,3 +401,6 @@ function paneOver() {
 
 const EVIL_ROLES = new Set(['assassin', 'morgana', 'mordred', 'oberon', 'minion']);
 const sideOfRole = (role) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
+
+return { id, minPlayers, rulesKey, taglineKey, paneKey, lobbyOptions, header_, panes };
+}

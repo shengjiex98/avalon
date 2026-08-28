@@ -14,8 +14,10 @@ requests into room actions but does not implement game rules.
 
 ```text
 browser
-  ├── public/app.js and public/ui.js
-  └── public/games/*
+  ├── public/app.js
+  ├── public/storage.js, public/transport.js, public/room-session.js
+  ├── public/rendering.js and public/test-seats.js
+  └── public/games/* (constructed renderers)
           │ JSON + SSE
           ▼
 src/server.js
@@ -29,6 +31,12 @@ The game registry is [`src/games/index.js`](../src/games/index.js). Shared room
 behavior is in [`src/lobby.js`](../src/lobby.js) and
 [`src/rooms.js`](../src/rooms.js); each server game module has a matching
 browser module under [`public/games/`](../public/games/).
+
+The browser entrypoint composes owners for durable storage, HTTP and stream
+transport, the active room session, shared rendering, and test seats. A game
+renderer receives an explicit context and owns its disposable resources; One
+Night countdowns and audio therefore end with that renderer rather than living
+as module globals.
 
 ## State and secrecy
 
