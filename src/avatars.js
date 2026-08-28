@@ -2,7 +2,7 @@
 // carry a short URL, so every game action does not resend ten whole images.
 
 import { createHash } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const MAX_UPLOAD_BYTES = 256 * 1024;
@@ -80,6 +80,7 @@ export class Avatars {
     generationLimit = Number(process.env.AVALON_AVATAR_GENERATIONS_PER_HOUR ?? 30),
     dailyGenerationLimit = Number(process.env.AVALON_AVATAR_GENERATIONS_PER_DAY ?? 200),
     minGenerationInterval = Number(process.env.AVALON_AVATAR_MIN_INTERVAL_MS ?? 1_000),
+    cacheEntries = 64,
   } = {}) {
     this.directory = directory;
     this.accountId = accountId;
@@ -95,6 +96,9 @@ export class Avatars {
     this.generationTimes = [];
     this.generationQueue = Promise.resolve();
     this.nextGenerationAt = 0;
+    this.cacheEntries = Number.isFinite(cacheEntries) ? Math.max(1, Math.trunc(cacheEntries)) : 64;
+    // Least-recently-used first, so the oldest key is the next eviction. Without
+    // a directory the cache is the only store and an evicted name regenerates.
     this.memory = new Map();
     this.pending = new Map();
   }
@@ -239,8 +243,22 @@ export class Avatars {
     return subject;
   }
 
+  remember(file, value) {
+    this.memory.delete(file);
+    this.memory.set(file, value);
+    while (this.memory.size > this.cacheEntries) {
+      this.memory.delete(this.memory.keys().next().value);
+    }
+    return value;
+  }
+
+  recall(file) {
+    if (!this.memory.has(file)) return null;
+    return this.remember(file, this.memory.get(file));
+  }
+
   async save(file, bytes, mime) {
-    this.memory.set(file, { bytes, mime });
+    this.remember(file, { bytes, mime });
     if (!this.directory) return;
     await mkdir(this.directory, { recursive: true });
     try {
@@ -255,22 +273,20 @@ export class Avatars {
     if (this.memory.has(file)) return true;
     if (!this.directory) return false;
     try {
-      await readFile(join(this.directory, file));
+      await stat(join(this.directory, file));
       return true;
     } catch { return false; }
   }
 
   async read(file) {
     if (!FILE_RE.test(file)) return null;
-    const held = this.memory.get(file);
+    const held = this.recall(file);
     if (held) return held;
     if (!this.directory) return null;
     try {
       const bytes = await readFile(join(this.directory, file));
       const ext = file.slice(file.lastIndexOf('.') + 1);
-      const value = { bytes, mime: EXT_MIME[ext] };
-      this.memory.set(file, value);
-      return value;
+      return this.remember(file, { bytes, mime: EXT_MIME[ext] });
     } catch { return null; }
   }
 }
