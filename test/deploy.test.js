@@ -124,8 +124,11 @@ test('the deployment listener cannot be talked into running anything', async () 
   const listener = await read('../deploy/listen.mjs');
 
   // The topic is public by design, so the message is data, never a command.
-  assert.match(listener, /\^deploy \(\[0-9a-f\]\{40\}\)\$/);
-  assert.match(listener, /spawn\('systemctl', \['--user', 'start', `avalon-update@\$\{commit\}\.service`\]/);
+  assert.match(listener, /\^\(\?:deploy\|deploy \[0-9a-f\]\{40\}\)\$/,
+    'the migration listener accepts old and new wake-up bodies');
+  assert.match(listener, /spawn\('systemctl', \['--user', 'start', 'avalon-update\.service'\]/);
+  assert.doesNotMatch(listener, /avalon-update@|startUpdate\(trigger\[1\]\)/,
+    'the untrusted message cannot select a unit instance');
   assert.match(listener, /import \{ spawn \} from 'node:child_process'/);
   assert.doesNotMatch(listener, /shell:\s*true|execSync|import \{[^}]*\bexec\b/,
     'no shell may see a message');
