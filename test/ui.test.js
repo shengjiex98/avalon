@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import { installDom } from './dom-shim.js';
 
 const dom = installDom();
+// A game this build no longer knows, left behind by an older one.
+dom.storage.set('avalon.game', 'werewolf');
 const client = await import('../public/app.js');
 await client.ready;
 
@@ -35,7 +37,7 @@ function lobbyView(viewerId, count = 2) {
   }));
   const me = players.find((p) => p.id === viewerId);
   return {
-    code: 'WXYZ', phase: 'lobby', hostId: 'p1',
+    code: 'WXYZ', gameId: 'avalon', phase: 'lobby', hostId: 'p1',
     you: { id: me.id, name: me.name, role: null, side: null },
     players,
     options: { percival: false, morgana: false, mordred: false, oberon: false },
@@ -265,4 +267,16 @@ test('a non-host waits instead of seeing a start button', () => {
   const view = dom.fixtures.view;
   assert.ok(!buttons(view).some((b) => b.text.includes('Start game')));
   assert.match(view.text, /Waiting for the host/);
+});
+
+test('a remembered game this build does not know falls back instead of failing', () => {
+  assert.equal(app.gameId, 'avalon', 'a stale preference is not a game');
+  assert.doesNotThrow(() => home(), 'the home screen still draws');
+});
+
+test('an unknown game id is never drawn as some other game', async () => {
+  const { gameFor, knownGame } = await import('../public/games/index.js');
+  assert.equal(knownGame('werewolf'), false);
+  assert.throws(() => gameFor('werewolf'), /unknown game: werewolf/);
+  assert.equal(gameFor('onuw'), (await import('../public/games/onuw.js')));
 });

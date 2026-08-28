@@ -175,6 +175,7 @@ const STRINGS = {
 
     'err.noSuchRoom': 'No room with that code.',
     'err.roomFull': 'That room is full ({max} players).',
+    'err.roomsFull': 'The server has no free room codes right now. Try again shortly.',
     'err.nameRequired': 'Please enter a name.',
     'err.nameTaken': 'Someone in the room already uses that name.',
     'err.avatarImageOnly': 'Choose a valid image for your avatar.',
@@ -572,6 +573,7 @@ The lobby picks the standard deck for the number of players who have joined, and
 
     'err.noSuchRoom': '找不到该房间号。',
     'err.roomFull': '房间已满（最多 {max} 人）。',
+    'err.roomsFull': '服务器暂时没有可用的房间号，请稍后再试。',
     'err.nameRequired': '请输入昵称。',
     'err.nameTaken': '房间里已有人使用该昵称。',
     'err.avatarImageOnly': '请选择有效的图片作为头像。',
