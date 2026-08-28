@@ -167,6 +167,33 @@ test('a new seat gets its avatar in the background and the file is cached', asyn
   }, { rooms, avatars });
 });
 
+test('rejoining retries a missing avatar without creating a new seat', async () => {
+  const rooms = new Rooms();
+  let calls = 0;
+  const avatars = {
+    canGenerate: true,
+    resolve: async () => (++calls === 1 ? null : '/api/avatars/g-retry.webp'),
+    read: async () => null,
+  };
+
+  await withServer(async (base) => {
+    const { code } = await (await post(base, '/api/rooms')).json();
+    const joined = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls, 1);
+    assert.equal(rooms.peek(code).game.players[0].avatar, undefined);
+
+    const rejoined = await (await post(base, `/api/rooms/${code}/join`, {
+      name: 'Ann', playerId: joined.playerId,
+    })).json();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(rejoined.playerId, joined.playerId);
+    assert.equal(rooms.peek(code).game.players.length, 1);
+    assert.equal(calls, 2);
+    assert.equal(rooms.peek(code).game.players[0].avatar, '/api/avatars/g-retry.webp');
+  }, { rooms, avatars });
+});
+
 test('refuses to walk out of the public directory', async () => {
   await withServer(async (base) => {
     const res = await fetch(base + '/../src/server.js', { redirect: 'manual' });
