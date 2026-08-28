@@ -79,17 +79,6 @@ export function defaultOptions(playerCount) {
 export const HOUSE_RULES = { randomLeader: false, hiddenVotes: false, resetRejects: false };
 export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
-/** How a table plays before anybody touches the switches. */
-export const defaultHouseRules = () => ({ ...HOUSE_RULES });
-
-/**
- * No house rules at all. This is what a game whose state predates a rule falls
- * back to: a table that never agreed to a variant keeps the game it started
- * under, even when the server it is restored onto now offers one.
- */
-export const noHouseRules = () =>
-  Object.fromEntries(HOUSE_RULE_KEYS.map((rule) => [rule, false]));
-
 /** How many fail cards this quest needs to fail. */
 export function failsRequired(playerCount, round) {
   return playerCount >= 7 && round === 3 ? 2 : 1;

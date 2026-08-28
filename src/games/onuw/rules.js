@@ -43,17 +43,6 @@ export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional
 export const HOUSE_RULES = { decisiveVote: true };
 export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
-/** How a table plays before anybody touches the switches. */
-export const defaultHouseRules = () => ({ ...HOUSE_RULES });
-
-/**
- * No house rules at all. This is what a game whose state predates a rule falls
- * back to: a table that never agreed to a variant keeps the scoring it started
- * under, even when the server it is restored onto now offers one.
- */
-export const noHouseRules = () =>
-  Object.fromEntries(HOUSE_RULE_KEYS.map((rule) => [rule, false]));
-
 export const NIGHT_ORDER = Object.keys(ROLES)
   .filter((r) => ROLES[r].wake)
   .sort((a, b) => ROLES[a].wake - ROLES[b].wake);
