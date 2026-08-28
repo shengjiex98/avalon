@@ -6,9 +6,10 @@ Pages client.
 
 ## Runtime state
 
-Rooms live in memory and are atomically snapshotted. A clean restart restores
-rooms and timers only when `STATE_VERSION` is compatible; an unreadable or
-incompatible snapshot starts empty. The persistence contract is implemented in
+Rooms live in memory and are atomically snapshotted to a private state
+directory. A clean restart restores rooms and timers only when `STATE_VERSION`
+is compatible and the complete snapshot validates; otherwise it starts empty.
+The persistence contract is implemented in
 [`src/persistence.js`](../src/persistence.js) and
 [`src/state-version.js`](../src/state-version.js).
 

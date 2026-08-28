@@ -92,7 +92,7 @@ test('the update health check permits lobbies but blocks active games', async ()
     assert.equal(lobbyHealth.activeGames, 0);
     assert.equal(lobbyHealth.updateSafe, true);
 
-    rooms.get(code).game.phase = 'team';
+    rooms.get(code).game.state.phase = 'team';
 
     const live = await fetch(base + '/api/health');
     assert.equal(live.status, 200, 'an active game must not make liveness fail');
@@ -104,7 +104,7 @@ test('the update health check permits lobbies but blocks active games', async ()
     assert.equal(blockedHealth.activeGames, 1);
     assert.equal(blockedHealth.updateSafe, false);
 
-    rooms.get(code).game.phase = 'over';
+    rooms.get(code).game.state.phase = 'over';
     assert.equal((await fetch(base + '/api/health/update')).status, 409, 'results remain protected while players read them');
 
     clock += 2 * 60 * 1000;
@@ -113,7 +113,7 @@ test('the update health check permits lobbies but blocks active games', async ()
     clock += 1 * 60 * 1000;   // three minutes since the room was last touched
     assert.equal((await fetch(base + '/api/health/update')).status, 200, 'an untouched result stops blocking');
 
-    rooms.get(code).game.phase = 'lobby';
+    rooms.get(code).game.state.phase = 'lobby';
     assert.equal((await fetch(base + '/api/health/update')).status, 200);
   }, { rooms });
 });
@@ -153,7 +153,7 @@ test('a new seat gets its avatar in the background and the file is cached', asyn
     const { code } = await (await post(base, '/api/rooms')).json();
     const { playerId } = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
     await new Promise((resolve) => setImmediate(resolve));
-    assert.equal(rooms.peek(code).game.players[0].avatar, '/api/avatars/g-test.webp');
+    assert.equal(rooms.peek(code).players[0].avatar, '/api/avatars/g-test.webp');
 
     const res = await fetch(`${base}/api/avatars/g-test.webp`);
     assert.equal(res.status, 200);
@@ -182,16 +182,16 @@ test('rejoining retries a missing avatar without creating a new seat', async () 
     const joined = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(calls, 1);
-    assert.equal(rooms.peek(code).game.players[0].avatar, undefined);
+    assert.equal(rooms.peek(code).players[0].avatar, undefined);
 
     const rejoined = await (await post(base, `/api/rooms/${code}/join`, {
       name: 'Ann', playerId: joined.playerId,
     })).json();
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(rejoined.playerId, joined.playerId);
-    assert.equal(rooms.peek(code).game.players.length, 1);
+    assert.equal(rooms.peek(code).players.length, 1);
     assert.equal(calls, 2);
-    assert.equal(rooms.peek(code).game.players[0].avatar, '/api/avatars/g-retry.webp');
+    assert.equal(rooms.peek(code).players[0].avatar, '/api/avatars/g-retry.webp');
   }, { rooms, avatars });
 });
 

@@ -11,7 +11,8 @@ function deal(seed) {
     rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: `p${i}`, name: `Player ${i}` }));
   }
   rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
-  return rooms.get(code).game;
+  const room = rooms.get(code);
+  return { ...room.game.state, players: room.players };
 }
 
 test('the same seed produces the same deal, seats, and first leader', () => {
