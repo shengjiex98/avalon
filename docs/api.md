@@ -41,7 +41,8 @@ The browser and server share `API_PROTOCOL`; the persistence layer uses
 `STATE_VERSION`. Change the protocol when an old browser cannot use a new view
 or action contract, and change the state version when old snapshots cannot be
 restored safely. The canonical values live in
-[`public/app.js`](../public/app.js), [`src/server.js`](../src/server.js), and
+[`src/api-protocol.js`](../src/api-protocol.js),
+[`public/app.js`](../public/app.js), and
 [`src/state-version.js`](../src/state-version.js).
 
 The updater may restart through a live game only when both compatibility values

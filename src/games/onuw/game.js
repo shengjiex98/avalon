@@ -26,8 +26,6 @@ import {
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
-export const PHASES = ['lobby', 'reveal', 'night', 'day', 'vote', 'over'];
-
 export function createGame(code, { now = Date.now, seed } = {}) {
   return {
     ...lobby.baseState(code, 'onuw', { now, seed }),
@@ -259,9 +257,6 @@ function openStep(g) {
     if (step.role === 'insomniac') addInfo(g, p.id, 'onuw.info.insomniac', { role: g.finalRoles[p.id] });
   }
 }
-
-/** Tests deal their own cards, then re-open the opening step. */
-export const openStepForTests = openStep;
 
 /** Apply one player's choice. Called as soon as they make it. */
 function resolve(g, playerId, a) {

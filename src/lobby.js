@@ -49,7 +49,7 @@ export function record(g, playerId, body, at) {
 }
 
 /** Mulberry32. State is a uint32 in g.rng, so a snapshot resumes the exact stream. */
-export function nextRand(g) {
+function nextRand(g) {
   g.rng = (g.rng + 0x6d2b79f5) >>> 0;
   let t = g.rng;
   t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -102,16 +102,6 @@ export function removePlayer(g, id) {
   g.players = g.players.filter((p) => p.id !== id);
   logEvent(g, 'log.left', { name: player.name });
   if (g.hostId === id) g.hostId = g.players[0]?.id ?? null;
-}
-
-/** Fisher-Yates, so a caller can inject a deterministic shuffle in tests. */
-export function defaultShuffle(list) {
-  const a = list.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
 }
 
 /** The part of a view that looks the same in every game. */

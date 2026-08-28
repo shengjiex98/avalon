@@ -8,16 +8,16 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { API_PROTOCOL } from './api-protocol.js';
 import { Avatars } from './avatars.js';
 import { GameError } from './lobby.js';
 import { defaultStateFile, load, save } from './persistence.js';
 import { Rooms } from './rooms.js';
-import { GAME_IDS, gameFor } from './games/index.js';
+import { GAME_IDS } from './games/index.js';
 import { STATE_VERSION } from './state-version.js';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
-export const API_PROTOCOL = 2;
 
 /**
  * The commit this process is serving, read from the checkout rather than from

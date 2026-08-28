@@ -78,6 +78,11 @@ archive before the pointer prevents selection of missing bytes.
 A published run then prunes every asset except `latest.json` and the archive it
 names. Nothing else is reachable.
 
+The archive is reproducible: the same commit packages to the same bytes, which
+is what lets the host trust the digest in `latest.json`. That requires GNU tar,
+so packaging refuses to start on a BSD tar rather than producing an archive the
+host would reject.
+
 The workflow definition is authoritative for publication and ordering:
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
 manifest rules live in [`scripts/package-release.sh`](../scripts/package-release.sh),

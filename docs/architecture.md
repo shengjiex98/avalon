@@ -47,7 +47,8 @@ privacy boundary.
 The Node-hosted client and server move together. The optional GitHub Pages
 client moves only after the server, so it checks the server's API protocol
 before joining a room. Compatibility constants and checks live in
-[`src/server.js`](../src/server.js) and [`public/app.js`](../public/app.js).
+[`src/api-protocol.js`](../src/api-protocol.js) and
+[`public/app.js`](../public/app.js).
 
 ## Deployment boundary
 
