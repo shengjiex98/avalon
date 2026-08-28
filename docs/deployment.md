@@ -76,10 +76,7 @@ selects a commit and supplies the archive's SHA-256 digest. Publishing the
 archive before the pointer prevents selection of missing bytes.
 
 A published run then prunes every asset except `latest.json` and the archive it
-names. Nothing else is reachable: the host downloads only that archive, and
-rolls back to a release already on disk. A host that reads the pointer just
-before a prune fails its download and retries, still running the old release. A
-pruning failure warns and leaves the rollout alone.
+names. Nothing else is reachable.
 
 The workflow definition is authoritative for publication and ordering:
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
