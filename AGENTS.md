@@ -16,6 +16,15 @@ That is the whole gate. The suite is fast and needs no network or browser, so
 run it after each change rather than once at the end. CI runs the same tests
 from the extracted release archive on Node 24.
 
+## Documentation
+
+Docs carry the core idea and nothing else. Where a detail matters, name the file
+that holds it and let the code be authoritative. Restating flags, ordering, or
+retention rules in prose creates a second copy that goes stale silently and
+gives the reader two answers. [`docs/deployment.md`](docs/deployment.md)
+pointing at [`deploy/updater.sh`](deploy/updater.sh) for the safety decisions is
+the shape to copy. Comments follow the same rule: say why, not what.
+
 ## Constraints worth knowing before you write code
 
 **No dependencies, deliberately.** `package.json` declares none, the server is
