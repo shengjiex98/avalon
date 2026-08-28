@@ -101,27 +101,26 @@ test('publication moves latest.json only after the immutable archive is durable'
   assert.match(publish, /--latest=false/);
 });
 
-test('publication keeps a bounded window of archives and no other debris', async () => {
+test('publication prunes every archive the pointer cannot reach', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   const publish = workflow.slice(workflow.indexOf('publish-artifact:'), workflow.indexOf('deploy-server:'));
-  const prune = publish.slice(publish.indexOf('Prune superseded release assets'));
+  const prune = publish.slice(publish.indexOf('Prune unreachable release assets'));
 
-  // Pruning runs only for a run that actually published, and never before the
-  // pointer and its payload are durable.
-  assert.ok(publish.indexOf('dist/latest.json --clobber') < publish.indexOf('Prune superseded release assets'));
+  // Pruning runs only for a run that published, and never before the pointer
+  // and its payload are durable.
+  assert.ok(publish.indexOf('dist/latest.json --clobber') < publish.indexOf('Prune unreachable release assets'));
   assert.match(prune, /if: steps\.publish\.outputs\.published == 'true'/);
 
-  // latest.json, the five newest archives, and this commit's own survive.
-  assert.match(prune, /new Set\(\["latest\.json", `avalon-\$\{commit\}\.tar\.gz`\]\)/);
-  assert.match(prune, /\.slice\(0, 5\)/);
-  assert.match(prune, /Date\.parse\(b\.created_at\) - Date\.parse\(a\.created_at\)/);
+  // The kept archive comes from the published pointer, never from $GITHUB_SHA,
+  // so a superseding run's archive is never the one deleted.
+  assert.match(prune, /gh release download "\$release_tag" -p latest\.json -O -/);
+  assert.doesNotMatch(prune, /GITHUB_SHA/);
+  assert.match(prune, /any\(\.assets\[\]; \.name == \$keep\)/);
+  assert.match(prune, /select\(\.name != "latest\.json" and \.name != \$keep\)/);
 
-  // Housekeeping never fails a deploy that already published.
-  assert.match(prune, /skip 'cannot resolve the release'/);
-  assert.match(prune, /skip 'cannot list release assets'/);
-  assert.match(prune, /skip 'cannot select assets to prune'/);
+  // Housekeeping never fails a rollout that already published.
   assert.match(prune, /skip\(\) \{ echo "::warning::\$1; skipped pruning"; exit 0; \}/);
-  assert.doesNotMatch(prune, /^\s*exit 1/m, 'a pruning failure warns rather than blocking the rollout');
+  assert.doesNotMatch(prune, /^\s*exit 1/m);
 });
 
 test('the deploy job proves the server took the commit before publishing the client', async () => {
