@@ -129,12 +129,12 @@ export function setHouseRules(g, requested, keys) {
 // ------------------------------------------------------- back to the lobby
 
 /**
- * Put the same table back in a lobby. `fresh` is the game's own new state and
- * `keep` whatever that game carries across on top of the room's identity, its
- * people, its random stream and its recorded actions. The revision survives
- * too: a room's version only ever counts up, whatever happens inside it.
+ * Put the same table back in a lobby. Preparing replacement state happens here
+ * so a rejected request cannot run game construction. The revision survives:
+ * a room's version only ever counts up, whatever happens inside it.
  */
-function rebuildLobby(g, fresh, keep) {
+function rebuildLobby(g, prepare) {
+  const { fresh, keep } = prepare();
   const carried = {
     code: g.code, players: g.players, hostId: g.hostId,
     seed: g.seed, rng: g.rng, actions: g.actions,
@@ -146,17 +146,17 @@ function rebuildLobby(g, fresh, keep) {
 }
 
 /** Back to the lobby after a completed game, with the same table. */
-export function resetToLobby(g, playerId, fresh, keep) {
+export function resetToLobby(g, playerId, prepare) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase === 'over', 'gameInProgress');
-  rebuildLobby(g, fresh, keep);
+  rebuildLobby(g, prepare);
 }
 
 /** Let the host abandon an active game and immediately return to its lobby. */
-export function restartToLobby(g, playerId, fresh, keep) {
+export function restartToLobby(g, playerId, prepare) {
   require_(playerId === g.hostId, 'hostOnly');
   require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
-  rebuildLobby(g, fresh, keep);
+  rebuildLobby(g, prepare);
 }
 
 /** The part of a view that looks the same in every game. */
