@@ -6,9 +6,13 @@ umask 022
 here=$(cd -- "$(dirname "$0")" >/dev/null && pwd)
 root=${AVALON_CONTROLLER_ROOT:-"$HOME/.local/libexec/avalon-deploy"}
 unit_dir=${AVALON_SYSTEMD_USER_DIR:-"$HOME/.config/systemd/user"}
+state_dir=$(dirname "${AVALON_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/avalon/rooms.json}")
 units='avalon.service avalon-listen.service avalon-update.service avalon-update.timer'
 
 mkdir -p "$root" "$unit_dir"
+# avalon.service no longer gets this directory from StateDirectory=, and
+# ReadWritePaths= refuses to start the unit when it is missing.
+mkdir -p -m 700 "$state_dir"
 
 install_file() {
   source=$1

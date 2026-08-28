@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import * as avalon from '../src/games/avalon/game.js';
 import { gameFor } from '../src/games/index.js';
 import * as onuw from '../src/games/onuw/game.js';
-import { load, save } from '../src/persistence.js';
+import { defaultStateFile, load, save } from '../src/persistence.js';
 import { Rooms } from '../src/rooms.js';
 import { STATE_VERSION } from '../src/state-version.js';
 
@@ -167,4 +167,29 @@ test('bad or incompatible snapshots start with an empty room registry', async ()
   const mismatchRooms = new Rooms();
   assert.equal(load(mismatchRooms, mismatch).restored, 0);
   assert.equal(mismatchRooms.rooms.size, 0);
+});
+
+test('the snapshot path follows XDG state, not systemd StateDirectory', () => {
+  const saved = ['STATE_DIRECTORY', 'XDG_STATE_HOME', 'AVALON_STATE_FILE']
+    .map((name) => [name, process.env[name]]);
+  const set = (name, value) => {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  };
+  try {
+    // A user unit's StateDirectory lands under $XDG_CONFIG_HOME before systemd
+    // 256, where deploy/updater.sh would never find it.
+    set('STATE_DIRECTORY', '/run/ignored');
+    set('AVALON_STATE_FILE', undefined);
+    set('XDG_STATE_HOME', '/xdg/state');
+    assert.equal(defaultStateFile(), join('/xdg/state', 'avalon', 'rooms.json'));
+
+    set('XDG_STATE_HOME', undefined);
+    assert.equal(defaultStateFile(), join(homedir(), '.local', 'state', 'avalon', 'rooms.json'));
+
+    set('AVALON_STATE_FILE', join(tmpdir(), 'explicit-rooms.json'));
+    assert.equal(defaultStateFile(), join(tmpdir(), 'explicit-rooms.json'));
+  } finally {
+    for (const [name, value] of saved) set(name, value);
+  }
 });

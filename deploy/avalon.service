@@ -13,8 +13,11 @@ Environment=PORT=8420
 ExecStart=%h/.local/bin/node --preserve-symlinks-main %h/.local/lib/avalon/current/src/server.js
 Restart=on-failure
 RestartSec=3
-StateDirectory=avalon
-StateDirectoryMode=0700
+# Pinned rather than left to StateDirectory=, whose user-unit path moved
+# between systemd versions. deploy/updater.sh derives the same location for the
+# snapshot it backs up, and test/deploy.test.js holds the two together.
+Environment=XDG_STATE_HOME=%h/.local/state
+ReadWritePaths=%h/.local/state/avalon
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only
