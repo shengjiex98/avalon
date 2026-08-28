@@ -170,6 +170,35 @@ test('missing credentials and generation ceilings fall back without blocking a s
   assert.equal(calls, 2);
 });
 
+test('the memory cache is bounded, refreshes on read, and falls back to disk', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'avalon-avatars-'));
+  const avatars = new Avatars({ directory, apiToken: null, cacheEntries: 2 });
+  const keys = [0, 1, 2].map((index) => `u-${index.toString(16).repeat(64)}.png`);
+  for (const key of keys) await avatars.save(key, png, 'image/png');
+
+  assert.deepEqual([...avatars.memory.keys()], keys.slice(1), 'the least recently used entry is evicted');
+  assert.ok(await avatars.read(keys[0]), 'an evicted avatar is still served from disk');
+  assert.deepEqual([...avatars.memory.keys()], [keys[2], keys[0]]);
+
+  await avatars.read(keys[2]);
+  await avatars.save(keys[1], png, 'image/png');
+  assert.deepEqual([...avatars.memory.keys()], [keys[2], keys[1]], 'a read refreshes recency');
+});
+
+test('existence is checked without reading the image, and stays cache-first', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'avalon-avatars-'));
+  const stored = new Avatars({ directory, apiToken: null });
+  const file = `u-${'a'.repeat(64)}.png`;
+  await stored.save(file, png, 'image/png');
+
+  const restarted = new Avatars({ directory, apiToken: null });
+  assert.equal(await restarted.has(file), true);
+  assert.equal(restarted.memory.size, 0, 'an existence check does not load the bytes');
+  assert.equal(await restarted.has(`u-${'b'.repeat(64)}.png`), false);
+  assert.equal(await restarted.has('../etc/passwd'), false);
+  assert.equal(await new Avatars({ apiToken: null }).has(file), false);
+});
+
 test('test-mode seats explicitly skip generation', async () => {
   const avatars = new Avatars({
     accountId: 'test-account',

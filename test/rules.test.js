@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  SETUPS, buildRoleList, defaultHouseRules, defaultOptions, failsRequired, knowledgeFor,
-  noHouseRules, sideOf, teamSize,
+  HOUSE_RULES, HOUSE_RULE_KEYS, SETUPS, buildRoleList, defaultOptions, failsRequired,
+  knowledgeFor, sideOf, teamSize,
 } from '../src/games/avalon/rules.js';
+import { houseRulesInForce, setHouseRules } from '../src/lobby.js';
 import { missingKeys, t, STRINGS } from '../public/i18n.js';
 
 test('every player count has five quests and a sane evil count', () => {
@@ -111,7 +112,15 @@ test('the default deck for each table size is the standard setup', () => {
   }
 });
 
-test('house rules all start off, and an unknown one is simply absent', () => {
-  assert.deepEqual(defaultHouseRules(), { randomLeader: false, hiddenVotes: false, resetRejects: false });
-  assert.deepEqual(noHouseRules(), defaultHouseRules());
+test('house rules all start off, and one a snapshot predates stays off', () => {
+  assert.deepEqual(HOUSE_RULES, { randomLeader: false, hiddenVotes: false, resetRejects: false });
+  assert.deepEqual(houseRulesInForce({ houseRules: { hiddenVotes: true } }, HOUSE_RULE_KEYS), {
+    randomLeader: false, hiddenVotes: true, resetRejects: false,
+  });
+});
+
+test('setting house rules touches only the keys this game offers', () => {
+  const g = { houseRules: { randomLeader: true } };
+  setHouseRules(g, { hiddenVotes: 1, decisiveVote: true, resetRejects: false }, HOUSE_RULE_KEYS);
+  assert.deepEqual(g.houseRules, { randomLeader: true, hiddenVotes: true, resetRejects: false });
 });

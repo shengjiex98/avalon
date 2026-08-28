@@ -1,9 +1,14 @@
 // Room registry: owns the games, the subscriber lists and expiry.
 
+import { randomInt } from 'node:crypto';
+
 import { GameError, logEvent, record, require_ } from './lobby.js';
 import { DEFAULT_GAME, GAMES, gameFor } from './games/index.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
+const CODE_LENGTH = 4;                                    // short enough to read aloud
+const CODE_SPACE = CODE_ALPHABET.length ** CODE_LENGTH;
+const CODE_ATTEMPTS = 1000;
 const IDLE_MS = 6 * 60 * 60 * 1000; // rooms vanish six hours after the last touch
 const OVER_GRACE_MS = 3 * 60 * 1000; // finished games stay protected while players read results
 
@@ -13,16 +18,28 @@ const COMMON_ACTIONS = {
 };
 
 export class Rooms {
-  constructor({ now = Date.now, onMutate } = {}) {
+  constructor({ now = Date.now, onMutate, newCode = randomCode } = {}) {
     this.now = now;
     this.onMutate = onMutate;
+    this.newCode = newCode;
     this.rooms = new Map(); // code -> { game, subscribers:Set, touchedAt }
   }
 
+  /**
+   * A code no live room is using. The space is finite, so a registry with
+   * nothing left to give says so rather than looping forever.
+   */
+  allocateCode() {
+    if (this.rooms.size >= CODE_SPACE) throw new GameError('roomsFull');
+    for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
+      const code = this.newCode();
+      if (!this.rooms.has(code)) return code;
+    }
+    throw new GameError('roomsFull');
+  }
+
   create(gameId = DEFAULT_GAME, { code: requestedCode, seed } = {}) {
-    if (!(gameId in GAMES)) throw new GameError('noSuchGame', { game: gameId });
-    let code = requestedCode && String(requestedCode).toUpperCase();
-    if (!code) do { code = randomCode(); } while (this.rooms.has(code));
+    const code = requestedCode ? String(requestedCode).toUpperCase() : this.allocateCode();
     if (this.rooms.has(code)) throw new GameError('badRequest');
     const game = gameFor(gameId).create(code, { now: this.now, seed });
     this.rooms.set(code, { game, subscribers: new Set(), touchedAt: this.now(), timer: null });
@@ -49,11 +66,11 @@ export class Rooms {
 
   /** Replace a lobby's engine without replacing its object identity. */
   replaceGame(g, playerId, gameId, now = this.now) {
-    if (!(gameId in GAMES)) throw new GameError('noSuchGame', { game: gameId });
+    const replacement = gameFor(gameId);
     require_(g.phase === 'lobby', 'gameAlreadyStarted');
     require_(playerId === g.hostId, 'hostOnly');
     if (g.gameId === gameId) return;
-    const fresh = gameFor(gameId).create(g.code, { now, seed: g.seed });
+    const fresh = replacement.create(g.code, { now, seed: g.seed });
     const { players, hostId, log, actions, version, seed, rng } = g;
     const actionsDropped = g.actionsDropped;
     for (const key of Object.keys(g)) delete g[key];
@@ -144,8 +161,9 @@ export class Rooms {
     clearTimeout(room.timer);
     room.timer = null;
 
+    // A deadline of zero is a deadline. Only its absence means no clock.
     const at = gameFor(room.game.gameId).nextDeadline?.(room.game);
-    if (!at) return;
+    if (at == null) return;
 
     room.timer = setTimeout(() => {
       room.timer = null;
@@ -207,10 +225,9 @@ export class Rooms {
   }
 }
 
-export function randomCode(length = 4) {
+/** One candidate code. Injectable, so a test can force repeated collisions. */
+export function randomCode(length = CODE_LENGTH) {
   let out = '';
-  for (let i = 0; i < length; i++) {
-    out += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
-  }
+  for (let i = 0; i < length; i++) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
   return out;
 }

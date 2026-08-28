@@ -1,7 +1,7 @@
 import { LANGS, detectLang, t } from './i18n.js';
 import { API_BASE } from './config.js';
 import { el, h, playerAvatar, toast } from './ui.js';
-import { DEFAULT_GAME, GAME_IDS, gameFor } from './games/index.js';
+import { DEFAULT_GAME, GAME_IDS, gameFor, knownGame } from './games/index.js';
 
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
@@ -12,6 +12,12 @@ const API_PROTOCOL = 2;
 const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 
 // ---------------------------------------------------------------- state
+
+/** A remembered choice outlives the game it names; fall back rather than fail. */
+function storedGameId() {
+  const stored = localStorage.getItem('avalon.game');
+  return knownGame(stored) ? stored : DEFAULT_GAME;
+}
 
 const app = {
   lang: detectLang(),
@@ -24,7 +30,7 @@ const app = {
   playerId: null,
   view: null,        // latest server view, or null before the first event
   connected: false,
-  gameId: localStorage.getItem('avalon.game') ?? DEFAULT_GAME,  // what Create would make
+  gameId: storedGameId(),  // what Create would make
   selection: [],     // players the current prompt is collecting
   centres: [],       // centre cards the current prompt is collecting
   seerMode: 'player',
@@ -884,7 +890,7 @@ function formatParams(params, entryKey) {
   const out = { ...params };
   for (const [key, value] of Object.entries(out)) if (Array.isArray(value)) out[key] = joinNames(value);
   if (out.game) out.game = T(`game.${out.game}`);
-  const game = gameFor(app.view?.gameId);
+  const game = gameFor(currentGameId());
   if (game.formatParams) return game.formatParams(out, entryKey);
   if (out.winner) out.winner = T(`side.${out.winner}`);
   return out;

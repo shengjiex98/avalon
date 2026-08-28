@@ -1,6 +1,7 @@
 // The registry. A game is anything that can build a room state, take actions
 // and render a per-player view; the room layer knows nothing else about it.
 
+import { GameError } from '../lobby.js';
 import * as avalon from './avalon/game.js';
 import { MAX_PLAYERS as AVALON_MAX, MIN_PLAYERS as AVALON_MIN } from './avalon/rules.js';
 import * as onuw from './onuw/game.js';
@@ -54,6 +55,11 @@ export const GAMES = {
 export const DEFAULT_GAME = 'avalon';
 export const GAME_IDS = Object.keys(GAMES);
 
+// An id nobody recognizes is not a game of Avalon. Callers holding a request
+// value let this reach the client as `noSuchGame`; callers holding room state
+// are reporting a corrupt room, which no caller should paper over.
 export function gameFor(id) {
-  return GAMES[id] ?? GAMES[DEFAULT_GAME];
+  const game = GAMES[id];
+  if (!game) throw new GameError('noSuchGame', { game: id });
+  return game;
 }
