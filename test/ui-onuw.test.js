@@ -11,10 +11,9 @@ let clock = 1_700_000_000_000;
 const now = () => clock;
 
 const dom = installDom();
-const onuwUi = await import('../public/games/onuw.js');
 const client = await import('../public/app.js');
 await client.ready;
-const { app, render } = client;
+const { app, render, gameRendererForTests } = client;
 
 function home({ lang = 'en' } = {}) {
   dom.location.hash = '';
@@ -432,7 +431,7 @@ test('the language toggle leaves the active night recording alone', () => {
   stepTo(game, 'seer');
   app.muted = false;
   show(game, 'p0', 'zh');
-  onuwUi.onView();
+  gameRendererForTests('onuw').onView();
   const chinese = dom.AudioStub.instances.at(-1);
   assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
 
@@ -441,7 +440,7 @@ test('the language toggle leaves the active night recording alone', () => {
   assert.match(chinese.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
 
   app.view = { ...app.view, night: null };
-  onuwUi.onView();
+  gameRendererForTests('onuw').onView();
 });
 
 test('a redraw paints the time actually left, not the step\'s full length', () => {
@@ -455,7 +454,7 @@ test('a redraw paints the time actually left, not the step\'s full length', () =
   Date.now = () => fake;
   try {
     show(game, 'p0');
-    onuwUi.onView();                       // the frame that anchors the clock
+    gameRendererForTests('onuw').onView(); // the frame that anchors the clock
     const full = Math.ceil(app.view.night.msLeft / 1000);
     assert.ok(full >= 10, 'the seer gets a decent while');
 
@@ -471,7 +470,7 @@ test('a redraw paints the time actually left, not the step\'s full length', () =
   } finally {
     Date.now = realNow;
     app.view = { ...app.view, night: null };
-    onuwUi.onView();                       // stop the interval
+    gameRendererForTests('onuw').onView(); // stop the interval
   }
 });
 
@@ -697,4 +696,18 @@ test('each night step starts the middle pane at the top again', () => {
   w.tick(game, clock);
   show(game, 'p1');
   assert.equal(view.byClass('phase-area')[0].scrollTop, 0, 'a new step is new content');
+});
+
+test('switching renderer ownership stops One Night audio and timers', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'seer');
+  app.muted = false;
+  show(game, 'p0');
+  gameRendererForTests('onuw').onView();
+  const audio = dom.AudioStub.instances.at(-1);
+  assert.equal(audio.paused, false);
+
+  gameRendererForTests('avalon');
+  assert.equal(audio.paused, true);
+  assert.equal(audio.src, '');
 });

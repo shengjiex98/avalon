@@ -53,15 +53,25 @@ test('the Pages client declares the same API protocol as the server', async () =
 test('the browser defaults to Node but can remember one HTTPS backend', async () => {
   const source = await read('../public/app.js');
   const config = await read('../public/config.js');
+  const storage = await read('../public/storage.js');
+  const transport = await read('../public/transport.js');
   assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
   assert.match(source, /location\.origin !== PAGES_ORIGIN/);
   assert.match(source, /normaliseServer\(API_BASE\)/);
-  assert.match(source, /avalon\.server/);
+  assert.match(storage, /avalon\.server/);
   assert.match(source, /url\.protocol === 'https:'/);
-  assert.match(source, /fetch\(app\.server \+ path,/);
-  assert.match(source, /new EventSource\(`\$\{app\.server\}\/api\/rooms\//);
+  assert.match(transport, /fetch\(app\.server \+ path,/);
+  assert.match(transport, /new EventSource\(`\$\{app\.server\}\/api\/rooms\//);
   assert.match(source, /url\.search = app\.server \? `\?server=/);
   assert.match(config, /export const API_BASE = ''/);
+});
+
+test('game renderers are constructed without mutable module bindings', async () => {
+  for (const file of ['../public/games/avalon.js', '../public/games/onuw.js']) {
+    const source = await read(file);
+    assert.match(source, /export function createRenderer\(ctx\)/);
+    assert.doesNotMatch(source, /export function bind|\blet (?:T|send|app)\b/);
+  }
 });
 
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {

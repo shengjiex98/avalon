@@ -2,12 +2,16 @@
 
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
-let T, send, app, joinNames, render;
-const avatarOf = (player) => playerAvatar(player, app.server);
+export const id = 'onuw';
+export const minPlayers = 3;
+export const rulesKey = 'onuw.rules.body';
+export const taglineKey = 'onuw.tagline';
 
-export function bind(ctx) {
-  ({ T, send, app, joinNames, render } = ctx);
-}
+/** Audio, clocks, and rendering belong to this renderer instance. */
+export function createRenderer(ctx) {
+const { T, send, app, joinNames, render } = ctx;
+const setMuted = ctx.setMuted ?? ((value) => { app.muted = value; });
+const avatarOf = (player) => playerAvatar(player, app.server);
 
 // ---------------------------------------------------------------- the clock
 
@@ -141,7 +145,7 @@ function announce(night) {
  * drawn, so a redraw for an unrelated reason — tapping the mute button, say —
  * paints the time that is actually left rather than the step's full length.
  */
-export function onView() {
+function onView() {
   const night = app.view?.night;
   if (!night) { stopClock(); stopAnnouncements(); spokenStep = null; return; }
   app.stepEndsAt = Date.now() + night.msLeft;
@@ -149,11 +153,6 @@ export function onView() {
   if (!clockTimer) clockTimer = setInterval(paintClock, 200);
   announce(night);
 }
-
-export const id = 'onuw';
-export const minPlayers = 3;
-export const rulesKey = 'onuw.rules.body';
-export const taglineKey = 'onuw.tagline';
 
 const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
 /**
@@ -192,7 +191,7 @@ const CENTRE_PARAMS = {
 };
 
 /** Role keys arrive raw from the server so each client can name them itself. */
-export function formatParams(params, key) {
+function formatParams(params, key) {
   const out = { ...params };
   for (const k of ['role', 'roleA', 'roleB']) if (out[k]) out[k] = roleName(out[k]);
   for (const k of CENTRE_PARAMS[key] ?? []) out[k] = centreLabel(out[k]);
@@ -236,7 +235,7 @@ function finding(entry) {
 
 // ---------------------------------------------------------------- lobby
 
-export function lobbyOptions() {
+function lobbyOptions() {
   const v = app.view;
   const isHost = v.you?.id === v.hostId;
 
@@ -363,7 +362,7 @@ const waitingNames = () => joinNames(app.view.waitingFor.map(
 
 // ---------------------------------------------------------------- phases
 
-export function header_() {
+function header_() {
   const popup = app.infoPopup === 'onuw-card'
     ? infoPopup({
         title: T('onuw.night.yourCard'), closeLabel: T('reveal.hide'), onClose: closeInfoPopup,
@@ -436,9 +435,9 @@ function referenceContent() {
 }
 
 /** Each night step is a fresh screen, so the middle pane starts at the top again. */
-export function paneKey() { return String(app.view.night?.index ?? ''); }
+function paneKey() { return String(app.view.night?.index ?? ''); }
 
-export function panes() {
+function panes() {
   const byPhase = { reveal: paneReveal, night: paneNight, day: paneDay, vote: paneVote, over: paneOver };
   return byPhase[app.view.phase]();
 }
@@ -466,8 +465,7 @@ function paneNight() {
       h('button', {
         class: 'btn ghost', id: 'voiceToggle',
         onclick: () => {
-          app.muted = !app.muted;
-          localStorage.setItem('avalon.muted', app.muted ? '1' : '');
+          setMuted(!app.muted);
           if (app.muted) stopAnnouncements();
           else unlockAnnouncements();
           render();
@@ -710,4 +708,18 @@ function paneOver() {
         : h('p', { class: 'muted', text: T('lobby.waitingHost') }),
     ),
   ];
+}
+
+function dispose() {
+  stopClock();
+  stopAnnouncements();
+  spokenStep = null;
+  window.removeEventListener?.('pointerdown', unlockAnnouncements);
+  window.removeEventListener?.('keydown', unlockAnnouncements);
+}
+
+return {
+  id, minPlayers, rulesKey, taglineKey,
+  onView, formatParams, lobbyOptions, header_, paneKey, panes, dispose,
+};
 }

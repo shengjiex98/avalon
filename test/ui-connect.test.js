@@ -82,8 +82,7 @@ test('a browser that blocks audio still gets its frame drawn', async () => {
   } finally {
     dom.AudioStub.playError = null;
     app.view = { ...app.view, night: null };
-    const onuw = await import('../public/games/onuw.js');
-    onuw.onView();          // stop the countdown interval
+    client.gameRendererForTests('onuw').onView(); // stop the countdown interval
   }
 });
 
