@@ -58,27 +58,20 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(config, /export const API_BASE = ''/);
 });
 
-test('the deploy workflow gates an exact server artifact through the host code path', async () => {
+test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
-
-  // The gate is the release's own controller preparing the artifact, staged
-  // outside the checkout and under the bootstrap's environment allowlist, so
-  // CI can only diverge from the host through a controller change -- which
-  // ships through this very gate.
   assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
-  assert.match(workflow, /tar -xzf "dist\/\$archive" --strip-components=1 -C "\$tree"/);
-  assert.match(workflow, /env -i HOME="\$HOME" PATH="\$PATH"/);
-  assert.match(workflow, /"\$tree\/deploy\/controller\.sh" prepare "\$GITHUB_SHA"/);
-
-  // The host carries a real NTFY_TOPIC, so CI carries a canary wired to a
-  // local sink: a test run that publishes fails here, not on a phone.
-  assert.match(workflow, /NTFY_TOPIC=ci-canary NTFY_SERVER=http:\/\/127\.0\.0\.1:8642/);
-  assert.match(workflow, /\[ -s "\$sink" \]/);
+  assert.match(workflow, /tar -xzf "\$archive" --strip-components=1 -C "\$tree"/);
+  assert.match(workflow, /node scripts\/verify-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
+  assert.match(workflow, /cd "\$tree"[\s\S]*node --test "test\/\*\*\/\*\.test\.js"/);
+  assert.doesNotMatch(workflow, /"\$tree\/deploy\/controller\.sh"|NTFY_TOPIC=ci-canary/,
+    'CI never executes candidate deployment code');
 
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /path: dist\/avalon-\$\{\{ github\.sha \}\}\.tar\.gz/);
+  assert.doesNotMatch(workflow, /\.tar\.gz\.sha256/);
   assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
-  assert.match(workflow, /gh release upload "\$release_tag"/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
   assert.match(workflow, /writeFileSync\("public\/config\.js"/);
   assert.match(workflow, /stamp-frontend-version\.mjs public "\$GITHUB_SHA"/);
@@ -99,21 +92,27 @@ test('the client is published only after the server takes the same commit', asyn
   assert.match(workflow.slice(server, pages), /needs:\s*publish-artifact/);
 });
 
+test('publication moves latest.json only after the immutable archive is durable', async () => {
+  const workflow = await read('../.github/workflows/deploy.yml');
+  const publish = workflow.slice(workflow.indexOf('publish-artifact:'), workflow.indexOf('deploy-server:'));
+  const mainCheck = publish.indexOf('gh api "repos/$GH_REPO/commits/main"');
+  const digest = publish.indexOf('sha256sum "dist/$archive"');
+  const archive = publish.indexOf('gh release upload "$release_tag" "dist/$archive" --clobber');
+  const pointer = publish.indexOf('gh release upload "$release_tag" dist/latest.json --clobber');
+  assert.ok(mainCheck !== -1 && mainCheck < digest && digest < archive && archive < pointer);
+  assert.match(publish, /schema: 1, commit, sha256/);
+  assert.match(publish, /--latest=false/);
+});
+
 test('the deploy job proves the server took the commit before publishing the client', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
 
-  // A status message is a hint; the health endpoint is the evidence. Accepting
-  // the message alone would let anyone who knows the topic publish a client
-  // against a server that never updated.
+  // The public application is the only success proof. ntfy is wake-only.
   assert.match(workflow, /\.commit \/\/ empty/);
   assert.match(workflow, /\[ "\$commit" = "\$GITHUB_SHA" \]/);
-
-  // since= must be captured before the trigger, or a fast deploy is missed.
-  assert.ok(workflow.indexOf('since=$(date +%s)') < workflow.indexOf('publish\n'),
-    'capture since before publishing');
-
-  assert.match(workflow, /failed \$GITHUB_SHA[^\n]*\n\s*echo "::error/, 'fail fast on a rollback');
-  assert.match(workflow, /busy \$GITHUB_SHA/, 'a game in progress is a wait, not a failure');
+  assert.match(workflow, /curl -fsS --max-time 10 -d deploy /);
+  assert.doesNotMatch(workflow, /since=|failed \$GITHUB_SHA|busy \$GITHUB_SHA|poll=1/,
+    'CI neither reads nor trusts result messages');
 
   // Scoped to this job: deploy-pages still needs id-token for actions/deploy-pages.
   const job = workflow.slice(workflow.indexOf('deploy-server:'), workflow.indexOf('deploy-pages:'));
@@ -124,8 +123,9 @@ test('the deployment listener cannot be talked into running anything', async () 
   const listener = await read('../deploy/listen.mjs');
 
   // The topic is public by design, so the message is data, never a command.
-  assert.match(listener, /\^\(\?:deploy\|deploy \[0-9a-f\]\{40\}\)\$/,
-    'the migration listener accepts old and new wake-up bodies');
+  assert.match(listener, /\^deploy\$/);
+  assert.doesNotMatch(listener, /deploy \[0-9a-f\]|deploy \<sha\>/,
+    'a message never supplies a commit');
   assert.match(listener, /spawn\('systemctl', \['--user', 'start', 'avalon-update\.service'\]/);
   assert.doesNotMatch(listener, /avalon-update@|startUpdate\(trigger\[1\]\)/,
     'the untrusted message cannot select a unit instance');
@@ -133,14 +133,10 @@ test('the deployment listener cannot be talked into running anything', async () 
   assert.doesNotMatch(listener, /shell:\s*true|execSync|import \{[^}]*\bexec\b/,
     'no shell may see a message');
 
-  // A trigger is a request, never an authority: the bootstrap deploys the
-  // named commit only while GitHub still calls it main.
-  const bootstrap = await read('../deploy/bootstrap.sh');
-  assert.match(bootstrap, /\[ "\$requested" != "\$sha" \]/);
-  assert.match(bootstrap, /ignored deployment trigger/);
-
-  const controller = await read('../deploy/controller.sh');
-  assert.doesNotMatch(controller, /source_repo|git -C/);
+  const updater = await read('../deploy/updater.sh');
+  assert.match(updater, /artifact_base\/latest\.json\?t=/);
+  assert.match(updater, /archive="avalon-\$commit\.tar\.gz"/);
+  assert.doesNotMatch(updater, /AVALON_MAIN_URL|TARGET_STATE_VERSION/);
 });
 
 /**

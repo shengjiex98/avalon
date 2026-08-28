@@ -1,16 +1,5 @@
-# This unit ships in the release it starts: the controller copies it into
-# ~/.config/systemd/user during each switch, and restores the previous one on a
-# rollback. deploy/install-bootstrap.sh installs it the first time.
-#   systemctl --user enable --now avalon
-#   loginctl enable-linger "$USER"        # survive logout / reboot
-#
-# Host-specific settings (PORT, HOST) go in ~/.config/avalon.env,
-# which is deliberately outside the repo.
-# The server always accepts the official shengjiex98.github.io client.
-#
-# Deployments arrive from CI, with avalon-update.timer as the hourly fallback;
-# state-compatible updates can restart during a game without losing it.
-
+# Permanently installed by deploy/install-updater.sh. Application releases do
+# not replace systemd units.
 [Unit]
 Description=Avalon game server
 After=network-online.target
@@ -21,16 +10,9 @@ Type=simple
 WorkingDirectory=%h/.local/lib/avalon/current
 EnvironmentFile=-%h/.config/avalon.env
 Environment=PORT=8420
-# An absolute path, not `env node`: the runtime is hand-installed under
-# ~/.local. The release manifest and controller both require Node 24.
-# Node normally resolves the current symlink before assigning import.meta.url.
-# Preserve the entrypoint path so the server's direct-execution guard sees the
-# same path as process.argv[1] and actually starts listening.
 ExecStart=%h/.local/bin/node --preserve-symlinks-main %h/.local/lib/avalon/current/src/server.js
 Restart=on-failure
 RestartSec=3
-
-# Room snapshots live in the service-managed state directory.
 StateDirectory=avalon
 ProtectSystem=strict
 ProtectHome=read-only
