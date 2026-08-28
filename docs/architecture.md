@@ -6,10 +6,11 @@ sends player-specific updates over server-sent events.
 
 ## Boundaries
 
-The shared room layer owns membership, hosting, persistence, timers, and event
-fan-out. Each game owns its state machine, legal actions, hidden information,
-and player views. The HTTP server translates requests into room actions but
-does not implement game rules.
+The shared room layer owns identity, membership, hosting, revisions, replay
+records, randomness, persistence, timers, and event fan-out. A selected game is
+stored as an engine id plus engine-only state. Each game owns its state machine,
+legal actions, hidden information, and player views. The HTTP server translates
+requests into room actions but does not implement game rules.
 
 ```text
 browser
@@ -32,9 +33,10 @@ browser module under [`public/games/`](../public/games/).
 ## State and secrecy
 
 All randomness used by game engines comes from a seeded stream stored with the
-room, and successful player inputs are recorded with the state. Snapshots can
-therefore resume the same stream and timers after a restart. Persistence and
-restore rules are implemented in
+room, and successful player inputs are recorded with the room. A snapshot is
+validated as one unit before any room is restored, so malformed state or broken
+roster references cannot leave a partial registry. Snapshots can resume the
+same stream and timers after a restart. Persistence and restore rules are in
 [`src/persistence.js`](../src/persistence.js).
 
 Game state is never broadcast directly. Each engine derives a filtered view

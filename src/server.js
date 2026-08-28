@@ -161,7 +161,7 @@ async function api(rooms, avatars, req, res, url) {
     const playerId = url.searchParams.get('playerId');
     return json(res, 200, {
       exists: Boolean(room),
-      seated: Boolean(room && playerId && room.game.players.some((p) => p.id === playerId)),
+      seated: Boolean(room && playerId && room.players.some((p) => p.id === playerId)),
     });
   }
 
@@ -173,7 +173,7 @@ async function api(rooms, avatars, req, res, url) {
     const body = await readJson(req, 384 * 1024);
     let playerId = typeof body.playerId === 'string' ? body.playerId : null;
     const room = rooms.get(code);
-    const known = playerId && room.game.players.some((p) => p.id === playerId);
+    const known = playerId && room.players.some((p) => p.id === playerId);
     if (!known) playerId = randomUUID();
     rooms.dispatch(code, playerId, { type: 'join', id: playerId, name: body.name });
     json(res, 200, { playerId, code });
@@ -181,7 +181,7 @@ async function api(rooms, avatars, req, res, url) {
     // Joining is never held hostage by image generation, which can take up to
     // a couple of minutes. A placeholder appears immediately and the SSE view
     // replaces it as soon as the upload or generated portrait is stored.
-    const player = room.game.players.find((candidate) => candidate.id === playerId);
+    const player = room.players.find((candidate) => candidate.id === playerId);
     if (!known || !player.avatar) {
       void avatars.resolve({ name: player.name, upload: body.avatar })
         .then((avatar) => avatar && rooms.updatePlayerAvatar(code, playerId, avatar))
@@ -206,7 +206,7 @@ function stream(rooms, req, res, code, playerId) {
   // Validate before committing the SSE headers. A stale room URL must get a
   // normal JSON error, rather than throwing after the 200 response has begun.
   const room = rooms.get(code);
-  if (!room.game.players.some((player) => player.id === playerId)) {
+  if (!room.players.some((player) => player.id === playerId)) {
     throw new GameError('notInGame');
   }
   res.writeHead(200, {

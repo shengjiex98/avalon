@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -60,41 +60,97 @@ test('rooms save and restore with views, activity, clocks, and idle age intact',
   let clock = 50_000;
   const now = () => clock;
   const rooms = new Rooms({ now });
-  const nightCode = rooms.create('onuw', { code: 'NITE', seed: 123 });
+  const nightCode = rooms.create('onuw', { code: 'NATE', seed: 123 });
   for (let i = 0; i < 3; i++) {
     rooms.dispatch(nightCode, `p${i}`, { type: 'join', id: `p${i}`, name: `Player ${i}` });
   }
   rooms.dispatch(nightCode, 'p0', { type: 'start' });
   for (let i = 0; i < 3; i++) rooms.dispatch(nightCode, `p${i}`, { type: 'confirm' });
 
-  const lobbyCode = rooms.create('avalon', { code: 'WAIT', seed: 456 });
+  const lobbyCode = rooms.create('avalon', { code: 'WATT', seed: 456 });
   rooms.dispatch(lobbyCode, 'host', { type: 'join', id: 'host', name: 'Host' });
   const oldTouch = clock - 5 * 60 * 60_000;
   rooms.rooms.get(lobbyCode).touchedAt = oldTouch;
 
+  const resultCode = rooms.create('avalon', { code: 'RESD', seed: 789 });
+  for (let i = 0; i < 5; i++) {
+    rooms.dispatch(resultCode, `a${i}`, { type: 'join', id: `a${i}`, name: `Avalon ${i}` });
+  }
+  rooms.dispatch(resultCode, 'a0', { type: 'start' });
+  for (let i = 0; i < 5; i++) rooms.dispatch(resultCode, `a${i}`, { type: 'confirm' });
+  while (rooms.peek(resultCode).game.state.phase !== 'over') {
+    const room = rooms.peek(resultCode);
+    const view = gameFor('avalon').view(room, 'a0', clock);
+    const leader = view.players.find((player) => player.isLeader).id;
+    rooms.dispatch(resultCode, leader, { type: 'propose', team: view.players.slice(0, view.teamSize).map((p) => p.id) });
+    for (let i = 0; i < 5; i++) rooms.dispatch(resultCode, `a${i}`, { type: 'vote', approve: false });
+  }
+
   const expectedViews = Object.fromEntries(
-    rooms.rooms.get(nightCode).game.players.map((p) => [
+    rooms.rooms.get(nightCode).players.map((p) => [
       p.id,
-      gameFor('onuw').viewFor(rooms.rooms.get(nightCode).game, p.id, clock),
+      gameFor('onuw').view(rooms.rooms.get(nightCode), p.id, clock),
     ]),
   );
   const expectedActive = rooms.activeGameCount();
+  const expectedSnapshot = rooms.snapshot();
   const dir = await mkdtemp(join(tmpdir(), 'avalon-persistence-'));
   const file = join(dir, 'rooms.json');
   save(rooms, file);
+  assert.equal((await stat(dir)).mode & 0o777, 0o700);
+  assert.equal((await stat(file)).mode & 0o777, 0o600);
 
   const restored = new Rooms({ now });
-  assert.deepEqual(load(restored, file), { restored: 2, reason: null });
-  assert.deepEqual(restored.rooms.get(nightCode).game, rooms.rooms.get(nightCode).game);
+  assert.deepEqual(load(restored, file), { restored: 3, reason: null });
+  assert.deepEqual(restored.snapshot(), expectedSnapshot);
   assert.equal(restored.activeGameCount(), expectedActive);
   assert.equal(restored.rooms.get(lobbyCode).touchedAt, oldTouch);
   assert.equal(restored.rooms.get(lobbyCode).timer, null, 'a lobby has no clock');
   assert.ok(restored.rooms.get(nightCode).timer, 'a night resumes its clock');
+  assert.equal(restored.rooms.get(resultCode).game.state.phase, 'over');
+  assert.equal(restored.rooms.get(resultCode).game.state.winner, 'evil');
   for (const [playerId, view] of Object.entries(expectedViews)) {
-    assert.deepEqual(gameFor('onuw').viewFor(restored.rooms.get(nightCode).game, playerId, clock), view);
+    assert.deepEqual(gameFor('onuw').view(restored.rooms.get(nightCode), playerId, clock), view);
   }
   clearTimeout(rooms.rooms.get(nightCode).timer);
   clearTimeout(restored.rooms.get(nightCode).timer);
+});
+
+test('one malformed or duplicate room rejects the complete snapshot', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'avalon-persistence-atomic-'));
+  const file = join(dir, 'rooms.json');
+  const source = new Rooms({ now: () => 5_000 });
+  const code = source.create('avalon', { code: 'GDDD', seed: 9 });
+  source.dispatch(code, 'host', { type: 'join', id: 'host', name: 'Host' });
+  save(source, file);
+
+  const body = JSON.parse(await readFile(file, 'utf8'));
+  body.rooms.push(structuredClone(body.rooms[0]));
+  await writeFile(file, JSON.stringify(body));
+  const duplicate = new Rooms();
+  assert.equal(load(duplicate, file).restored, 0);
+  assert.equal(duplicate.rooms.size, 0);
+
+  body.rooms.pop();
+  body.rooms[0].game.state.team = ['missing-player'];
+  await writeFile(file, JSON.stringify(body));
+  const crossReference = new Rooms();
+  assert.equal(load(crossReference, file).restored, 0);
+  assert.equal(crossReference.rooms.size, 0);
+});
+
+test('game members contain engine state only', () => {
+  const rooms = new Rooms({ now: () => 1_000 });
+  const code = rooms.create('avalon', { code: 'ENLY', seed: 3 });
+  rooms.dispatch(code, 'host', { type: 'join', id: 'host', name: 'Host' });
+  const [{ game, ...room }] = rooms.snapshot();
+  assert.deepEqual(Object.keys(game).sort(), ['id', 'state']);
+  for (const key of ['code', 'players', 'hostId', 'log', 'seed', 'rng', 'version', 'actions']) {
+    assert.equal(key in game.state, false, `${key} belongs to the room`);
+  }
+  assert.equal(room.players.length, 1);
+  assert.equal(room.hostId, 'host');
+  assert.equal(room.journal.length, 1);
 });
 
 test('bad or incompatible snapshots start with an empty room registry', async () => {
