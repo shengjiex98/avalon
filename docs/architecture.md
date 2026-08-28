@@ -13,7 +13,7 @@ separate game modules.
 
 ```text
 .github/            Tests and the GitHub Pages client deployment.
-deploy/             systemd units, the deployment gate, and the updater.
+deploy/             Statically installed updater, listener, verifier, and systemd units.
 docs/               Design, operations, and reference documentation.
 src/lobby.js        Shared joining, hosting, and logging behavior.
 src/rooms.js        Room registry, SSE fan-out, timers, snapshots, and idle expiry.
@@ -85,3 +85,16 @@ shown as an explicit compatibility error.
 The current browser/server protocol is `2`. See [the API reference](api.md)
 for endpoint details and [deployment](deployment.md) for the two supported
 entry points.
+
+## Deployment boundary
+
+GitHub Actions packages and tests one immutable commit archive, uploads it, and
+then replaces a stable `latest.json` pointer containing its SHA-256. The host's
+installed listener treats ntfy as a wake-up only. Its installed updater fetches
+the pointer, verifies and prepares inert application bytes, checks state and API
+compatibility, atomically switches `current`, and health-verifies the exact
+commit. Candidate releases never execute deployment code or replace the static
+control plane.
+
+The public Pages client is published only after the server reports that same
+commit, keeping server and browser protocol changes ordered.

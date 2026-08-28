@@ -7,10 +7,10 @@ for how it fits together, and [docs/deployment.md](docs/deployment.md) for how i
 
 No running service reads `~/avalon`. The application runs from an immutable
 release under `~/.local/lib/avalon`, selected by a `current` symlink, and the
-only installed piece of the deployment control plane is
-`~/.local/libexec/avalon-deploy/bootstrap.sh`. Everything else -- the
-controller, the gate, the listener, the systemd units -- ships inside the
-release it deploys.
+deployment control plane is installed under
+`~/.local/libexec/avalon-deploy/` plus `~/.config/systemd/user/`. The updater,
+pointer verifier, listener, and four units are static host files; candidate
+releases contain application bytes only as far as the updater is concerned.
 
 So `~/avalon` on that host is an ordinary development clone with no special
 status. Nothing resets it, and editing it directly is fine. A worktree
@@ -18,10 +18,10 @@ status. Nothing resets it, and editing it directly is fine. A worktree
 branch deserves its own directory, and Git will refuse to check out a branch
 that is already active in another worktree.
 
-Changing `deploy/bootstrap.sh` is the one change that does not deploy itself: a
-human runs `deploy/install-bootstrap.sh` from a clone afterwards. A deployment
-warns, in the journal and on the topic, when the installed copy has drifted
-from the release's.
+Changes under `deploy/` do not install themselves. After such a change reaches
+the host, a human runs `deploy/install-updater.sh` from the clone and reloads
+systemd. Application releases never execute or overwrite candidate deployment
+code.
 
 ## Verification
 
@@ -29,10 +29,10 @@ from the release's.
 npm test
 ```
 
-That is the whole gate — `node --test` over `test/**/*.test.js`. CI runs the
-same suite, but through the release controller's own `prepare` from the packaged
-artifact, the way the host will. Tests are fast; run them after each change
-rather than once at the end.
+That is the whole gate — `node --test` over `test/**/*.test.js`. CI packages the
+release first, validates it with trusted checked-out code, and runs the same
+suite from the exact extracted archive. Tests are fast; run them after each
+change rather than once at the end.
 
 ## Constraints worth knowing before you write code
 
@@ -48,7 +48,7 @@ snapshot starts empty and ends any game that was in progress. Before a manual
 restart involving changed code, inspect both activity and the running version:
 
 ```bash
-curl -s localhost:8420/api/health | jq '{activeGames, stateVersion}'
+curl -s localhost:8420/api/health
 ```
 
 **The browser and server negotiate on `API_PROTOCOL`.** It is declared in both
@@ -64,12 +64,10 @@ all times.
 
 **Merge without waiting for a quiet moment.** The protection is server-side and
 automatic, so do not check `activeGames` before merging or hold a merge until a
-game ends. `deploy/gate.sh` decides whether the running process may be replaced,
-and the release controller asks it *before* selecting a release. When running
-and target `STATE_VERSION` values match the restart is lossless and happens
-immediately, live rooms and all. Otherwise a game in progress exits 75,
-publishes `busy`, and leaves the deployment exactly where it was for the hourly
-retry. The controller tests the target before selection and rolls back code and
-snapshot if the new process fails its health check; a host that is not on Node
-v24 is refused before anything moves. Open the PR, merge it, and let the host
-sort out the timing.
+game ends. The installed updater requires both the running and target
+`STATE_VERSION` and `API_PROTOCOL` to match before restarting through a live
+game. Otherwise `/api/health/update` decides whether the table is idle; a `409`
+exits 75 without stopping the server or moving `current`, and the listener or
+hourly timer retries later. Failed exact-commit health restores the previous
+release and snapshot. A host that is not on Node v24 is refused before anything
+moves. Open the PR, merge it, and let the host sort out the timing.

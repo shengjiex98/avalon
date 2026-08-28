@@ -38,6 +38,7 @@ The suite does not need network access or a browser.
   still restarting.
 - **ui-testmode:** adding and switching seats through normal join and event
   paths, including rejected joins.
-- **deploy:** Node-hosted and GitHub Pages entry points, frontend version
-  stamping, HTTPS backend selection, protocol checks, and state-compatible
-  update gating.
+- **deploy / pointer / updater:** archive publication and stable-pointer
+  ordering, wake-only notifications, frontend version stamping, compatibility
+  gating, unsafe archive rejection, atomic activation, snapshot rollback, and
+  static installer behavior.

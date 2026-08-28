@@ -78,29 +78,18 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   assert.equal((await run(process.execPath, [verifier, dir, 'e'.repeat(40)])).code, 65);
 });
 
-// Self-deployment rests on these: the bootstrap runs the controller, the gate,
-// and the units out of the artifact. An export-ignore or a forgotten `git add`
-// would otherwise strand every deployment after it.
+// A release must carry the application and the files used to package, install,
+// and validate the static deployment path. An export-ignore or forgotten
+// `git add` would otherwise strand a manual updater upgrade.
 const CONTROL_PLANE = [
-  'deploy/bootstrap.sh',
-  'deploy/controller.sh',
-  'deploy/gate.sh',
   'deploy/install-updater.sh',
-  'deploy/lib.sh',
   'deploy/listen.mjs',
   'deploy/updater.sh',
   'deploy/verify-pointer.mjs',
-  'deploy/verify-release.mjs',
-  'deploy/wait-for-health.mjs',
   'deploy/avalon.service',
   'deploy/avalon-listen.service',
   'deploy/avalon-update.service',
-  'deploy/avalon-update@.service',
   'deploy/avalon-update.timer',
-  'deploy/static/avalon.service',
-  'deploy/static/avalon-listen.service',
-  'deploy/static/avalon-update.service',
-  'deploy/static/avalon-update.timer',
   'scripts/verify-packaged-release.mjs',
 ];
 
