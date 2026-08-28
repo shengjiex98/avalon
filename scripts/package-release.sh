@@ -1,10 +1,23 @@
 #!/bin/sh
 # Build the immutable, architecture-neutral server release for one commit.
+#
+# The archive must be byte-identical for a given commit on every machine that
+# builds it, which is what lets the host compare a downloaded release against
+# the one CI published. That reproducibility comes from GNU tar's --sort and
+# --mtime and from gzip -n; a tar without them cannot produce this artifact.
 set -eu
 
 if [ "$#" -gt 2 ]; then
   echo 'Usage: package-release.sh [commit] [output-directory]' >&2
   exit 64
+fi
+
+if ! tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+     -cf /dev/null -T /dev/null 2>/dev/null; then
+  echo 'package-release.sh: this tar cannot build reproducible archives.' >&2
+  echo 'It needs GNU tar (--sort, --mtime, --numeric-owner); BSD tar will not do.' >&2
+  echo 'On macOS: brew install gnu-tar, then put gtar on PATH as tar.' >&2
+  exit 69
 fi
 
 root=$(git rev-parse --show-toplevel)
@@ -13,17 +26,29 @@ output=${2:-"$root/dist"}
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
 
+archive="$output/avalon-$commit.tar.gz"
+partial="$output/.avalon-$commit.tar.gz.$$"
 stage=$(mktemp -d)
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+trap 'rm -rf "$stage" "$partial"' EXIT HUP INT TERM
+
+# Every step is its own command. A pipeline would report only the exit status
+# of its last stage, which is how a failed `tar -x` once produced an empty
+# archive that looked like a successful release.
 release="$stage/avalon-$commit"
 mkdir "$release"
-
-git -C "$root" archive "$commit" | tar -x -C "$release"
+git -C "$root" archive --format=tar "$commit" >"$stage/source.tar"
+tar -xf "$stage/source.tar" -C "$release"
+rm -f "$stage/source.tar"
 node "$release/scripts/write-release-manifest.mjs" "$commit" "$release/release.json"
 
-archive="$output/avalon-$commit.tar.gz"
 timestamp=$(git -C "$root" show -s --format=%ct "$commit")
 tar --sort=name --mtime="@$timestamp" --owner=0 --group=0 --numeric-owner \
-  -C "$stage" -cf - "avalon-$commit" | gzip -n >"$archive"
+  -C "$stage" -cf "$stage/release.tar" "avalon-$commit"
+gzip -n -c "$stage/release.tar" >"$partial"
+
+# Publish only an archive that reads back. Until the rename the output
+# directory holds no file that an updater would mistake for a release.
+tar -tzf "$partial" >/dev/null
+mv "$partial" "$archive"
 
 printf '%s\n' "$archive"
