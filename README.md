@@ -32,7 +32,7 @@ players. The public client connects to the default game server automatically.
 ## Optional: self-host
 
 Self-hosting is optional. If you prefer to run your own game server, install
-[Node.js 20 or newer](https://nodejs.org/) and run:
+[Node.js 24 or newer](https://nodejs.org/) and run:
 
 ```bash
 git clone https://github.com/shengjiex98/avalon.git

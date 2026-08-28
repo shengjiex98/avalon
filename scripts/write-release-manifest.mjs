@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 
-import { API_PROTOCOL } from '../src/server.js';
+import { API_PROTOCOL } from '../src/api-protocol.js';
 import { STATE_VERSION } from '../src/state-version.js';
 
 const [, , commit, output] = process.argv;

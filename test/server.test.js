@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 
-import { API_PROTOCOL, CLIENT_ORIGIN, createApp } from '../src/server.js';
+import { API_PROTOCOL } from '../src/api-protocol.js';
+import { CLIENT_ORIGIN, createApp } from '../src/server.js';
 import { Rooms } from '../src/rooms.js';
 import { STATE_VERSION } from '../src/state-version.js';
 import * as onuw from '../src/games/onuw/game.js';

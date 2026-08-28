@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { API_PROTOCOL, readDeployedCommit } from '../src/server.js';
+import { API_PROTOCOL } from '../src/api-protocol.js';
+import { readDeployedCommit } from '../src/server.js';
 import { STATE_VERSION } from '../src/state-version.js';
 
 const script = fileURLToPath(new URL('../scripts/write-release-manifest.mjs', import.meta.url));

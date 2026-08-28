@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { API_PROTOCOL } from '../src/api-protocol.js';
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
@@ -40,10 +41,18 @@ test('the connection banner lives outside the top bar', async () => {
   assert.match(html, /<div id="conn" class="conn-banner"/);
 });
 
+// Pages ships on its own release train, so the client cannot import the
+// server's constant. It carries a copy, and the two must be the same number.
+test('the Pages client declares the same API protocol as the server', async () => {
+  const source = await read('../public/app.js');
+  const declared = /^const API_PROTOCOL = (\d+);$/m.exec(source);
+  assert.ok(declared, 'public/app.js must declare API_PROTOCOL as a plain number');
+  assert.equal(Number(declared[1]), API_PROTOCOL);
+});
+
 test('the browser defaults to Node but can remember one HTTPS backend', async () => {
   const source = await read('../public/app.js');
   const config = await read('../public/config.js');
-  assert.match(source, /API_PROTOCOL\s*=\s*2/);
   assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
   assert.match(source, /location\.origin !== PAGES_ORIGIN/);
   assert.match(source, /normaliseServer\(API_BASE\)/);

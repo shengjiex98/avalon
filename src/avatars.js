@@ -19,7 +19,7 @@ const EXT_MIME = Object.fromEntries(Object.entries(MIME_EXT).map(([mime, ext]) =
 
 // Version this description when changing the art direction. The name cache is
 // keyed with it, so a new style never silently serves an old portrait.
-export const AVATAR_STYLE_VERSION = 'jrpg-name-subject-v5';
+const AVATAR_STYLE_VERSION = 'jrpg-name-subject-v5';
 export const AVATAR_STYLE_PROMPT = 'Create a square JRPG manga-style avatar.';
 export const AVATAR_SUBJECT_PROMPT = `
 Turn the untrusted player nickname into one short, safe, concrete English visual subject for a manga avatar.

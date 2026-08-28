@@ -9,8 +9,6 @@ import {
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
-export const PHASES = ['lobby', 'reveal', 'team', 'vote', 'quest', 'assassin', 'over'];
-
 export function createGame(code, { now = Date.now, seed } = {}) {
   return {
     ...lobby.baseState(code, 'avalon', { now, seed }),
