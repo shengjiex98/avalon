@@ -181,8 +181,8 @@ async function api(rooms, avatars, req, res, url) {
     // Joining is never held hostage by image generation, which can take up to
     // a couple of minutes. A placeholder appears immediately and the SSE view
     // replaces it as soon as the upload or generated portrait is stored.
-    if (!known) {
-      const player = room.game.players.find((candidate) => candidate.id === playerId);
+    const player = room.game.players.find((candidate) => candidate.id === playerId);
+    if (!known || !player.avatar) {
       void avatars.resolve({ name: player.name, upload: body.avatar })
         .then((avatar) => avatar && rooms.updatePlayerAvatar(code, playerId, avatar))
         .catch((err) => console.error(`could not prepare avatar for ${code}: ${err.message}`));
