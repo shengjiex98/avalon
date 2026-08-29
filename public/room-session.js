@@ -93,7 +93,8 @@ export function createRoomSession({
     app.connected = true;
     app.everConnected = true;
     app.retry = 0;
-    if (!app.view || next.phase !== app.view.phase || next.round !== app.view.round
+    if (!app.view || next.phase !== app.view.phase
+        || ('round' in next ? next.round : undefined) !== ('round' in app.view ? app.view.round : undefined)
         || next.gameId !== app.view.gameId) {
       app.selection = [];
       app.centres = [];

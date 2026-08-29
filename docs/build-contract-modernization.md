@@ -1,6 +1,6 @@
 # Contract and TypeScript modernization
 
-Status: proposed; implementation has not started.
+Status: in progress.
 
 This plan replaces the original all-at-once build migration. Its purpose is to
 make the contracts easier to understand and change, not to acquire a modern
@@ -277,8 +277,8 @@ only when a stop condition fires, not for routine implementation choices.
 
 | Phase | Outcome | Status |
 | --- | --- | --- |
-| 0 | Baseline and prove Node-native TypeScript | Not started |
-| 1 | Model exact public views | Not started |
+| 0 | Baseline and prove Node-native TypeScript | Complete |
+| 1 | Model exact public views | Complete |
 | 2 | Replace structural validators with schemas | Not started |
 | 3 | Convert server and tests to native TypeScript | Not started |
 | 4 | Make the browser boundary explicit | Not started |

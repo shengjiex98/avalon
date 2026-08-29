@@ -436,7 +436,6 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
 /** @param {OnuwContext} g @param {string} viewerId @param {number} [now] @returns {OnuwView} */
 export function viewFor(g, viewerId, now = Date.now()) {
   const me = playerById(g, viewerId);
-  const over = g.phase === 'over';
   const night = g.phase === 'night';
   const startRole = g.startRoles[viewerId] ?? null;
   const step = currentStep(g);
@@ -457,40 +456,23 @@ export function viewFor(g, viewerId, now = Date.now()) {
       houseRules: HOUSE_RULE_KEYS.slice(),
       paces: Object.keys(PACES),
     },
-    you: me ? {
-      id: me.id, name: me.name, avatar: me.avatar ?? null,
-      ...(g.phase === 'lobby' ? {} : {
-        role: startRole,
-        team: startRole ? teamOf(startRole) : null,
-      }),
-      ...(over ? { finalRole: g.finalRoles[viewerId] } : {}),
-      ...(night ? {
-        awake,
-        ...(action ? { action } : {}),
-        acted: viewerId in g.nightActions,
-      } : {}),
-      ...(g.phase === 'vote' ? { voted: viewerId in g.votes } : {}),
-    } : null,
-    players: g.players.map((p, i) => ({
+  };
+  const you = me ? {
+    id: me.id, name: me.name, avatar: me.avatar ?? null,
+    role: startRole,
+    team: startRole ? teamOf(startRole) : null,
+  } : null;
+  const players = g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar ?? null,
       seat: i,
-      ...(g.phase === 'reveal' ? { ready: Boolean(g.ready[p.id]) } : {}),
-      // No `acted` at night: it would be false only for players holding an
-      // action role, which is the deck read straight off the screen.
-      ...(g.phase === 'vote' ? { voted: p.id in g.votes } : {}),
-      ...(over ? {
-        votedFor: g.votes[p.id] ?? null,
-        dead: g.dead.includes(p.id),
-        startRole: g.startRoles[p.id],
-        finalRole: g.finalRoles[p.id],
-      } : {}),
-    })),
-  };
+    }));
 
   if (g.phase === 'lobby') return {
-    ...common,
+    ...common, phase: 'lobby',
+    you: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
+    players,
     options: { ...liveOptions(g) },
     houseRules: houseRulesOf(g),
     optionRoom: roomForOptions(g.players.length),
@@ -501,7 +483,7 @@ export function viewFor(g, viewerId, now = Date.now()) {
   };
 
   const inGame = {
-    ...common,
+    ...common, you,
     houseRules: houseRulesOf(g),
     deck: countRoles([...Object.values(g.startRoles), ...g.centreStart]),
     centreCount: g.centreStart.length,
@@ -509,9 +491,18 @@ export function viewFor(g, viewerId, now = Date.now()) {
     info: g.info[viewerId] ?? [],
   };
 
-  if (g.phase === 'reveal') return { ...inGame, waitingFor: waiting.map((p) => p.id) };
+  if (g.phase === 'reveal') return {
+    ...inGame, phase: 'reveal',
+    players: players.map((p) => ({ ...p, ready: Boolean(g.ready[p.id]) })),
+    waitingFor: waiting.map((p) => p.id),
+  };
   if (g.phase === 'night') return {
-    ...inGame,
+    ...inGame, phase: 'night',
+    you: you ? {
+      ...you, awake, ...(action ? { action } : {}), acted: viewerId in g.nightActions,
+    } : null,
+    // No `acted` on other seats: it would identify the players holding action roles.
+    players,
     // The same clock for every player, so the countdown can never be read as
     // a signal about who is doing what.
     night: step ? {
@@ -522,10 +513,23 @@ export function viewFor(g, viewerId, now = Date.now()) {
       msTotal: stepMillis(step, g.pace),
     } : null,
   };
-  if (g.phase === 'day') return inGame;
-  if (g.phase === 'vote') return { ...inGame, waitingFor: waiting.map((p) => p.id) };
+  if (g.phase === 'day') return { ...inGame, phase: 'day', players };
+  if (g.phase === 'vote') return {
+    ...inGame, phase: 'vote',
+    you: you ? { ...you, voted: viewerId in g.votes } : null,
+    players: players.map((p) => ({ ...p, voted: p.id in g.votes })),
+    waitingFor: waiting.map((p) => p.id),
+  };
   if (g.phase === 'over') return {
-    ...inGame,
+    ...inGame, phase: 'over',
+    you: you ? { ...you, finalRole: g.finalRoles[viewerId] } : null,
+    players: players.map((p) => ({
+      ...p,
+      votedFor: g.votes[p.id] ?? null,
+      dead: g.dead.includes(p.id),
+      startRole: g.startRoles[p.id],
+      finalRole: g.finalRoles[p.id],
+    })),
     centre: g.centre,
     swaps: g.swaps,
     dead: g.dead,

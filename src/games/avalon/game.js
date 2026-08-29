@@ -308,8 +308,6 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
 export function viewFor(g, viewerId) {
   const me = playerById(g, viewerId);
   const myRole = g.roles[viewerId] ?? null;
-  const revealAll = g.phase === 'over';
-  const active = g.phase !== 'lobby';
   const common = {
     ...lobby.baseView(g, viewerId),
     setup: {
@@ -318,33 +316,29 @@ export function viewFor(g, viewerId) {
       options: OPTIONAL_ROLES.slice(),
       houseRules: HOUSE_RULE_KEYS.slice(),
     },
-    you: me ? {
-      id: me.id, name: me.name, avatar: me.avatar ?? null,
-      ...(active ? { role: myRole, side: myRole ? sideOf(myRole) : null } : {}),
-    } : null,
-    players: g.players.map((p, i) => ({
+  };
+  const you = me ? {
+    id: me.id, name: me.name, avatar: me.avatar ?? null,
+    role: myRole, side: myRole ? sideOf(myRole) : null,
+  } : null;
+  const players = g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar ?? null,
       seat: i,
-      ...(active ? { isLeader: i === g.leaderIndex } : {}),
-      ...(['team', 'vote', 'quest'].includes(g.phase) ? { onTeam: g.team.includes(p.id) } : {}),
-      ...(g.phase === 'vote' ? { hasVoted: p.id in g.votes } : {}),
-      ...(g.phase === 'quest' && g.team.includes(p.id) ? { hasPlayed: p.id in g.cards } : {}),
-      ...(g.phase === 'reveal' ? { ready: Boolean(g.ready?.[p.id]) } : {}),
-      ...(revealAll ? { role: g.roles[p.id] } : {}),
-    })),
-  };
+    }));
 
   if (g.phase === 'lobby') return {
-    ...common,
+    ...common, phase: 'lobby',
+    you: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
+    players,
     options: { ...liveOptions(g) },
     houseRules: houseRulesOf(g),
     deck: safeRoleCounts(g),
   };
 
   const inGame = {
-    ...common,
+    ...common, you,
     houseRules: houseRulesOf(g),
     roleCounts: countRoles(buildRoleList(g.players.length, g.options)),
     round: g.round,
@@ -368,22 +362,36 @@ export function viewFor(g, viewerId) {
   };
 
   const waiting = () => ({ waitingFor: waitingFor(g).map((p) => p.id) });
-  if (g.phase === 'reveal') return { ...inGame, ...waiting() };
+  if (g.phase === 'reveal') return {
+    ...inGame, phase: 'reveal',
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, ready: Boolean(g.ready?.[p.id]) })),
+    ...waiting(),
+  };
   if (g.phase === 'team') return {
-    ...inGame, team: g.team.slice(), teamSize: currentTeamSize(g),
+    ...inGame, phase: 'team', team: g.team.slice(), teamSize: currentTeamSize(g),
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id) })),
     failsRequired: currentFailsRequired(g), ...waiting(),
   };
   if (g.phase === 'vote') return {
-    ...inGame, team: g.team.slice(), teamSize: currentTeamSize(g), ...waiting(),
+    ...inGame, phase: 'vote', team: g.team.slice(), teamSize: currentTeamSize(g), ...waiting(),
+    players: players.map((p, i) => ({
+      ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id), hasVoted: p.id in g.votes,
+    })),
   };
   if (g.phase === 'quest') return {
-    ...inGame, team: g.team.slice(), failsRequired: currentFailsRequired(g), ...waiting(),
+    ...inGame, phase: 'quest', team: g.team.slice(), failsRequired: currentFailsRequired(g), ...waiting(),
+    players: players.map((p, i) => ({
+      ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id),
+      ...(g.team.includes(p.id) ? { hasPlayed: p.id in g.cards } : {}),
+    })),
   };
   if (g.phase === 'assassin') return {
-    ...inGame, assassinTarget: g.assassinTarget, ...waiting(),
+    ...inGame, phase: 'assassin', assassinTarget: g.assassinTarget, ...waiting(),
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex })),
   };
   if (g.phase === 'over') return {
-    ...inGame,
+    ...inGame, phase: 'over',
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, role: g.roles[p.id] })),
     assassinTarget: g.assassinTarget,
     winner: g.winner,
     winReason: g.winReason,
