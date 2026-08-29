@@ -87,9 +87,11 @@ exit 0
 set -eu
 out=
 write=
+data=
 url=
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    -d) data=$2; shift 2 ;;
     -o) out=$2; shift 2 ;;
     -w) write=$2; shift 2 ;;
     -H|--retry|--connect-timeout|--max-time) shift 2 ;;
@@ -99,6 +101,9 @@ while [ "$#" -gt 0 ]; do
 done
 printf '%s\n' "$url" >>"$CURL_LOG"
 case "$url" in
+  https://ntfy.invalid/avalon)
+    printf '%s\n' "$data" >>"$NTFY_LOG"
+    ;;
   */latest.json\?t=*) cp "$ARTIFACTS/latest.json" "$out" ;;
   */avalon-*.tar.gz) cp "$ARTIFACTS/\${url##*/}" "$out" ;;
   */api/health/update)
@@ -148,6 +153,7 @@ async function fixture(options = {}) {
   const runningFile = join(dir, 'running');
   const systemctlLog = join(dir, 'systemctl.log');
   const curlLog = join(dir, 'curl.log');
+  const ntfyLog = join(dir, 'ntfy.log');
   await mkdir(artifacts);
   await mkdir(releases, { recursive: true });
   await mkdir(join(dir, 'state'));
@@ -184,6 +190,8 @@ async function fixture(options = {}) {
     AVALON_STATE_FILE: stateFile,
     AVALON_HEALTH_TIMEOUT_SECONDS: '0.01',
     AVALON_KEEP_RELEASES: '2',
+    NTFY_SERVER: 'https://ntfy.invalid',
+    NTFY_TOPIC: 'avalon',
     PORT: '8420',
     ARTIFACTS: artifacts,
     RELEASE_ROOT: releaseRoot,
@@ -191,6 +199,7 @@ async function fixture(options = {}) {
     RUNNING_FILE: runningFile,
     SYSTEMCTL_LOG: systemctlLog,
     CURL_LOG: curlLog,
+    NTFY_LOG: ntfyLog,
     UPDATE_CODE: String(options.updateCode ?? 409),
     RUNNING_STATE: String(options.runningState ?? 1),
     RUNNING_PROTOCOL: String(options.runningProtocol ?? 1),
@@ -198,7 +207,7 @@ async function fixture(options = {}) {
     REAL_NODE: process.execPath,
   };
   return {
-    dir, artifacts, releaseRoot, releases, stateFile, runningFile, systemctlLog, curlLog,
+    dir, artifacts, releaseRoot, releases, stateFile, runningFile, systemctlLog, curlLog, ntfyLog,
     marker: join(dir, 'candidate-ran'), env,
   };
 }
@@ -216,6 +225,24 @@ test('a matching pointer prepares, seals, switches, and health-verifies the rele
   assert.equal(await readFile(fix.stateFile, 'utf8'), 'good snapshot');
   await assert.rejects(access(fix.marker));
   assert.match(await readFile(fix.curlLog, 'utf8'), /latest\.json\?t=\d+/);
+});
+
+test('ntfy reports terminal deployment status with the seven-character Git commit', async () => {
+  const deployed = await fixture();
+  assert.equal((await reconcile(deployed)).code, 0);
+  assert.equal(await readFile(deployed.ntfyLog, 'utf8'), 'deployed 2222222\n');
+
+  const busy = await fixture({ runningState: 2, runningProtocol: 2 });
+  assert.equal((await reconcile(busy)).code, 75);
+  assert.equal(await readFile(busy.ntfyLog, 'utf8'), 'busy 2222222\n');
+
+  const failed = await fixture({ digest: 'f'.repeat(64) });
+  assert.notEqual((await reconcile(failed)).code, 0);
+  assert.equal(await readFile(failed.ntfyLog, 'utf8'), 'failed 2222222\n');
+
+  const notifierDown = await fixture();
+  assert.equal((await reconcile(notifierDown, [], { NTFY_SERVER: 'https://offline.invalid' })).code, 0,
+    'notification delivery never changes the deployment result');
 });
 
 test('download, pointer, digest, and manifest failures cannot change current', async () => {
