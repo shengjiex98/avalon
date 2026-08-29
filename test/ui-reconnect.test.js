@@ -17,6 +17,11 @@ const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 
 const frame = () => ({
   code: 'WXYZ', gameId: 'avalon', phase: 'lobby', version: 1, hostId: 'me',
+  setup: {
+    minPlayers: 5, maxPlayers: 10,
+    options: ['percival', 'morgana', 'mordred', 'oberon'],
+    houseRules: ['randomLeader', 'hiddenVotes', 'resetRejects'],
+  },
   me: { id: 'me', name: 'Ann' },
   you: { id: 'me', name: 'Ann', role: null, team: null, awake: false, action: null, acted: false, voted: false },
   players: [{ id: 'me', name: 'Ann', seat: 0, isLeader: false, onTeam: false }],

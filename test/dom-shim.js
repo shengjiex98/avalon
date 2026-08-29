@@ -147,7 +147,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
   const state = {
     health: true,
     offline: false,        // when true every request fails the way a dead server does
-    protocol: 2,
+    protocol: 3,
     frontendVersion: 'dev',
     confirmResult: true,
     confirmations: [],

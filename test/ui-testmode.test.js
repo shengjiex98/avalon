@@ -12,6 +12,11 @@ const { app, render } = client;
 
 const frame = (players, viewerId) => ({
   code: 'WXYZ', gameId: 'avalon', phase: 'lobby', version: 1, hostId: players[0].id,
+  setup: {
+    minPlayers: 5, maxPlayers: 10,
+    options: ['percival', 'morgana', 'mordred', 'oberon'],
+    houseRules: ['randomLeader', 'hiddenVotes', 'resetRejects'],
+  },
   me: players.find((p) => p.id === viewerId),
   you: { id: viewerId, name: players.find((p) => p.id === viewerId).name, role: null, side: null },
   players: players.map((p, seat) => ({ ...p, seat, isLeader: false, onTeam: false })),

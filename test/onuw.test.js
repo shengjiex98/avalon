@@ -78,7 +78,7 @@ test('the night clock waits until every player is ready', () => {
   assert.equal(game.step, -1);
   assert.equal(game.stepEndsAt, 0);
   assert.equal(w.nextDeadline(game), null, 'the room must not schedule a timer yet');
-  assert.equal(w.viewFor(game, 'p0', clock).night, null);
+  assert.equal('night' in w.viewFor(game, 'p0', clock), false);
 
   w.confirmRole(game, 'p0', { now });
   w.confirmRole(game, 'p1', { now });
@@ -177,12 +177,12 @@ test('a night view never says who is awake or who has acted', () => {
 
   for (const p of game.players) {
     const view = w.viewFor(game, p.id, clock);
-    assert.deepEqual(view.waitingFor, [], 'nobody is waited on by name');
+    assert.equal('waitingFor' in view, false, 'nobody is waited on by name');
     for (const other of view.players) {
       assert.equal(other.acted, undefined, `${p.id} could see whether ${other.id} has acted`);
       assert.equal(other.startRole, undefined);
     }
-    assert.equal(view.centre, null);
+    assert.equal('centre' in view, false);
   }
 });
 
@@ -206,7 +206,7 @@ test('only the player whose step it is gets controls or knowledge', () => {
   for (const other of ['p1', 'p2']) {
     const view = w.viewFor(game, other, clock);
     assert.equal(view.you.awake, false);
-    assert.equal(view.you.action, null);
+    assert.equal('action' in view.you, false);
     const learned = JSON.stringify(view.info);
     assert.ok(!learned.includes('sawPlayer'), `${other} saw the seer's reading`);
     assert.ok(!learned.includes('Ann'), `${other} was told something about the seer`);
@@ -221,7 +221,7 @@ test('a pair of werewolves gets its own step and sees each other', () => {
   const view = w.viewFor(game, 'p0', clock);
 
   assert.equal(view.you.awake, true, 'a paired wolf is awake, not asleep');
-  assert.equal(view.you.action, null, 'but has no centre card to look at');
+  assert.equal('action' in view.you, false, 'but has no centre card to look at');
   assert.deepEqual(view.info.map((k) => k.key), ['onuw.info.packmates']);
   assert.deepEqual(view.info[0].params.names, ['Bo']);
 });
@@ -529,10 +529,40 @@ test('everything is revealed once the votes are in', () => {
   const view = w.viewFor(game, 'p1', clock);
   assert.ok(view.players.every((p) => p.startRole && p.finalRole));
   assert.equal(view.centre.length, 3);
-  assert.equal(view.night, null, 'the clock is gone by then');
+  assert.equal('night' in view, false, 'the clock is gone by then');
   assert.ok(view.swaps.length >= 1);
   assert.equal(view.youWon, true, 'you are the card you finish holding');
   assert.equal(w.viewFor(game, 'p2', clock).youWon, false);
+});
+
+test('One Night views are discriminated by phase and carry server-owned setup metadata', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  const view = (phase) => {
+    game.phase = phase;
+    return w.viewFor(game, 'p0', clock);
+  };
+
+  const lobby = view('lobby');
+  assert.equal(lobby.gameId, 'onuw');
+  assert.deepEqual(lobby.setup, {
+    minPlayers: 3, maxPlayers: 10,
+    options: ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'],
+    houseRules: ['decisiveVote'],
+    paces: ['brisk', 'normal', 'relaxed'],
+  });
+  assert.ok('options' in lobby && 'pace' in lobby && !('info' in lobby));
+
+  const reveal = view('reveal');
+  assert.ok('waitingFor' in reveal && 'ready' in reveal.players[0] && !('night' in reveal));
+  const night = view('night');
+  assert.ok('night' in night && 'awake' in night.you && !('waitingFor' in night));
+  const day = view('day');
+  assert.ok(!('night' in day) && !('waitingFor' in day) && !('centre' in day));
+  const vote = view('vote');
+  assert.ok('waitingFor' in vote && 'voted' in vote.players[0]);
+  const over = view('over');
+  assert.ok('centre' in over && 'winners' in over && 'finalRole' in over.players[0]);
+  assert.ok(!('night' in over) && !('waitingFor' in over));
 });
 
 test('play again reshuffles the same table', () => {

@@ -4,7 +4,6 @@
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
 export const id = 'avalon';
-export const minPlayers = 5;
 export const rulesKey = 'rules.body';
 export const taglineKey = 'app.tagline';
 
@@ -23,7 +22,6 @@ function paneKey() { return String(app.view.round); }
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const HOUSE_RULES = ['randomLeader', 'hiddenVotes', 'resetRejects'];
 const houseRuleName = (rule) => T(`avalon.house.${rule}`);
 
 /** The role toggles and house rules the host sets before starting. */
@@ -54,7 +52,7 @@ function lobbyOptions() {
   return h('div', { class: 'card stack' },
     h('h2', { text: T('lobby.roles') }),
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
-    h('div', { class: 'role-options' }, ['percival', 'morgana', 'mordred', 'oberon'].map(optionRow)),
+    h('div', { class: 'role-options' }, v.setup.options.map(optionRow)),
     // The deck the toggles above add up to. It follows the table size on its
     // own, so the usual answer to "what are we playing?" is already on screen.
     // Drawn only when the server works it out, so a newer client against an
@@ -69,7 +67,7 @@ function lobbyOptions() {
     ] : []),
     ...(v.houseRules ? [
       h('h3', { text: T('avalon.houseRules') }),
-      h('div', { class: 'house-rules' }, HOUSE_RULES.map(houseToggle)),
+      h('div', { class: 'house-rules' }, v.setup.houseRules.map(houseToggle)),
     ] : []),
   );
 }
@@ -153,7 +151,7 @@ function closeInfoPopup() {
 }
 
 /** The variants this table switched on, in the order they are listed. */
-const houseRulesInForce = () => HOUSE_RULES.filter((rule) => app.view.houseRules?.[rule]);
+const houseRulesInForce = () => app.view.setup.houseRules.filter((rule) => app.view.houseRules?.[rule]);
 
 /** Public role composition and abilities, without revealing who holds what. */
 function referenceContent() {
@@ -402,5 +400,5 @@ function paneOver() {
 const EVIL_ROLES = new Set(['assassin', 'morgana', 'mordred', 'oberon', 'minion']);
 const sideOfRole = (role) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
 
-return { id, minPlayers, rulesKey, taglineKey, paneKey, lobbyOptions, header_, panes };
+return { id, rulesKey, taglineKey, paneKey, lobbyOptions, header_, panes };
 }

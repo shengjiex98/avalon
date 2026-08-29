@@ -15,8 +15,10 @@ in [`test/server.test.js`](../test/server.test.js).
   and filtered SSE views.
 - `/api/avatars` serves immutable player images.
 
-Exact methods, request bodies, status codes, and limits belong in
-[`src/server.js`](../src/server.js), with game-specific actions defined by
+Exact methods, status codes, and limits belong in
+[`src/server.js`](../src/server.js). Request bodies are treated as unknown
+input and validated by [`src/api-validation.js`](../src/api-validation.js)
+before dispatch; game-specific actions remain defined by
 [`src/games/index.js`](../src/games/index.js) and the individual game modules.
 
 Errors carry a translation key and optional parameters:
@@ -26,6 +28,11 @@ Errors carry a translation key and optional parameters:
 ```
 
 This lets each browser render server errors in its selected language.
+
+Room views are discriminated by `gameId` and `phase`. Each phase carries only
+the state meaningful to it, while lobby option keys, house-rule keys, pace
+choices, and player limits come from server-owned `setup` metadata. The view
+builders in the individual game modules are the authoritative contracts.
 
 ## Reconnection
 

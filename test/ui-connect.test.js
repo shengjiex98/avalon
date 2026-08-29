@@ -13,6 +13,15 @@ const { app, render } = client;
 
 const lobbyFrame = (gameId) => ({
   code: 'WXYZ', gameId, phase: 'lobby', version: 1, hostId: 'me',
+  setup: gameId === 'onuw' ? {
+    minPlayers: 3, maxPlayers: 10,
+    options: ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'],
+    houseRules: ['decisiveVote'], paces: ['brisk', 'normal', 'relaxed'],
+  } : {
+    minPlayers: 5, maxPlayers: 10,
+    options: ['percival', 'morgana', 'mordred', 'oberon'],
+    houseRules: ['randomLeader', 'hiddenVotes', 'resetRejects'],
+  },
   me: { id: 'me', name: '大白' },
   you: { id: 'me', name: '大白', role: null, team: null, awake: false, action: null, acted: false, voted: false },
   players: [{ id: 'me', name: '大白', seat: 0, isLeader: false, onTeam: false }],

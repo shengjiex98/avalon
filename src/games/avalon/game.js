@@ -275,46 +275,51 @@ export function viewFor(g, viewerId) {
   const me = playerById(g, viewerId);
   const myRole = g.roles[viewerId] ?? null;
   const revealAll = g.phase === 'over';
-
-  return {
+  const active = g.phase !== 'lobby';
+  const common = {
     ...lobby.baseView(g, viewerId),
+    setup: {
+      minPlayers: MIN_PLAYERS,
+      maxPlayers: MAX_PLAYERS,
+      options: OPTIONAL_ROLES.slice(),
+      houseRules: HOUSE_RULE_KEYS.slice(),
+    },
     you: me ? {
       id: me.id, name: me.name, avatar: me.avatar ?? null,
-      role: myRole, side: myRole ? sideOf(myRole) : null,
+      ...(active ? { role: myRole, side: myRole ? sideOf(myRole) : null } : {}),
     } : null,
     players: g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar ?? null,
       seat: i,
-      isLeader: g.phase !== 'lobby' && i === g.leaderIndex,
-      onTeam: g.team.includes(p.id),
-      hasVoted: g.phase === 'vote' ? p.id in g.votes : undefined,
-      hasPlayed: g.phase === 'quest' && g.team.includes(p.id) ? p.id in g.cards : undefined,
-      ready: g.phase === 'reveal' ? Boolean(g.ready?.[p.id]) : undefined,
-      role: revealAll ? g.roles[p.id] : undefined,
+      ...(active ? { isLeader: i === g.leaderIndex } : {}),
+      ...(['team', 'vote', 'quest'].includes(g.phase) ? { onTeam: g.team.includes(p.id) } : {}),
+      ...(g.phase === 'vote' ? { hasVoted: p.id in g.votes } : {}),
+      ...(g.phase === 'quest' && g.team.includes(p.id) ? { hasPlayed: p.id in g.cards } : {}),
+      ...(g.phase === 'reveal' ? { ready: Boolean(g.ready?.[p.id]) } : {}),
+      ...(revealAll ? { role: g.roles[p.id] } : {}),
     })),
+  };
+
+  if (g.phase === 'lobby') return {
+    ...common,
     options: { ...liveOptions(g) },
     houseRules: houseRulesOf(g),
-    // The deck is public — the lobby agreed it — and only the mapping from a
-    // role to a player is secret. `deck` is what the lobby is heading for,
-    // with `null` for a table that cannot be dealt as asked; `roleCounts` is
-    // what a running game was dealt, and stays absent from the lobby so a
-    // client that predates the lobby deck cannot mistake one for the other.
-    deck: g.phase === 'lobby' ? safeRoleCounts(g) : null,
-    roleCounts: g.phase === 'lobby' ? null : countRoles(buildRoleList(g.players.length, g.options)),
+    deck: safeRoleCounts(g),
+  };
+
+  const inGame = {
+    ...common,
+    houseRules: houseRulesOf(g),
+    roleCounts: countRoles(buildRoleList(g.players.length, g.options)),
     round: g.round,
     rejects: g.rejects,
     maxRejects: MAX_REJECTS,
-    teamSize: g.phase === 'lobby' ? null : currentTeamSize(g),
-    failsRequired: g.phase === 'lobby' ? null : currentFailsRequired(g),
-    boardSizes: g.players.length >= MIN_PLAYERS && g.players.length <= MAX_PLAYERS
-      ? [0, 1, 2, 3, 4].map((r) => ({
-          size: teamSize(g.players.length, r),
-          twoFails: failsRequired(g.players.length, r) === 2,
-        }))
-      : null,
-    team: g.team.slice(),
+    boardSizes: [0, 1, 2, 3, 4].map((r) => ({
+      size: teamSize(g.players.length, r),
+      twoFails: failsRequired(g.players.length, r) === 2,
+    })),
     quests: g.quests.map((q) => ({
       round: q.round, success: q.success, fails: q.fails, team: q.team,
     })),
@@ -325,13 +330,31 @@ export function viewFor(g, viewerId) {
     lastVote: houseRulesOf(g).hiddenVotes ? null : g.lastVote,
     voteTally: voteTally(g),
     knowledge: myRole ? knowledgeFor(viewerId, g.roles) : [],
+    evilCount: evilPlayers(g).length,
+  };
+
+  const waiting = () => ({ waitingFor: waitingFor(g).map((p) => p.id) });
+  if (g.phase === 'reveal') return { ...inGame, ...waiting() };
+  if (g.phase === 'team') return {
+    ...inGame, team: g.team.slice(), teamSize: currentTeamSize(g),
+    failsRequired: currentFailsRequired(g), ...waiting(),
+  };
+  if (g.phase === 'vote') return {
+    ...inGame, team: g.team.slice(), teamSize: currentTeamSize(g), ...waiting(),
+  };
+  if (g.phase === 'quest') return {
+    ...inGame, team: g.team.slice(), failsRequired: currentFailsRequired(g), ...waiting(),
+  };
+  if (g.phase === 'assassin') return {
+    ...inGame, assassinTarget: g.assassinTarget, ...waiting(),
+  };
+  if (g.phase === 'over') return {
+    ...inGame,
     assassinTarget: g.assassinTarget,
     winner: g.winner,
     winReason: g.winReason,
-    // Everything below is "what am I waiting on" for the UI.
-    waitingFor: waitingFor(g).map((p) => p.id),
-    evilCount: g.phase === 'lobby' ? null : evilPlayers(g).length,
   };
+  throw new Error(`unknown Avalon phase: ${g.phase}`);
 }
 
 function countRoles(roles) {
