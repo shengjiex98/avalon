@@ -60,8 +60,8 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(source, /normaliseServer\(API_BASE\)/);
   assert.match(storage, /avalon\.server/);
   assert.match(source, /url\.protocol === 'https:'/);
-  assert.match(transport, /fetch\(app\.server \+ path,/);
-  assert.match(transport, /new EventSource\(`\$\{app\.server\}\/api\/rooms\//);
+  assert.match(transport, /fetch\(\(app\.server \?\? ''\) \+ path,/);
+  assert.match(transport, /new EventSource\(`\$\{app\.server \?\? ''\}\/api\/rooms\//);
   assert.match(source, /url\.search = app\.server \? `\?server=/);
   assert.match(config, /export const API_BASE = ''/);
 });
@@ -106,6 +106,14 @@ test('development type checking is locked, no-emit, and separate from the releas
   assert.equal(config.compilerOptions.noEmit, true);
   assert.equal(config.compilerOptions.strict, true);
   assert.match(contracts, /ValidatedAction|PersistedRoom|PublicView|GamePhase/);
+
+  // The browser client is what talks to the API, so leaving it out of the
+  // program is what let a request body drift from the contract unnoticed.
+  assert.ok(config.include.includes('public/**/*.js'), 'the client is type checked too');
+  for (const file of ['../public/transport.js', '../public/room-session.js',
+                      '../public/storage.js', '../public/test-seats.js']) {
+    assert.match(await read(file), /^\/\/ @ts-check/, `${file} opts into checking`);
+  }
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
   assert.doesNotMatch(deploy, /npm ci|npm run typecheck/,
