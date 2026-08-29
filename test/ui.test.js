@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import { validateCreateRoom, validateJoin } from '../src/api-validation.js';
+import { parseCreateRoom, parseJoin } from '../src/contracts/actions.ts';
 
 const dom = installDom();
 // A game this build no longer knows, left behind by an older one.
@@ -187,8 +187,8 @@ test('creating a room sends bodies the server will accept', async () => {
   const join = dom.calls.find((c) => c.path === '/api/rooms/NEW1/join');
   assert.ok(create && join, 'creating a room joins it');
   assert.ok(!('playerId' in join.body), 'no stored seat means no id, not a null one');
-  validateCreateRoom(create.body);
-  validateJoin(join.body);
+  parseCreateRoom(create.body);
+  parseJoin(join.body);
 });
 
 test('the language toggle redraws the whole screen in Chinese', () => {

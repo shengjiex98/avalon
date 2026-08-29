@@ -1,8 +1,10 @@
 # Architecture
 
-Avalon has no build-time or runtime dependencies. One Node process serves the
-browser client and API, keeps rooms in memory, snapshots them to JSON, and
-sends player-specific updates over server-sent events.
+One Node process serves the browser client and API, keeps rooms in memory,
+snapshots them to JSON, and sends player-specific updates over server-sent
+events. Runtime request and persistence contracts live under
+[`src/contracts/`](../src/contracts/) and use the production schema package;
+the browser remains dependency-free output.
 
 ## Boundaries
 

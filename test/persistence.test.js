@@ -11,6 +11,8 @@ import { defaultStateFile, load, save } from '../src/persistence.js';
 import { Rooms } from '../src/rooms.js';
 import { STATE_VERSION } from '../src/state-version.js';
 
+const currentFixture = JSON.parse(await readFile(new URL('fixtures/state-v3.json', import.meta.url), 'utf8'));
+
 const serializable = (game, point) => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(game)), game, point);
 };
@@ -114,6 +116,31 @@ test('rooms save and restore with views, activity, clocks, and idle age intact',
   }
   clearTimeout(rooms.rooms.get(nightCode).timer);
   clearTimeout(restored.rooms.get(nightCode).timer);
+});
+
+test('the committed current-version fixture restores both game schemas', () => {
+  assert.equal(currentFixture.stateVersion, STATE_VERSION);
+  const rooms = new Rooms({ now: () => currentFixture.savedAt });
+  assert.equal(rooms.restore(currentFixture.rooms), true);
+  assert.deepEqual([...rooms.rooms.keys()], ['AVLN', 'WERE']);
+});
+
+test('persisted schemas reject unknown keys and malformed game members', () => {
+  const cases = [
+    (body) => { body.rooms[0].unknown = true; },
+    (body) => { body.rooms[0].game.unknown = true; },
+    (body) => { body.rooms[0].game.state.unknown = true; },
+    (body) => { body.rooms[0].game.state.options.percival = 'yes'; },
+    (body) => { body.rooms[1].game.state.pace = 'instant'; },
+    (body) => { body.rooms[1].game.state.nightActions.player = { skip: true, unknown: true }; },
+  ];
+  for (const mutate of cases) {
+    const body = structuredClone(currentFixture);
+    mutate(body);
+    const rooms = new Rooms();
+    assert.equal(rooms.restore(body.rooms), false);
+    assert.equal(rooms.rooms.size, 0, 'one malformed member rejects the whole snapshot');
+  }
 });
 
 test('one malformed or duplicate room rejects the complete snapshot', async () => {

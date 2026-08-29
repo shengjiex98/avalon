@@ -293,13 +293,20 @@ test('malformed and wrong-type JSON is rejected before room dispatch', async () 
       [],
       { type: 'vote', playerId: joined.playerId, approve: 'yes' },
       { type: 'options', playerId: joined.playerId, options: { percival: 1 } },
-      { type: 'start', playerId: joined.playerId, extra: true },
     ]) {
       const response = await postText(base, `/api/rooms/${code}/action`, JSON.stringify(body));
       assert.equal(response.status, 400);
       assert.equal((await response.json()).error, 'badRequest');
       assert.equal(rooms.peek(code).revision, before, 'invalid input never reached dispatch');
     }
+
+    const stripped = await post(base, `/api/rooms/${code}/action`, {
+      type: 'options', playerId: rooms.peek(code).hostId,
+      options: { percival: false, ignoredOption: true },
+      ignoredEnvelope: true,
+    });
+    assert.equal(stripped.status, 200, 'unknown HTTP keys are stripped');
+    assert.equal('ignoredOption' in rooms.peek(code).game.state.options, false);
   }, { rooms });
 });
 

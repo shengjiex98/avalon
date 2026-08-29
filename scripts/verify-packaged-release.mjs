@@ -29,7 +29,7 @@ try {
       reject(`release requires Node ${manifest.nodeMajor}, running ${process.versions.node}`);
     }
 
-    for (const name of ['package.json', 'src/server.js', 'public/index.html']) {
+    for (const name of ['package.json', 'node_modules/zod/package.json', 'src/server.js', 'public/index.html']) {
       try {
         await access(join(releaseDir, name));
       } catch {

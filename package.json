@@ -4,7 +4,9 @@
   "description": "Self-hosted online Avalon (The Resistance) with English and Chinese UI",
   "type": "module",
   "private": true,
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node src/server.js",
     "test": "node --test \"test/**/*.test.js\"",
@@ -13,5 +15,8 @@
   "devDependencies": {
     "@types/node": "^24.13.3",
     "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "zod": "4.5.4"
   }
 }
