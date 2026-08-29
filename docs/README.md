@@ -11,4 +11,4 @@ code and tests remain authoritative for implementation details.
 - [Test suite](testing.md)
 - [Security and trust model](security.md)
 - [Build and contract modernization plan](build-contract-modernization.md)
-- [Codebase cleanup tracker](codebase-cleanup.md)
+- [Deferred public-service hardening](codebase-cleanup.md)
