@@ -1,18 +1,76 @@
 # Build and contract modernization plan
 
-Status: proposed. An implementation item may be checked in the pull request
-that makes its acceptance criteria pass; the status becomes authoritative when
-that pull request is merged.
+Status: proposed, revised after an audit of the current repository. An
+implementation item may be checked in the pull request that makes its
+acceptance criteria pass; the status becomes authoritative when that pull
+request is merged.
 
-This plan replaces the repository's absolute "no dependencies, no build"
-constraint with a smaller and more useful constraint: keep the product and its
-production artifact simple, while allowing standard tools that remove custom
-machinery and duplicate sources of truth.
+This plan retires the repository's "no dependencies, no build" rule and
+replaces it with the narrower rule that was doing the real work:
 
-It is written for two audiences. The first sections explain the intended end
-state and the reasons for it. The implementation tracker then gives a coding
-agent the order, boundaries, tests, and stopping conditions needed to make the
-change without having to redesign the architecture along the way.
+> The production host installs nothing and executes no build tools.
+
+A development toolchain, a build step, and bundled runtime code are all
+permitted under that rule. The immutable archive, the exact-commit health
+proof, the active-game deferral, and the rollback behavior are not negotiable
+under it, and this plan protects all four.
+
+The first sections explain the end state and the evidence for it. The tracker
+and phase instructions then give an implementing agent the order, boundaries,
+tests, and stopping conditions needed to get there without redesigning the
+architecture along the way.
+
+## What the audit found
+
+Line counts are from `main` at the time of writing: 6,532 lines of production
+JavaScript (3,143 under `src/`, 3,389 under `public/`) and 6,103 lines of test.
+
+The old rule has already lapsed on its own terms. `package.json` declares
+`typescript` and `@types/node`, CI runs `npm ci` and `npm run typecheck`, and
+[`docs/testing.md`](testing.md) documents a two-command workflow — while
+[`AGENTS.md`](../AGENTS.md) still states that "`package.json` declares none".
+The open question is not whether to have development dependencies. It is
+whether the ones already installed are earning their cost.
+
+In four specific places they are not.
+
+**1. The type layer covers the wrong 60%.** Twelve of 27 production modules
+carry `@ts-check`, totalling 2,707 lines. The 3,825 unchecked lines include
+`public/i18n.js` (831), `public/games/onuw.js` (722), `public/app.js` (634),
+`public/games/avalon.js` (402), `src/server.js` (392), and `src/avatars.js`
+(292) — the entire browser render layer and the HTTP entrypoint — while
+`src/state-version.js` (4 lines) is checked. The cost of TypeScript is already
+paid; most of the benefit is not collected.
+
+**2. `types/contracts.d.ts` cannot be checked against the code it describes.**
+A declaration file for JavaScript in another directory is an assertion nothing
+verifies. To stay believable it had to widen until it asserts almost nothing:
+`PublicViewBase` carries `[field: string]: unknown`, and `you` is intersected
+with `Record<string, unknown>`. Every renderer that reads `view.round` or
+`view.quests` type-checks against a promise the type never made. The secrecy
+boundary — the most safety-critical contract in the project — is the one the
+compiler currently checks least.
+
+**3. The request validator rejects unknown keys.** `exact()` in
+`src/api-validation.js` throws `badRequest` when a body carries any
+unrecognized property. This buys no safety, because the engines only read
+fields they name. What it does buy is a compatibility problem: a Pages client
+that ships after the server, sending or omitting one additive field, gets a
+hard 400. That converts routine additive change into an `API_PROTOCOL` bump,
+which the staged release order then has to absorb.
+
+**4. Asset versioning is four bespoke parts approximating a content hash.**
+`scripts/stamp-frontend-version.mjs` rewrites import specifiers with a regular
+expression; `public/bootstrap.js` fetches `version.json` and only then
+dynamically imports the app, costing a serial round trip on every cold load;
+`public/config.js` is checked in so the deploy workflow can overwrite it with
+`node -e`; and `test/deploy.test.js` asserts on the resulting source text. The
+regex is also a latent defect: it rewrites any `'./name.js'` string, including
+one inside a comment or template literal.
+
+Two things the old rule bought are genuinely good, and this plan protects both:
+the install-free immutable archive, and `test/dom-shim.js` — 240 lines carrying
+2,334 lines of interaction tests, with no browser, in about 25 seconds.
 
 ## Outcome
 
@@ -24,47 +82,23 @@ At the end of this plan:
   the host;
 - runtime schemas parse untrusted HTTP input and persisted snapshots, and the
   corresponding TypeScript types are inferred rather than restated;
-- public game views are real discriminated unions by game and phase;
+- public game views are discriminated unions by game and phase, with no
+  catch-all index signature;
 - client actions are checked where they are constructed, without a final cast;
 - the existing game engines, UI design, native HTTP/SSE transport, persistence,
-  Pages client, and safe deployment behavior remain recognizable;
+  Pages client, DOM-shim test suite, and safe deployment behavior remain
+  recognizable;
 - the regex import stamper, parallel declaration file, selective `@ts-check`
-  layer, and hand-written request-shape checker are gone; and
-- a small real-browser smoke suite complements, rather than replaces, the fast
-  unit and DOM-shim tests.
+  layer, and hand-written request-shape checker are gone.
 
-Success is not measured by having more tooling. It is measured by deleting
-more project-specific concepts than the selected tools introduce.
-
-## Why this change
-
-The current runtime remains admirably small, but the development model is
-already dependent on TypeScript while continuing to ship hand-authored
-JavaScript. That compromise has created several overlapping contracts:
-
-1. request and state declarations in `types/contracts.d.ts`;
-2. JSDoc annotations and assertions in selected JavaScript modules;
-3. manual runtime checks in `src/api-validation.js` and
-   `src/games/restore.js`;
-4. the actual command dispatch and view builders; and
-5. the fields the browser renderers assume are present.
-
-Those layers do not currently prove the same thing. In particular, the public
-view types allow arbitrary fields, action payloads are asserted at the send
-boundary, successful transport responses are `any`, and the largest browser
-renderers are outside strict checking.
-
-The no-build constraint also requires project-specific asset versioning:
-`scripts/stamp-frontend-version.mjs` rewrites JavaScript imports with a regular
-expression, `public/bootstrap.js` resolves the version at runtime, and tests
-inspect source text to protect the resulting module graph. A standard browser
-build can own that concern directly.
+Success is not measured by having more tooling. It is measured by deleting more
+project-specific concepts than the selected tools introduce. Every phase below
+names what it deletes.
 
 ## Fixed architectural decisions
 
-These decisions are part of the plan. An implementing agent should not reopen
-them unless a phase's proof-of-concept demonstrates a concrete incompatibility
-with this repository.
+An implementing agent should not reopen these unless a phase's proof of concept
+demonstrates a concrete incompatibility with this repository.
 
 ### Product and runtime
 
@@ -78,7 +112,7 @@ with this repository.
   compatibility, and neither number changes for a source-only migration.
 - Keep the immutable release, exact-commit health proof, active-game deferral,
   and rollback behavior. This plan may simplify how the application artifact is
-  built, but it does not redesign the installed updater.
+  built; it does not redesign the installed updater.
 
 ### Toolchain
 
@@ -92,47 +126,22 @@ with this repository.
   schemas use strict objects where an exact stored shape is required.
 - Use `tsx` only as the development/test loader needed to run TypeScript source
   through Node's existing test runner. Do not replace `node:test`.
-- Add Playwright later in the plan for a Chromium-only smoke suite. Do not move
-  the existing interaction matrix wholesale into browser tests.
 - Lock every package in `package-lock.json`. Do not use floating CDN imports or
   dependencies downloaded by the production host.
 
-These choices follow the tools' supported paths: Vite builds an `index.html`
-entry and hashed static assets, supports a Node-target server build, and can
-bundle an explicitly non-external dependency; Zod returns typed parsed data,
-infers TypeScript types from schemas, and strips unknown object keys by
-default. Reference documentation:
+These follow the tools' supported paths: Vite builds an `index.html` entry and
+hashed static assets, supports a Node-target server build, and can bundle an
+explicitly non-external dependency; Zod returns typed parsed data, infers
+TypeScript types from schemas, and strips unknown object keys by default.
 
 - <https://vite.dev/guide/build>
 - <https://vite.dev/guide/ssr.html#building-for-production>
 - <https://vite.dev/config/ssr-options.html>
 - <https://zod.dev/basics>
 - <https://zod.dev/api#objects>
-- <https://playwright.dev/docs/test-webserver>
 
 Do not pin versions in this document. Each implementing PR installs a current
 Node-24-compatible release and commits the exact lockfile result.
-
-### Source and output layout
-
-The target layout is:
-
-```text
-src/
-  client/                 browser entry, session, transport, UI, game renderers
-  server/                 HTTP adapter, rooms, persistence, game engines
-  shared/                 API versions, commands, public views, shared primitives
-static/                   copied assets whose names are addressed dynamically
-test/                     Node unit/integration tests, still organized by behavior
-test/browser/             small Playwright smoke suite
-dist/
-  public/                 Vite browser output; never checked in
-  server/                 Node-target application output; never checked in
-```
-
-Moving every file into this layout in one commit is not required. During the
-migration, prefer small mechanical moves and keep the old production entrypoint
-until the built artifact passes the same behavioral tests.
 
 ### Contract ownership
 
@@ -147,7 +156,7 @@ until the built artifact passes the same behavioral tests.
 - Persisted snapshots are different from HTTP commands: validate their complete
   structure before restoring any room. Retain all-or-nothing restore.
 - Public views are compile-time discriminated unions with a member for every
-  game phase. They do not have a catch-all index signature.
+  game phase, and no catch-all index signature.
 - View builders return those unions directly. Browser renderers narrow on
   `gameId` and `phase` before reading phase fields.
 - The client sends a discriminated action object. The room session adds the
@@ -163,14 +172,53 @@ until the built artifact passes the same behavioral tests.
   supplies the same-origin value and Pages supplies the configured HTTPS API
   base. Generating that data file must not rewrite executable assets.
 
+## Decisions this plan makes explicitly
+
+These four are the ones a future reader is most likely to second-guess, so they
+are recorded with their reasoning rather than left implicit in a task list.
+
+**D1 — Unknown HTTP keys are stripped, not rejected.** This is a deliberate
+loosening of the wire contract, not a refactor: bodies that return 400 today
+will succeed afterwards. It is adopted because exact-key rejection protects
+nothing the engines do not already guard, while making every additive field a
+protocol-compatibility event for a client that ships on a different schedule
+than the server. Engine-level legality checks are unaffected. Phase 2 owns it.
+
+**D2 — The `gameContext` Proxy is decided on purpose, not incidentally.** The
+Proxy in `src/games/index.js` forwards ten room fields onto engine state so
+engines keep a flat API. No build decision created it, and TypeScript makes it
+harder rather than easier, because a Proxy is exactly what a structural type
+system cannot see through. Phase 3 must either replace it with explicit context
+construction or keep it and type its boundary honestly — and must say which, in
+the PR, before converting the modules around it. Do not let it be removed as a
+side effect of a rename.
+
+**D3 — No browser automation is added.** Playwright was considered and
+rejected. It is a large dependency, a browser download in CI, a second test
+paradigm, and a trace-artifact story, and by its own framing it would complement
+rather than replace the DOM-shim tests — so it adds a concept and deletes none,
+which is the opposite of this plan's success measure. The 240-line
+`test/dom-shim.js` carrying 2,334 lines of fast, deterministic interaction tests
+is the single strongest result the old constraint produced. Keep it as the
+interaction suite. Revisit only if a real layout defect ships that the shim
+provably could not have caught.
+
+**D4 — No source-tree reshuffle.** Server source stays under `src/`, browser
+source stays under `public/`. Moving files damages `git blame` and buys nothing
+a maintainer can feel at this size. Two exceptions, each with a mechanical
+reason: `src/shared/` is added because a single definition of `API_PROTOCOL` and
+the game IDs must be importable by both runtimes, and `public/audio/` and
+`public/art/` move to `static/` because Vite's browser root cannot also serve as
+its verbatim-copy directory. Nothing else moves.
+
 ## Scope boundaries
 
 This migration must not be used to smuggle in unrelated product changes.
 
 In scope:
 
-- build, type, schema, source-layout, artifact, and test-harness changes needed
-  to reach the outcome above;
+- build, type, schema, artifact, and test-harness changes needed to reach the
+  outcome above;
 - deletion of custom code made obsolete by those changes; and
 - documentation updates that describe the new development and release model.
 
@@ -180,7 +228,10 @@ Out of scope:
   reconnect, or test-mode behavior changes;
 - seat-authentication or abuse-limiting work;
 - a new persistence format or database;
-- replacing SSE, the Node HTTP server, the DOM helper, or the installed updater;
+- replacing SSE, the Node HTTP server, the DOM helper, the DOM-shim suite, or
+  the installed updater;
+- browser automation (see D3);
+- source-tree reorganization beyond the two moves named in D4;
 - replay/fuzzing work from the earlier cleanup tracker; and
 - broad UI component or CSS redesigns.
 
@@ -188,14 +239,26 @@ If an out-of-scope defect is discovered, add a focused regression test and fix
 only what is required to preserve current behavior. Record larger work
 separately rather than expanding this migration.
 
+## Source and output layout
+
+```text
+src/                    server, rooms, persistence, avatars, game engines
+src/shared/             API_PROTOCOL, game ids, command schemas, view types
+public/                 browser entry, session, transport, UI, game renderers
+static/                 assets addressed by dynamic path (ONUW audio, art)
+test/                   Node unit/integration tests, organized by behavior
+dist/public/            Vite browser output; never checked in
+dist/server/            Node-target application output; never checked in
+```
+
 ## Verification model
 
 The completed repository has two commands:
 
-- `npm test` is the fast inner loop: strict type checking plus the Node unit,
-  integration, and DOM-shim tests.
-- `npm run check` is the merge gate: `npm test`, production builds, packaged
-  artifact verification, and the Chromium smoke suite.
+- `npm test` is the fast inner loop and the merge gate: strict type checking
+  plus the Node unit, integration, and DOM-shim tests.
+- `npm run check` adds the production builds and packaged-artifact verification,
+  and is what CI and the release workflow run.
 
 Until those scripts exist, follow the current `AGENTS.md` command. Every
 implementing PR must leave `main` deployable and must run the strongest gate
@@ -207,13 +270,14 @@ The final release workflow must:
 2. run `npm run check` against source;
 3. build `dist/server` and `dist/public` once;
 4. package those exact bytes with the release manifest;
-5. verify and smoke-test the extracted archive rather than rebuilding it;
+5. verify the extracted archive rather than rebuilding it;
 6. activate the server artifact through the existing updater; and
-7. upload the same `dist/public` bytes to Pages after exact-commit server health.
+7. upload the same `dist/public` bytes to Pages after exact-commit server
+   health.
 
 The production archive must contain everything needed to run, but must not
-contain `node_modules`, TypeScript, Vite, `tsx`, Playwright, or a requirement to
-run `npm install` on the host.
+contain `node_modules`, TypeScript, Vite, `tsx`, or a requirement to run
+`npm install` on the host.
 
 ## Progress tracker
 
@@ -223,15 +287,14 @@ count.
 
 | Phase | Status | Deliverable | Completion signal |
 |---:|:---:|---|---|
-| 0 | - [ ] | Characterize behavior and prove the toolchain | Old and candidate builds pass equivalent smoke checks |
+| 0 | - [ ] | Characterize behavior and prove the toolchain | Old and candidate builds pass the same characterization tests |
 | 1 | - [ ] | Add a production build beside the current entrypoints | `dist/` is reproducible and not yet deployed |
-| 2 | - [ ] | Establish shared contracts and schema parsing | Parsed commands are typed and dispatched; behavior unchanged |
-| 3 | - [ ] | Convert the server and game engines to TypeScript | No server JSDoc type layer or unsafe registry facade remains |
-| 4 | - [ ] | Define exact phase-specific public views | View builders and consumers compile without catch-all fields |
+| 2 | - [ ] | Establish shared contracts and schema parsing | Parsed commands are typed and dispatched; D1 is in effect |
+| 3 | - [ ] | Convert the server and game engines to TypeScript | No server JSDoc type layer remains; D2 is answered |
+| 4 | - [ ] | Discriminate public views by game and phase | No catch-all view field; renderers narrow before reading |
 | 5 | - [ ] | Convert the browser client to TypeScript | Every browser module is strictly checked; action casts are gone |
 | 6 | - [ ] | Switch release and Pages to built artifacts | Production runs the extracted build with rollback intact |
-| 7 | - [ ] | Add real-browser smoke coverage | Chromium proves the critical create/join/play/reconnect path |
-| 8 | - [ ] | Delete obsolete machinery and reconcile docs | Exit criteria pass and only one contract/build path remains |
+| 7 | - [ ] | Delete obsolete machinery and reconcile docs | Exit criteria pass and only one contract/build path remains |
 
 ## Implementation instructions
 
@@ -255,11 +318,10 @@ Tasks:
 - [ ] Prove that the built server can locate `release.json`, `dist/public`, and
       its writable state path without relying on the source checkout layout.
 - [ ] Prove that the browser build preserves root-relative `/api/avatars/*` URLs
-      and copies dynamically selected audio files.
+      and copies dynamically selected audio files from `static/`.
 - [ ] Confirm that one browser build can read either an empty same-origin or a
-      production HTTPS `API_BASE` from a separately generated data file,
-      without a checked-in generated `public/config.js` or a second module
-      build.
+      production HTTPS `API_BASE` from a separately generated data file, without
+      a checked-in generated `public/config.js` or a second module build.
 
 Acceptance:
 
@@ -268,12 +330,15 @@ Acceptance:
 - The proof uses the selected tools without a custom import-rewriting plugin.
 - Any failed assumption is reported in the PR before substituting another tool.
   A substitute must still satisfy the fixed outcomes and delete at least the
-  same bespoke mechanisms.
+  same bespoke mechanisms. If the Node-target server build cannot bundle the
+  schema dependency while keeping the archive install-free, the correct response
+  is to drop the runtime dependency and keep hand-written validation — not to
+  weaken the artifact.
 
 ### Phase 1 — build beside production
 
-Goal: introduce a deterministic build without yet changing what systemd or
-Pages serves.
+Goal: introduce a deterministic build without yet changing what systemd or Pages
+serves.
 
 Tasks:
 
@@ -283,9 +348,9 @@ Tasks:
       only where their libraries or module resolution genuinely differ.
 - [ ] Add `npm run build`, `build:client`, `build:server`, and `clean` scripts.
       Cleaning must target only the resolved repository `dist/` directory.
-- [ ] Configure the browser root and static asset directory explicitly. Do not
-      rely on Vite's conventional `public/` meaning while source still lives in
-      the repository's current `public/` directory.
+- [ ] Move `public/audio/` and `public/art/` to `static/` as a mechanical,
+      behavior-preserving commit, and configure it as the verbatim-copy
+      directory so the served URLs are unchanged (D4).
 - [ ] Configure a Node-target server build with Zod included in output and Node
       built-ins external. Do not bundle tests or deployment control-plane code.
 - [ ] Generate `version.json` and release metadata through a small typed build
@@ -299,7 +364,8 @@ Acceptance:
 
 - Two clean builds of the same checkout have identical file contents and names
   after excluding timestamps that are not packaged.
-- Browser assets referenced through the module graph are content-hashed.
+- Browser assets referenced through the module graph are content-hashed, and
+  `/audio/*` and `/art/*` resolve at their current URLs.
 - The built Node entry starts and serves the built client.
 - The current source entrypoint and deployment remain active.
 - `npm test` passes.
@@ -307,27 +373,29 @@ Acceptance:
 ### Phase 2 — one request contract
 
 Goal: replace the parallel request declaration and manual shape checker with
-schemas that return the command values actually dispatched.
+schemas that return the command values actually dispatched, and put D1 into
+effect.
 
 Tasks:
 
-- [ ] Add shared schemas for create, join, room probe responses, structured API
-      errors, and each discriminated player action.
+- [ ] Add shared schemas under `src/shared/` for create, join, room probe
+      responses, structured API errors, and each discriminated player action.
 - [ ] Infer exported input/output types from the schemas; do not restate object
       interfaces with the same fields.
-- [ ] Use normal Zod objects for HTTP commands so unknown keys are stripped.
+- [ ] Use normal Zod objects for HTTP commands so unknown keys are stripped
+      (D1). State the loosening explicitly in the PR description.
 - [ ] Preserve current normalization intentionally: `playerId: null` on join is
-      treated as an absent seat, names remain normalized by the lobby layer,
-      and optional avatar behavior stays unchanged.
+      treated as an absent seat, names remain normalized by the lobby layer, and
+      optional avatar behavior stays unchanged.
 - [ ] Convert schema failures to the existing `badRequest` response. Do not send
       Zod diagnostics to clients.
 - [ ] Change each route to dispatch `result.data`, never the pre-parse object.
-- [ ] Keep body-size, content-type, malformed-JSON, method, CORS, and status-code
-      handling in the HTTP adapter.
+- [ ] Keep body-size, content-type, malformed-JSON, method, CORS, and
+      status-code handling in the HTTP adapter.
 - [ ] Keep phase, membership, target, role, and game-rule checks in the engines.
 - [ ] Add tests showing that irrelevant keys are stripped rather than rejected,
       while wrong required values never reach room dispatch or the journal.
-- [ ] Remove `src/api-validation.js` only when no route or test imports it.
+- [ ] Remove `src/api-validation.js` in the same PR that lands its replacement.
 
 Acceptance:
 
@@ -342,7 +410,13 @@ Acceptance:
 Goal: make the server implementation readable as typed source rather than
 JavaScript surrounded by assertions.
 
-Suggested conversion order:
+Answer D2 first. Before converting `src/games/`, decide in writing whether the
+`gameContext` Proxy is replaced by explicit context construction or kept and
+typed at its boundary, and say why in the PR. This is the single item most
+likely to expand, because it is where the current architecture and a structural
+type system disagree. It gets its own PR either way.
+
+Suggested conversion order after that:
 
 1. version constants, rules, and small shared primitives;
 2. lobby and game engines;
@@ -358,13 +432,13 @@ Tasks:
 - [ ] Replace JSDoc imports, `@ts-check`, and `/** @type */` assertions with
       TypeScript declarations or real narrowing.
 - [ ] Model the game registry with explicit generic/discriminated operations.
-      Remove `Record<string, any>`, module-wide `any`, and the Proxy-based flat
-      facade only when focused game and room tests have direct typed seams.
+      Remove `Record<string, any>` and module-wide `any` once focused game and
+      room tests have direct typed seams.
 - [ ] Keep the persisted room envelope separate from game-owned state in both
       types and runtime data.
-- [ ] Convert restore validation to strict Zod schemas, including cross-field
-      refinements for roster references and phase invariants that schemas alone
-      cannot express.
+- [ ] Convert restore validation to strict Zod schemas, keeping the cross-field
+      refinements for roster references and phase invariants as explicit,
+      readable rules rather than dissolving them into schema shape.
 - [ ] Preserve whole-snapshot validation before installation.
 - [ ] Ensure timer handles, subscriptions, file paths, and injected clocks have
       explicit types rather than assertions.
@@ -380,31 +454,41 @@ Acceptance:
 - Determinism, secrecy, timers, persistence, and HTTP integration tests pass.
 - The candidate server build starts from `dist/server`.
 
-### Phase 4 — phase-specific views
+### Phase 4 — discriminated public views
 
-Goal: make the privacy and client/server rendering boundary the strongest
-static contract in the repository.
+Goal: make the privacy and rendering boundary a contract the compiler can
+enforce, and stop there.
+
+The valuable change is narrow: today `PublicViewBase` carries
+`[field: string]: unknown`, so the view type asserts nothing and a renderer
+reading a field the engine stopped sending still compiles. Removing that, and
+discriminating on `gameId` with `phase` as a literal type, catches that bug
+class. Per-phase `you` and `players` shapes are deliberately not attempted: they
+are where the effort concentrates and the marginal safety is smallest, and
+secrecy is already covered behaviorally by negative assertions, which is the
+right level for that invariant.
 
 Tasks:
 
-- [ ] Define shared base player, log, setup, and view fields once.
-- [ ] Define an Avalon union with members for `lobby`, `reveal`, `team`, `vote`,
-      `quest`, `assassin`, and `over`.
-- [ ] Define an ONUW union with members for `lobby`, `reveal`, `night`, `day`,
-      `vote`, and `over`.
-- [ ] Give `you` and `players` phase-appropriate fields. Do not use
-      `Record<string, unknown>` intersections or a string index signature.
+- [ ] Define shared base player, log, setup, and view fields once under
+      `src/shared/`.
+- [ ] Delete the `[field: string]: unknown` index signature and the
+      `Record<string, unknown>` intersections on `you` and `players`.
+- [ ] Define an Avalon view type discriminated on `gameId: 'avalon'` with
+      `phase` as a union of its seven literals, and an ONUW view type
+      discriminated on `gameId: 'onuw'` with its six.
+- [ ] Give `you` and `players` one explicit shape per game, wide enough for
+      every phase of that game. Optional fields are acceptable here; unknown
+      fields are not.
 - [ ] Make each view builder return the correct union member without a cast.
 - [ ] Add an exhaustive phase switch or `assertNever` at renderer boundaries.
-- [ ] Retain negative secrecy assertions: roles, ballots, awake/acted signals,
-      centre cards, and night information must remain absent in phases/viewers
-      where they are secret.
-- [ ] Add compile-time fixtures for representative valid and invalid views only
-      where normal production code does not already exercise the distinction.
+- [ ] Retain the negative secrecy assertions: roles, ballots, awake/acted
+      signals, centre cards, and night information must remain absent in phases
+      and for viewers where they are secret.
 
 Acceptance:
 
-- Removing or renaming a field used by a renderer fails type checking.
+- Removing or renaming a field a renderer reads fails type checking.
 - Adding a phase requires handling in its engine view and browser renderer.
 - No runtime view shape changes are required; `API_PROTOCOL` remains unchanged.
 - Existing secrecy and UI tests pass.
@@ -424,8 +508,8 @@ Suggested conversion order:
 
 Tasks:
 
-- [ ] Move executable browser source under `src/client/` and dynamic static
-      assets under the configured `static/` directory in small mechanical PRs.
+- [ ] Convert browser modules in place under `public/` (D4). Do not reorganize
+      the directory while converting it.
 - [ ] Keep DOM construction and renderer ownership explicit; do not add a UI
       framework during conversion.
 - [ ] Replace the generic path-based public transport API with typed semantic
@@ -440,15 +524,15 @@ Tasks:
       making dynamic server keys impossible to render.
 - [ ] Keep the DOM shim and current UI tests running through `tsx`; tests may
       remain JavaScript until production source is fully converted.
-- [ ] Delete `types/contracts.d.ts` only after its last import is gone.
+- [ ] Delete `types/contracts.d.ts` once its last import is gone.
 
 Acceptance:
 
 - Every production browser module is strict TypeScript.
 - There is no `Promise<any>` transport result, catch-all view field, or
   assertion from an arbitrary action object to a validated command.
-- Running the compiler over the entire production client reports zero errors;
-  no file-level opt-in or opt-out comments are needed.
+- Running the compiler over the entire production client reports zero errors; no
+  file-level opt-in or opt-out comments are needed.
 - UI, reconnect, test-seat, audio, and language tests pass.
 
 ### Phase 6 — production cutover
@@ -466,8 +550,8 @@ Tasks:
       installation rule for the unit change.
 - [ ] Make the built server resolve its public directory and release root
       explicitly; do not infer either from a source-tree-relative `../public`.
-- [ ] Change Pages publication to upload the exact browser output already
-      tested and activated, without rebuilding it in the Pages job.
+- [ ] Change Pages publication to upload the exact browser output already tested
+      and activated, without rebuilding it in the Pages job.
 - [ ] Generate a small validated backend-configuration data file after the one
       browser build. Verify both empty same-origin configuration and the
       production HTTPS backend without changing hashed executable assets.
@@ -481,54 +565,24 @@ Tasks:
 Acceptance:
 
 - The extracted archive starts without `node_modules` or package installation.
-- Node-hosted and Pages clients use the same tested browser bytes except for no
+- Node-hosted and Pages clients use the same tested browser bytes with no
   post-build mutation. If backend configuration must differ, it must be a
-  separately generated data file whose bytes and use are explicitly tested,
-  not a rebuilt module graph.
+  separately generated data file whose bytes and use are explicitly tested, not
+  a rebuilt module graph.
 - Active-game deferral, rollback, snapshot backup, and health proof pass.
 - The built release deploys with compatibility numbers unchanged.
 - The manual updater/unit installation consequence is called out in the PR and
   deployment documentation.
 
-### Phase 7 — browser smoke coverage
-
-Goal: cover the browser behaviors the hand-built DOM shim cannot represent,
-without making browser automation the main test strategy.
-
-Tasks:
-
-- [ ] Add Playwright as a locked development dependency and install only the
-      Chromium headless runtime in CI.
-- [ ] Use Playwright's `webServer` support to start the built application on an
-      isolated port. Do not point tests at production.
-- [ ] Add one desktop and one phone-sized project only if they exercise distinct
-      behavior; otherwise use a single phone-sized Chromium project.
-- [ ] Cover: load home, create a room, join a second browser context, receive an
-      SSE update, start one game far enough to reveal a private role, reload and
-      reconnect, and confirm static audio/art requests succeed.
-- [ ] Assert one or two critical layout properties that the DOM shim cannot
-      catch, such as no horizontal overflow and the primary action being
-      reachable at the phone viewport.
-- [ ] Keep browser tests deterministic and independent of Cloudflare avatar
-      generation, public Pages, external networks, and real-time ONUW duration.
-
-Acceptance:
-
-- The smoke suite runs against built bytes and passes without external network
-  access.
-- Failures retain a trace or screenshot in CI.
-- Existing DOM-shim tests remain the fast, detailed interaction suite.
-- `npm run check` is documented and passes locally with the browser installed.
-
-### Phase 8 — delete and reconcile
+### Phase 7 — delete and reconcile
 
 Goal: finish the migration rather than maintaining two architectures.
 
 Tasks:
 
 - [ ] Delete `scripts/stamp-frontend-version.mjs`, the import-stamping tests,
-      checked-in generated client configuration, and bootstrap behavior made
-      obsolete by hashed assets.
+      checked-in generated client configuration, and the bootstrap version round
+      trip made obsolete by hashed assets.
 - [ ] Delete `types/contracts.d.ts`, remaining production JSDoc type imports,
       selective `@ts-check` comments, and superseded tsconfig files.
 - [ ] Remove source-text tests whose only purpose was to enforce an
@@ -536,12 +590,14 @@ Tasks:
       behavioral deployment and security tests.
 - [ ] Remove old source entrypoints and packaging paths after the built release
       is active.
-- [ ] Update `README.md`, `AGENTS.md`, and maintained docs to distinguish:
+- [ ] Update `README.md`, `AGENTS.md`, and maintained docs to distinguish
       development dependencies, build-time dependencies, bundled runtime code,
-      and the install-free production artifact.
-- [ ] Replace the repository rule with: dependencies require a short deletion
-      and ownership rationale, not exceptional permission merely because they
-      are dependencies.
+      and the install-free production artifact. `AGENTS.md`'s current claim that
+      "`package.json` declares none" is already false and must go.
+- [ ] Replace the repository rule with: the production host installs nothing and
+      executes no build tools; a dependency requires a short deletion and
+      ownership rationale, not exceptional permission merely because it is a
+      dependency.
 - [ ] Update `docs/README.md` and archive or remove completed migration trackers
       that no longer help future maintenance.
 - [ ] Record final source/build/test counts in the closing PR description and
@@ -559,20 +615,17 @@ Acceptance:
 
 ## Agent working rules
 
-An implementation agent should follow these rules even when a local refactor
-looks easier another way:
-
 1. Read `AGENTS.md` and the files named by the current phase before editing.
 2. Work in phase and task order. Mark a checkbox in the pull request that makes
-   its acceptance criteria pass; do not mark speculative or partially complete
-   work.
+   its acceptance criteria pass; do not mark speculative or partial work.
 3. Keep each PR behavior-preserving unless a task explicitly names a behavior
-   change. State `API_PROTOCOL` and `STATE_VERSION` impact in every PR.
+   change. D1 is the one named behavior change in this plan. State
+   `API_PROTOCOL` and `STATE_VERSION` impact in every PR.
 4. Prefer mechanical rename-only commits before typed refactors. This keeps
    review and `git blame` useful.
-5. When introducing a schema, delete the corresponding hand-written validator
-   in the same PR or explain the short-lived dependency and name the PR that
-   will remove it.
+5. When introducing a schema, delete the corresponding hand-written validator in
+   the same PR, or explain the short-lived duplication and name the PR that will
+   remove it.
 6. When introducing generated output, add verification before switching
    deployment to it. Never commit `dist/`.
 7. Use parsed schema output and compiler narrowing. Do not make a migration pass
@@ -584,9 +637,12 @@ looks easier another way:
 10. Keep `main` deployable. The production cutover is one deliberate phase, not
     a partially switched sequence across unrelated PRs.
 11. Preserve user changes in a dirty worktree and do not regenerate media.
-12. Update this tracker in the implementation PR that completes a task or
-    phase, with a link to the authoritative code rather than duplicating its
+12. Update this tracker in the implementation PR that completes a task or phase,
+    with a link to the authoritative code rather than duplicating its
     operational details here.
+13. If a phase's work is growing well past its acceptance criteria, stop and say
+    so in the PR rather than widening it. This plan is deliberately smaller than
+    the maximal version of itself.
 
 ## Pull request template for implementation phases
 
@@ -612,14 +668,14 @@ The modernization is complete only when all of the following are true:
 - [ ] Every production source module is TypeScript and checked in one strict
       program appropriate to its runtime.
 - [ ] Request schema types are inferred, and routes dispatch normalized parsed
-      data.
+      data with unknown keys stripped.
 - [ ] Snapshot validation is complete, strict, and all-or-nothing.
 - [ ] Public views are discriminated by game and phase without catch-all fields.
 - [ ] Client action construction and successful responses are typed end to end.
 - [ ] The browser build owns asset hashing and module traversal.
 - [ ] One build produces the exact server and Pages artifacts that are tested.
 - [ ] Production installs no packages and executes no build tools.
-- [ ] The fast test suite and Chromium smoke suite pass without external
-      services.
+- [ ] The DOM-shim suite still runs as the fast interaction gate, without a
+      browser.
 - [ ] The old validator, declaration, stamping, and source-entry paths are gone.
 - [ ] The maintained documentation describes one coherent architecture.
