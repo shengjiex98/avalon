@@ -10,8 +10,8 @@ replaces it with the narrower rule that was doing the real work:
 
 > The production host installs nothing and executes no build tools.
 
-A development toolchain, a build step, and bundled runtime code are all
-permitted under that rule. The immutable archive, the exact-commit health
+A development toolchain, a browser build, and a vendored runtime package are
+all permitted under that rule. The immutable archive, the exact-commit health
 proof, the active-game deferral, and the rollback behavior are not negotiable
 under it, and this plan protects all four.
 
@@ -117,26 +117,34 @@ demonstrates a concrete incompatibility with this repository.
 ### Toolchain
 
 - Use TypeScript as source, not as a no-emit annotation checker.
-- Use Vite for the browser production build and its Node-target server build.
-  The browser build owns hashed assets and the module graph. The server build
-  uses a Node target and bundles only the selected runtime schema dependency;
-  Node built-ins remain external.
+- Run server TypeScript directly. Node 24 strips types natively, so
+  `src/server.ts` runs with no flag and the release carries no server bundle
+  and no server output directory (D5).
+- Use Vite for the browser production build only. It owns hashed assets and the
+  module graph, which is what retires the import stamper. Browsers cannot run
+  TypeScript, so this build is not optional the way the server one is.
+- Keep `tsc --noEmit` as the type gate. Node strips types; it does not check
+  them. Node's test runner executes `.ts` files directly, so no development
+  loader is needed and `node:test` is unchanged.
+- Set `erasableSyntaxOnly` so the compiler rejects syntax Node cannot strip
+  (`enum`, `namespace`, parameter properties, decorators — none of which this
+  codebase uses), and `allowImportingTsExtensions` so relative imports name the
+  real `.ts` file.
 - Use Zod for runtime schemas. Normal API object schemas use the default
   behavior of stripping unrecognized keys from parsed output. Persisted-state
-  schemas use strict objects where an exact stored shape is required.
-- Use `tsx` only as the development/test loader needed to run TypeScript source
-  through Node's existing test runner. Do not replace `node:test`.
+  schemas use strict objects where an exact stored shape is required. The
+  package is copied into the release at package time (D5); the host never
+  installs it.
 - Lock every package in `package-lock.json`. Do not use floating CDN imports or
   dependencies downloaded by the production host.
 
-These follow the tools' supported paths: Vite builds an `index.html` entry and
-hashed static assets, supports a Node-target server build, and can bundle an
-explicitly non-external dependency; Zod returns typed parsed data, infers
-TypeScript types from schemas, and strips unknown object keys by default.
+These follow the tools' supported paths: Node runs `.ts` entry points and test
+files with no flag; Vite builds an `index.html` entry and hashed static assets;
+Zod returns typed parsed data, infers TypeScript types from schemas, and strips
+unknown object keys by default.
 
+- <https://nodejs.org/api/typescript.html#type-stripping>
 - <https://vite.dev/guide/build>
-- <https://vite.dev/guide/ssr.html#building-for-production>
-- <https://vite.dev/config/ssr-options.html>
 - <https://zod.dev/basics>
 - <https://zod.dev/api#objects>
 
@@ -211,6 +219,24 @@ the game IDs must be importable by both runtimes, and `public/audio/` and
 `public/art/` move to `static/` because Vite's browser root cannot also serve as
 its verbatim-copy directory. Nothing else moves.
 
+**D5 — The server runs TypeScript directly; only the browser is built.** Node 24
+strips types natively, so `src/server.ts` runs as-is and no server bundle is
+produced. This serves the goal `scripts/package-release.sh` already states: the
+archive must be byte-identical for a given commit on every machine that builds
+it, so the host can compare a download against what CI published. `git archive`
+plus GNU tar flags delivers that almost for free, while a bundler is a much
+larger determinism surface — plugin order, absolute paths leaking into banners
+and source maps, the bundler's own version — bought for no property the
+deployment needs. Production stack traces also keep pointing at real files.
+
+Zod is the one runtime dependency. Packaging copies `node_modules/zod` — a
+zero-dependency package — into the staging tree from an `npm ci` lockfile
+install, so the host still installs nothing and executes no build tool. That is
+a smaller determinism surface than a bundler, but it is not zero: Phase 0 must
+prove the copy reproduces byte-identically rather than assume it. Committing the
+package to the repository instead was considered and rejected — it makes every
+upgrade a vendor commit and gives up npm's integrity checking.
+
 ## Scope boundaries
 
 This migration must not be used to smuggle in unrelated product changes.
@@ -242,23 +268,23 @@ separately rather than expanding this migration.
 ## Source and output layout
 
 ```text
-src/                    server, rooms, persistence, avatars, game engines
+src/                    server, rooms, persistence, avatars, game engines;
+                        shipped and run as TypeScript, never built
 src/shared/             API_PROTOCOL, game ids, command schemas, view types
 public/                 browser entry, session, transport, UI, game renderers
 static/                 assets addressed by dynamic path (ONUW audio, art)
 test/                   Node unit/integration tests, organized by behavior
 dist/public/            Vite browser output; never checked in
-dist/server/            Node-target application output; never checked in
 ```
 
 ## Verification model
 
 The completed repository has two commands:
 
-- `npm test` is the fast inner loop and the merge gate: strict type checking
-  plus the Node unit, integration, and DOM-shim tests.
-- `npm run check` adds the production builds and packaged-artifact verification,
-  and is what CI and the release workflow run.
+- `npm test` is the fast inner loop and the merge gate: `tsc --noEmit` plus the
+  Node unit, integration, and DOM-shim tests, run straight from `.ts` sources.
+- `npm run check` adds the browser build and packaged-artifact verification, and
+  is what CI and the release workflow run.
 
 Until those scripts exist, follow the current `AGENTS.md` command. Every
 implementing PR must leave `main` deployable and must run the strongest gate
@@ -268,16 +294,18 @@ The final release workflow must:
 
 1. install exactly the lockfile with `npm ci`;
 2. run `npm run check` against source;
-3. build `dist/server` and `dist/public` once;
-4. package those exact bytes with the release manifest;
+3. build `dist/public` once;
+4. package the commit's server sources, those exact browser bytes, the vendored
+   Zod package, and the release manifest;
 5. verify the extracted archive rather than rebuilding it;
 6. activate the server artifact through the existing updater; and
 7. upload the same `dist/public` bytes to Pages after exact-commit server
    health.
 
 The production archive must contain everything needed to run, but must not
-contain `node_modules`, TypeScript, Vite, `tsx`, or a requirement to run
-`npm install` on the host.
+contain a full `node_modules` tree, TypeScript, Vite, or a requirement to run
+`npm install` on the host. The vendored Zod package is the single exception,
+and it is named in the release manifest.
 
 ## Progress tracker
 
@@ -293,7 +321,7 @@ count.
 | 3 | - [ ] | Convert the server and game engines to TypeScript | No server JSDoc type layer remains; D2 is answered |
 | 4 | - [ ] | Discriminate public views by game and phase | No catch-all view field; renderers narrow before reading |
 | 5 | - [ ] | Convert the browser client to TypeScript | Every browser module is strictly checked; action casts are gone |
-| 6 | - [ ] | Switch release and Pages to built artifacts | Production runs the extracted build with rollback intact |
+| 6 | - [ ] | Switch release and Pages to the new artifact shape | Production runs the extracted archive with rollback intact |
 | 7 | - [ ] | Delete obsolete machinery and reconcile docs | Exit criteria pass and only one contract/build path remains |
 
 ## Implementation instructions
@@ -312,11 +340,16 @@ Tasks:
       regression: Node-hosted static files, Pages base URLs, dynamic ONUW audio,
       avatar URLs, `version.json`, API protocol reporting, release identity, and
       an extracted archive starting successfully.
-- [ ] Create a throwaway proof inside tests or a draft commit showing that Vite
-      can produce both the browser graph and a Node-target server entry while
-      leaving `node:` built-ins external and bundling Zod.
-- [ ] Prove that the built server can locate `release.json`, `dist/public`, and
-      its writable state path without relying on the source checkout layout.
+- [ ] Prove that the server runs from `.ts` sources on Node 24 with no loader
+      and no build, that `node --test` discovers and runs `.ts` test files, and
+      that `erasableSyntaxOnly` holds across the codebase.
+- [ ] Prove that a `node_modules/zod` copied from an `npm ci` lockfile install
+      reproduces byte-identically inside the archive on two machines. This is
+      the one determinism surface D5 adds and it must be measured, not assumed.
+- [ ] Create a throwaway proof that Vite can produce the browser graph with
+      hashed assets from the current module structure.
+- [ ] Prove that the server can locate `release.json`, `dist/public`, and its
+      writable state path without relying on the source checkout layout.
 - [ ] Prove that the browser build preserves root-relative `/api/avatars/*` URLs
       and copies dynamically selected audio files from `static/`.
 - [ ] Confirm that one browser build can read either an empty same-origin or a
@@ -330,29 +363,29 @@ Acceptance:
 - The proof uses the selected tools without a custom import-rewriting plugin.
 - Any failed assumption is reported in the PR before substituting another tool.
   A substitute must still satisfy the fixed outcomes and delete at least the
-  same bespoke mechanisms. If the Node-target server build cannot bundle the
-  schema dependency while keeping the archive install-free, the correct response
-  is to drop the runtime dependency and keep hand-written validation — not to
-  weaken the artifact.
+  same bespoke mechanisms. If the vendored package cannot be made to reproduce
+  byte-identically, the fallbacks in order are: bundle only the server with a
+  Node-target build, or drop the runtime dependency and keep hand-written
+  validation. Never weaken the reproducibility guarantee itself.
 
 ### Phase 1 — build beside production
 
-Goal: introduce a deterministic build without yet changing what systemd or Pages
-serves.
+Goal: introduce the browser build and the typed toolchain without yet changing
+what systemd or Pages serves.
 
 Tasks:
 
-- [ ] Add locked TypeScript, Vite, Zod, and `tsx` dependencies with their roles
-      correctly classified as development or runtime source dependencies.
-- [ ] Add strict shared TypeScript settings and separate browser/Node settings
-      only where their libraries or module resolution genuinely differ.
-- [ ] Add `npm run build`, `build:client`, `build:server`, and `clean` scripts.
-      Cleaning must target only the resolved repository `dist/` directory.
+- [ ] Add locked TypeScript, Vite, and Zod dependencies with their roles
+      correctly classified. Zod is the only runtime dependency; nothing else may
+      reach the archive.
+- [ ] Add strict shared TypeScript settings, including `erasableSyntaxOnly` and
+      `allowImportingTsExtensions`, and separate browser/Node settings only
+      where their libraries or module resolution genuinely differ.
+- [ ] Add `npm run build` (browser only) and `clean` scripts. Cleaning must
+      target only the resolved repository `dist/` directory.
 - [ ] Move `public/audio/` and `public/art/` to `static/` as a mechanical,
       behavior-preserving commit, and configure it as the verbatim-copy
       directory so the served URLs are unchanged (D4).
-- [ ] Configure a Node-target server build with Zod included in output and Node
-      built-ins external. Do not bundle tests or deployment control-plane code.
 - [ ] Generate `version.json` and release metadata through a small typed build
       hook or script. This generation may write data; it must not rewrite source
       imports.
@@ -362,11 +395,11 @@ Tasks:
 
 Acceptance:
 
-- Two clean builds of the same checkout have identical file contents and names
-  after excluding timestamps that are not packaged.
+- Two clean builds of the same checkout, on two machines, have identical file
+  contents and names after excluding timestamps that are not packaged.
 - Browser assets referenced through the module graph are content-hashed, and
   `/audio/*` and `/art/*` resolve at their current URLs.
-- The built Node entry starts and serves the built client.
+- The server started from `src/server.ts` serves the built client.
 - The current source entrypoint and deployment remain active.
 - `npm test` passes.
 
@@ -452,7 +485,7 @@ Acceptance:
   an unavoidable external boundary; prefer `unknown` plus narrowing.
 - Persisted JSON remains byte-shape compatible, so `STATE_VERSION` is unchanged.
 - Determinism, secrecy, timers, persistence, and HTTP integration tests pass.
-- The candidate server build starts from `dist/server`.
+- `node src/server.ts` starts the server on Node 24 with no loader or build.
 
 ### Phase 4 — discriminated public views
 
@@ -522,8 +555,9 @@ Tasks:
       and narrow input/dialog elements. Avoid scattered non-null assertions.
 - [ ] Type translation keys enough to preserve language-key parity without
       making dynamic server keys impossible to render.
-- [ ] Keep the DOM shim and current UI tests running through `tsx`; tests may
-      remain JavaScript until production source is fully converted.
+- [ ] Keep the DOM shim and current UI tests running unchanged; Node runs `.ts`
+      and `.js` tests side by side, so tests may remain JavaScript until
+      production source is fully converted.
 - [ ] Delete `types/contracts.d.ts` once its last import is gone.
 
 Acceptance:
@@ -537,19 +571,26 @@ Acceptance:
 
 ### Phase 6 — production cutover
 
-Goal: deploy the already-proven build output without weakening rollout safety.
+Goal: switch production to the new archive shape — TypeScript server sources,
+the built browser bytes, and the vendored package — without weakening rollout
+safety.
 
 Tasks:
 
-- [ ] Change the release packager to build once into a staging directory and
-      archive the exact `dist/server` and `dist/public` bytes plus
-      `release.json` and required static control-plane files.
-- [ ] Change packaged verification to inspect and run output, not source.
-- [ ] Change the systemd application unit to run the built Node entry. Keep the
+- [ ] Change the release packager to stage the commit's sources, build the
+      browser once into that staging directory, copy `node_modules/zod` in from
+      the lockfile install, and archive those exact bytes plus `release.json`
+      and required static control-plane files. Keep the existing deterministic
+      tar flags; the archive must stay byte-identical per commit.
+- [ ] Record the vendored package and its resolved version in `release.json`,
+      and have the packaged verifier check it is present and complete.
+- [ ] Change packaged verification to inspect the archive's real entry and
+      browser output, and to start the server from the extracted tree.
+- [ ] Change the systemd application unit to run `src/server.ts`. Keep the
       installed updater outside releases and follow the existing manual
       installation rule for the unit change.
-- [ ] Make the built server resolve its public directory and release root
-      explicitly; do not infer either from a source-tree-relative `../public`.
+- [ ] Make the server resolve its public directory and release root explicitly;
+      do not infer either from a source-tree-relative `../public`.
 - [ ] Change Pages publication to upload the exact browser output already tested
       and activated, without rebuilding it in the Pages job.
 - [ ] Generate a small validated backend-configuration data file after the one
@@ -564,7 +605,8 @@ Tasks:
 
 Acceptance:
 
-- The extracted archive starts without `node_modules` or package installation.
+- The extracted archive starts with no package installation and no build tool,
+  carrying only the vendored Zod package.
 - Node-hosted and Pages clients use the same tested browser bytes with no
   post-build mutation. If backend configuration must differ, it must be a
   separately generated data file whose bytes and use are explicitly tested, not
@@ -591,8 +633,8 @@ Tasks:
 - [ ] Remove old source entrypoints and packaging paths after the built release
       is active.
 - [ ] Update `README.md`, `AGENTS.md`, and maintained docs to distinguish
-      development dependencies, build-time dependencies, bundled runtime code,
-      and the install-free production artifact. `AGENTS.md`'s current claim that
+      development dependencies, browser build-time dependencies, the single
+      vendored runtime package, and the install-free production artifact. `AGENTS.md`'s current claim that
       "`package.json` declares none" is already false and must go.
 - [ ] Replace the repository rule with: the production host installs nothing and
       executes no build tools; a dependency requires a short deletion and
@@ -672,9 +714,12 @@ The modernization is complete only when all of the following are true:
 - [ ] Snapshot validation is complete, strict, and all-or-nothing.
 - [ ] Public views are discriminated by game and phase without catch-all fields.
 - [ ] Client action construction and successful responses are typed end to end.
-- [ ] The browser build owns asset hashing and module traversal.
-- [ ] One build produces the exact server and Pages artifacts that are tested.
+- [ ] The browser build owns asset hashing and module traversal, and is the
+      only build in the project.
+- [ ] The server ships and runs as TypeScript; the Pages client ships the exact
+      browser bytes that were tested.
 - [ ] Production installs no packages and executes no build tools.
+- [ ] The archive is still byte-identical per commit across build machines.
 - [ ] The DOM-shim suite still runs as the fast interaction gate, without a
       browser.
 - [ ] The old validator, declaration, stamping, and source-entry paths are gone.
