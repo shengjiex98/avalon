@@ -56,8 +56,10 @@ export function validateJoin(value) {
   const body = exact(value, ['name', 'playerId', 'avatar'], ['name']);
   if (typeof body.name !== 'string') fail();
   // A browser holding no seat for this room sends null rather than omitting the
-  // key, and the join below already reads a non-string id as no id at all.
-  if (body.playerId != null && !string(body.playerId)) fail();
+  // key. Normalising it away here is what lets everything downstream read the
+  // command as "an id, or nothing" without testing the type a second time.
+  if (body.playerId === null) delete body.playerId;
+  if ('playerId' in body && !string(body.playerId)) fail();
   if ('avatar' in body && body.avatar !== false && typeof body.avatar !== 'string') fail();
   return /** @type {JoinCommand} */ (body);
 }

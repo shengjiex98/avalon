@@ -1,8 +1,30 @@
+// @ts-check
 // Multi-seat test mode is a client of the room session, not part of normal
 // rendering or transport. Every invented seat remains a real server seat.
 
 import { h, toast } from './ui.js';
+import { ApiError } from './transport.js';
 
+/** @typedef {import('../types/contracts.js').JoinCommand} JoinCommand */
+/** @typedef {import('../types/contracts.js').ValidatedAction} ValidatedAction */
+/** @typedef {import('./room-session.js').SessionApp & { testMode: boolean }} TestSeatsApp */
+
+/** Anything `request` rejects with carries a message key; a fault carries none. */
+const apiError = (/** @type {unknown} */ error) => (error instanceof ApiError
+  ? { key: error.key, params: error.params }
+  : { key: 'serverError', params: /** @type {Record<string, unknown>} */ ({}) });
+
+/**
+ * @param {{
+ *   app: TestSeatsApp,
+ *   store: ReturnType<typeof import('./storage.js').createStore>,
+ *   T: (key: string, params?: Record<string, unknown>) => string,
+ *   request: ReturnType<typeof import('./transport.js').createTransport>['request'],
+ *   connect: () => void,
+ *   render: () => void,
+ *   rememberSeat: (code: string, playerId: string, name: string) => void,
+ * }} deps
+ */
 export function createTestSeats({ app, store, T, request, connect, render, rememberSeat }) {
   function pane() {
     const rows = [h('button', {
@@ -39,43 +61,56 @@ export function createTestSeats({ app, store, T, request, connect, render, remem
   }
 
   async function addSeat() {
-    const taken = new Set(app.view.players.map((player) => player.name.toLowerCase()));
-    let n = app.view.players.length + 1;
+    const code = app.code;
+    const seated = app.view?.players ?? [];
+    if (!code) return;
+    const taken = new Set(seated.map((player) => player.name.toLowerCase()));
+    let n = seated.length + 1;
     let name = T('test.player', { n });
     while (taken.has(name.toLowerCase())) name = T('test.player', { n: ++n });
 
     try {
-      const response = await request(`/api/rooms/${app.code}/join`, { body: { name, avatar: false } });
-      rememberSeat(app.code, response.playerId, name);
+      // An invented seat is a real one, so it never carries this browser's id.
+      /** @type {JoinCommand} */
+      const body = { name, avatar: false };
+      const response = await request(`/api/rooms/${code}/join`, { body });
+      rememberSeat(code, response.playerId, name);
       render();
     } catch (error) {
-      toast(T(`err.${error.key}`, error.params));
+      const { key, params } = apiError(error);
+      toast(T(`err.${key}`, params));
     }
   }
 
   async function resetSeats() {
+    const code = app.code;
     const [mine, ...extras] = app.seats;
-    if (!mine || extras.length === 0) return;
+    if (!code || !mine || extras.length === 0) return;
     if (app.playerId !== mine.id) actAs(mine.id);
 
+    /** @type {string[]} */
     const gone = [];
     for (const seat of extras) {
       try {
-        await request(`/api/rooms/${app.code}/action`, { body: { type: 'leave', playerId: seat.id } });
+        /** @type {ValidatedAction} */
+        const body = { type: 'leave', playerId: seat.id };
+        await request(`/api/rooms/${code}/action`, { body });
         gone.push(seat.id);
       } catch (error) {
-        if (error.key === 'notInGame') { gone.push(seat.id); continue; }
-        toast(T(`err.${error.key}`, error.params));
+        const { key, params } = apiError(error);
+        if (key === 'notInGame') { gone.push(seat.id); continue; }
+        toast(T(`err.${key}`, params));
         break;
       }
     }
     app.seats = app.seats.filter((seat) => !gone.includes(seat.id));
-    store.setSeats(app.code, app.seats);
+    store.setSeats(code, app.seats);
     render();
   }
 
+  /** @param {string} playerId */
   function actAs(playerId) {
-    if (playerId === app.playerId) return;
+    if (playerId === app.playerId || !app.code) return;
     app.playerId = playerId;
     store.setPlayer(app.code, playerId);
     app.selection = [];

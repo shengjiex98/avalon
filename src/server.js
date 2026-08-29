@@ -196,7 +196,7 @@ async function api(rooms, avatars, req, res, url) {
   if (tail === 'join') {
     requireMethod(req, res, ['POST']);
     const body = validateJoin(await readJson(req, 384 * 1024));
-    let playerId = typeof body.playerId === 'string' ? body.playerId : null;
+    let playerId = body.playerId ?? null;
     const room = rooms.get(code);
     const known = playerId && room.players.some((p) => p.id === playerId);
     if (!known) playerId = randomUUID();

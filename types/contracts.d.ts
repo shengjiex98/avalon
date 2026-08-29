@@ -145,8 +145,11 @@ export interface SnapshotFile {
   rooms: PersistedRoom[];
 }
 
+/** A seat this browser holds, remembered so a reload can offer it back. */
+export type StoredSeat = { id: string; name: string };
+
 export type CreateRoomCommand = { game?: string };
-export type JoinCommand = { name: string; playerId?: string | null; avatar?: string | false };
+export type JoinCommand = { name: string; playerId?: string; avatar?: string | false };
 type PlayerCommand<T extends string> = { type: T; playerId: string };
 export type SharedCommand =
   | (PlayerCommand<'setGame'> & { game: string })
@@ -186,6 +189,14 @@ export interface PublicViewBase<G extends GameId, P extends GamePhase> {
   version: number;
   hostId: string | null;
   me: null | { id: string; name: string; avatar: string | null };
+  /**
+   * The viewer's own seat. Optional because `baseView` does not build it: each
+   * game adds its own wider `you` on top, and that is what reaches the client.
+   */
+  you?: null | ({ id: string; name: string; avatar: string | null } & Record<string, unknown>);
+  /** Every seat in the room, in seat order. Added by each game, like `you`. */
+  players?: ({ id: string; name: string; avatar: string | null; seat: number }
+    & Record<string, unknown>)[];
   log: LogEntry[];
   [field: string]: unknown;
 }
