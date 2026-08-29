@@ -10,9 +10,10 @@ state_dir=$(dirname "${AVALON_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/
 units='avalon.service avalon-listen.service avalon-update.service avalon-update.timer'
 
 mkdir -p "$root" "$unit_dir"
-# avalon.service no longer gets this directory from StateDirectory=, and
-# ReadWritePaths= refuses to start the unit when it is missing.
-mkdir -p -m 700 "$state_dir"
+# avalon.service no longer gets this directory from StateDirectory=, which
+# also means nothing else creates it for ReadWritePaths= or holds its mode.
+mkdir -p "$state_dir"
+chmod 700 "$state_dir"
 
 install_file() {
   source=$1

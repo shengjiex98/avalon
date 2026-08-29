@@ -200,5 +200,5 @@ test('the server and the updater snapshot the same file', async () => {
   assert.match(unit, /Environment=XDG_STATE_HOME=%h\/\.local\/state$/m);
   assert.match(unit, /ReadWritePaths=%h\/\.local\/state\/avalon$/m);
   assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$\{XDG_STATE_HOME:-\$HOME\/\.local\/state\}\/avalon\/rooms\.json\}/);
-  assert.match(installer, /mkdir -p -m 700 "\$state_dir"/);
+  assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
 });
