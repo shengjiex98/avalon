@@ -10,14 +10,14 @@ Rooms live in memory and are atomically snapshotted to a private state
 directory. A clean restart restores rooms and timers only when `STATE_VERSION`
 is compatible and the complete snapshot validates; otherwise it starts empty.
 The persistence contract is implemented in
-[`src/persistence.js`](../src/persistence.js) and
-[`src/state-version.js`](../src/state-version.js).
+[`src/persistence.ts`](../src/persistence.ts) and
+[`src/state-version.ts`](../src/state-version.ts).
 
 Use `/api/health` for liveness and exact-version checks. SSE proxies must not
 buffer `/api/rooms/*/events`. Server configuration defaults and optional avatar
-settings live in [`src/server.js`](../src/server.js),
-[`src/persistence.js`](../src/persistence.js), and
-[`src/avatars.js`](../src/avatars.js).
+settings live in [`src/server.ts`](../src/server.ts),
+[`src/persistence.ts`](../src/persistence.ts), and
+[`src/avatars.ts`](../src/avatars.ts).
 
 ## Static host control plane
 

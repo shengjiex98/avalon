@@ -9,12 +9,12 @@ The server—not the browser—enforces legal actions and derives filtered views
 so modifying a client does not grant another player's hidden information or an
 illegal move. The authoritative boundaries are the action and view functions
 under [`src/games/`](../src/games/) and the request validation in
-[`src/server.js`](../src/server.js).
+[`src/server.ts`](../src/server.ts).
 
 Uploaded avatars are processed before storage. Automatic avatars are disabled
 unless Cloudflare credentials are configured and send the display name to
 Cloudflare Workers AI. Storage, limits, and request behavior are implemented in
-[`src/avatars.js`](../src/avatars.js) and [`public/app.js`](../public/app.js).
+[`src/avatars.ts`](../src/avatars.ts) and [`public/app.js`](../public/app.js).
 
 ## Deployment authority
 

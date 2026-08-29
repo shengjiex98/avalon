@@ -8,9 +8,9 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { API_PROTOCOL } from '../src/api-protocol.js';
-import { readDeployedCommit } from '../src/server.js';
-import { STATE_VERSION } from '../src/state-version.js';
+import { API_PROTOCOL } from '../src/api-protocol.ts';
+import { readDeployedCommit } from '../src/server.ts';
+import { STATE_VERSION } from '../src/state-version.ts';
 
 const script = fileURLToPath(new URL('../scripts/write-release-manifest.mjs', import.meta.url));
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -87,7 +87,9 @@ test('an invalid release identity is rejected rather than reported', async () =>
 test('the trusted workflow verifier checks the packaged manifest and required files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
   const commit = 'd'.repeat(40);
-  for (const name of ['package.json', 'node_modules/zod/package.json', 'src/server.js', 'public/index.html']) {
+  for (const name of [
+    'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts', 'public/index.html',
+  ]) {
     await mkdir(dirname(join(dir, name)), { recursive: true });
     await writeFile(join(dir, name), name);
   }

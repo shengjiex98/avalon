@@ -19,7 +19,8 @@
   "include": [
     "public/**/*.js",
     "src/**/*.js",
-    "types/**/*.d.ts",
+    "src/**/*.ts",
+    "test/**/*.test.ts",
     "types/**/*.ts"
   ]
 }

@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import * as g from '../src/games/avalon/game.js';
+import * as g from '../src/games/avalon/game.ts';
 
 const dom = installDom();
 const client = await import('../public/app.js');

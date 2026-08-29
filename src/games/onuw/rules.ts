@@ -1,6 +1,6 @@
 // One Night Ultimate Werewolf: the static rules. No state, no I/O.
 
-import { GameError } from '../../lobby.js';
+import { GameError } from '../../lobby.ts';
 
 export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 10;
@@ -22,9 +22,23 @@ export const ROLES = {
   hunter:       { team: 'village',  optional: true },
   tanner:       { team: 'tanner',   optional: true },
   villager:     { team: 'village' },
-};
+} as const;
 
-export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional);
+export type OnuwRole = keyof typeof ROLES;
+export type OnuwTeam = (typeof ROLES)[OnuwRole]['team'];
+export type OptionalOnuwRole = {
+  [Role in OnuwRole]: (typeof ROLES)[Role] extends { optional: true } ? Role : never
+}[OnuwRole];
+export type OnuwOptions = Record<OptionalOnuwRole, boolean>;
+const ROLE_KEYS = Object.keys(ROLES) as OnuwRole[];
+type RoleSpec = {
+  team: OnuwTeam; wake?: number; acts?: string; copies?: number; optional?: boolean; core?: boolean;
+};
+const roleSpec = (role: OnuwRole): RoleSpec => ROLES[role];
+
+export const OPTIONAL_ROLES = ROLE_KEYS.filter(
+  (role): role is OptionalOnuwRole => roleSpec(role).optional === true,
+);
 
 /**
  * House rules: printed rules some tables prefer to play differently. Each maps
@@ -43,12 +57,12 @@ export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional
 export const HOUSE_RULES = { decisiveVote: true };
 export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
-export const NIGHT_ORDER = Object.keys(ROLES)
-  .filter((r) => ROLES[r].wake)
-  .sort((a, b) => ROLES[a].wake - ROLES[b].wake);
+export const NIGHT_ORDER = ROLE_KEYS
+  .filter((role) => roleSpec(role).wake !== undefined)
+  .sort((a, b) => (roleSpec(a).wake ?? 0) - (roleSpec(b).wake ?? 0));
 
 /** Seconds each waking role gets: long enough to read the table and decide. */
-const STEP_SECONDS = {
+const STEP_SECONDS: Partial<Record<OnuwRole, number>> = {
   werewolf: 15, minion: 12, mason: 12, seer: 22,
   robber: 20, troublemaker: 22, drunk: 15, insomniac: 12,
 };
@@ -66,42 +80,50 @@ const NIGHTFALL_SECONDS = 8;
  * early would announce that the role was in play and had finished. Between
  * them those two rules mean the clock reveals nothing the lobby did not.
  */
-export function nightScript(deck) {
+export type NightStep = { key: string; role?: OnuwRole | undefined; seconds: number };
+
+export function nightScript(deck: OnuwRole[]): NightStep[] {
   const present = new Set(deck);
   return [
     { key: 'nightfall', seconds: NIGHTFALL_SECONDS },
     ...NIGHT_ORDER.filter((role) => present.has(role))
-      .map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] })),
+      .map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] ?? 0 })),
   ];
 }
 
 export const PACES = { brisk: 0.6, normal: 1, relaxed: 1.6 };
 export const DEFAULT_PACE = 'normal';
+export type Pace = keyof typeof PACES;
+const isPace = (pace: string): pace is Pace => pace === 'brisk' || pace === 'normal' || pace === 'relaxed';
 
 /** How long a step lasts at this table's pace, in milliseconds. */
-export function stepMillis(step, pace = DEFAULT_PACE) {
-  return Math.round(step.seconds * (PACES[pace] ?? 1)) * 1000;
+export function stepMillis(step: NightStep, pace: string = DEFAULT_PACE): number {
+  const multiplier = isPace(pace) ? PACES[pace] : 1;
+  return Math.round(step.seconds * multiplier) * 1000;
 }
 
-export const nightLength = (deck, pace) =>
+export const nightLength = (deck: OnuwRole[], pace: string): number =>
   nightScript(deck).reduce((ms, step) => ms + stepMillis(step, pace), 0);
 
-export const teamOf = (role) => ROLES[role].team;
-export const copiesOf = (role) => ROLES[role].copies ?? 1;
+export const teamOf = (role: OnuwRole): OnuwTeam => ROLES[role].team;
+export const copiesOf = (role: OnuwRole): number => roleSpec(role).copies ?? 1;
 
 /** The cards that are always in the deck, whatever the host picks. */
-export const CORE_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].core);
+export const CORE_ROLES = ROLE_KEYS.filter((role) => roleSpec(role).core === true);
 
 /**
  * Build the deck: the core roles, the optional ones the host switched on, and
  * villagers for whatever is left. Throws if the choices do not fit.
  */
-export function buildDeck(playerCount, options = {}) {
+export function buildDeck(
+  playerCount: number,
+  options: Partial<Record<OnuwRole, boolean>> = {},
+): OnuwRole[] {
   if (playerCount < MIN_PLAYERS || playerCount > MAX_PLAYERS) {
     throw new GameError('badPlayerCount', { min: MIN_PLAYERS, max: MAX_PLAYERS });
   }
   const size = playerCount + CENTRE_CARDS;
-  const deck = [];
+  const deck: OnuwRole[] = [];
   for (const role of CORE_ROLES) for (let i = 0; i < copiesOf(role); i++) deck.push(role);
   for (const role of OPTIONAL_ROLES) {
     if (!options[role]) continue;
@@ -116,20 +138,23 @@ const CORE_TOTAL = CORE_ROLES.reduce((n, r) => n + copiesOf(r), 0);
 export { CORE_TOTAL };
 
 /** How many optional cards still fit at this player count. */
-export function roomForOptions(playerCount) {
+export function roomForOptions(playerCount: number): number {
   return playerCount + CENTRE_CARDS - CORE_TOTAL;
 }
 
 /** A sensible deck for each table size, used as the lobby default. */
-export function defaultOptions(playerCount) {
-  const wanted = ['minion', 'drunk', 'insomniac', 'mason', 'tanner', 'hunter'];
-  const options = {};
+export function defaultOptions(playerCount: number): OnuwOptions {
+  const wanted: OptionalOnuwRole[] = ['minion', 'drunk', 'insomniac', 'mason', 'tanner', 'hunter'];
+  const options: Partial<OnuwOptions> = {};
   let left = roomForOptions(playerCount);
   for (const role of wanted) {
     const cost = copiesOf(role);
     if (cost <= left) { options[role] = true; left -= cost; }
   }
-  return { ...Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])), ...options };
+  return {
+    minion: false, mason: false, drunk: false, insomniac: false, hunter: false, tanner: false,
+    ...options,
+  };
 }
 
 /**
@@ -153,16 +178,20 @@ export function defaultOptions(playerCount) {
  * — the Tanner still outranks both, and a table with a werewolf in it scores
  * exactly as it does by the book.
  */
-export function decideWinners(finalRoles, dead, house = {}) {
-  const roleOf = (id) => finalRoles[id];
-  const inPlay = (role) => Object.keys(finalRoles).filter((id) => roleOf(id) === role);
-  const died = (role) => [...dead].some((id) => roleOf(id) === role);
+export function decideWinners(
+  finalRoles: Record<string, OnuwRole>,
+  dead: Set<string>,
+  house: { decisiveVote?: boolean } = {},
+): Set<OnuwTeam> {
+  const roleOf = (id: string) => finalRoles[id];
+  const inPlay = (role: OnuwRole) => Object.keys(finalRoles).filter((id) => roleOf(id) === role);
+  const died = (role: OnuwRole) => [...dead].some((id) => roleOf(id) === role);
   const wolvesInPlay = inPlay('werewolf');
   const tannerDied = died('tanner');
   // Who the village has to catch. Only a decisive vote ever promotes anybody.
   const pack = house.decisiveVote && wolvesInPlay.length === 0 ? 'minion' : 'werewolf';
 
-  const winners = new Set();
+  const winners = new Set<OnuwTeam>();
   if (tannerDied) winners.add('tanner');
   if (died(pack)) winners.add('village');
   else if (wolvesInPlay.length === 0 && dead.size === 0) winners.add('village');
@@ -180,10 +209,10 @@ export function decideWinners(finalRoles, dead, house = {}) {
  * die. If every player collects exactly one vote, the table cannot agree and
  * nobody dies.
  */
-export function tallyVotes(playerIds, votes) {
+export function tallyVotes(playerIds: string[], votes: Record<string, string>) {
   const counts = new Map(playerIds.map((id) => [id, 0]));
   for (const target of Object.values(votes)) {
-    if (counts.has(target)) counts.set(target, counts.get(target) + 1);
+    if (counts.has(target)) counts.set(target, (counts.get(target) ?? 0) + 1);
   }
   const top = Math.max(0, ...counts.values());
   const everyoneOnce = [...counts.values()].every((n) => n === 1);

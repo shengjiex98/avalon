@@ -1,23 +1,25 @@
 // The Avalon state machine. Pure logic: it never touches the network, the
 // clock (beyond timestamps) or randomness it was not handed.
 
-// @ts-check
-
 import {
   HOUSE_RULES, HOUSE_RULE_KEYS, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
   buildRoleList, defaultOptions, failsRequired, knowledgeFor, sideOf, teamSize,
-} from './rules.js';
-import * as lobby from '../../lobby.js';
-import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
+} from './rules.ts';
+import type { AvalonOptions, AvalonRole } from './rules.ts';
+import * as lobby from '../../lobby.ts';
+import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.ts';
+import type {
+  AvalonCommand, AvalonContext, AvalonState, AvalonView, Player,
+} from '../../contracts/types.ts';
 
-/** @typedef {import('../../../types/contracts.js').AvalonContext} AvalonContext */
-/** @typedef {import('../../../types/contracts.js').AvalonView} AvalonView */
+type CreateOptions = { now?: () => number; seed?: number };
+type SetOptions = Extract<AvalonCommand, { type: 'options' }>['options'];
+type ShuffleOptions = { shuffle?: <T>(list: T[]) => T[] };
 
-/** @param {string} code @param {{ now?: () => number, seed?: number }} [options] @returns {AvalonContext} */
-export function createGame(code, { now = Date.now, seed } = {}) {
-  const state = {
-    phase: /** @type {const} */ ('lobby'),
-    options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
+export function createGame(code: string, { now = Date.now, seed }: CreateOptions = {}): AvalonContext {
+  const state: AvalonState = {
+    phase: 'lobby',
+    options: { percival: false, morgana: false, mordred: false, oberon: false },
     optionsTouched: false,  // manual choices last only until the table size changes
     houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
     roles: {},              // playerId -> role key
@@ -34,35 +36,38 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     winReason: null,
   };
   const room = lobby.baseRoom(code, 'avalon', state, { now, ...(seed === undefined ? {} : { seed }) });
-  return /** @type {AvalonContext} */ ({ room, state });
+  return { room, state };
 }
 
-/** @param {AvalonContext} g */
-const leader = (g) => /** @type {import('../../../types/contracts.js').Player} */ (g.room.players[g.state.leaderIndex]);
-/** @param {AvalonContext} g */
-const evilPlayers = (g) => g.room.players.filter((p) => sideOf(g.state.roles[p.id]) === 'evil');
+const leader = (g: AvalonContext): Player => g.room.players[g.state.leaderIndex]!;
+const evilPlayers = (g: AvalonContext): Player[] =>
+  g.room.players.filter((player) => sideOf(g.state.roles[player.id]!) === 'evil');
 
 /**
  * The deck the lobby is currently describing. Once the cards are out, it is
  * whatever they were dealt from.
  */
 /** @param {AvalonContext} g */
-const liveOptions = (g) =>
+const liveOptions = (g: AvalonContext): AvalonOptions =>
   (g.state.phase !== 'lobby' || g.state.optionsTouched ? g.state.options : defaultOptions(g.room.players.length));
 
 /** @param {AvalonContext} g */
-const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
+const houseRulesOf = (g: AvalonContext): AvalonState['houseRules'] =>
+  lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
 // ---------------------------------------------------------------- lobby
 
 /** @param {AvalonContext} g */
-function resetOptionsForPlayerCount(g) {
+function resetOptionsForPlayerCount(g: AvalonContext): void {
   g.state.options = defaultOptions(g.room.players.length);
   g.state.optionsTouched = false;
 }
 
 /** @param {AvalonContext} g @param {{ id: string, name?: string, avatar?: string }} player */
-export function addPlayer(g, player) {
+export function addPlayer(
+  g: AvalonContext,
+  player: { id: string; name?: string; avatar?: string },
+): Player {
   const count = g.room.players.length;
   const joined = lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
   if (g.room.players.length !== count) resetOptionsForPlayerCount(g);
@@ -70,14 +75,13 @@ export function addPlayer(g, player) {
 }
 
 /** @param {AvalonContext} g @param {string} playerId */
-export function removePlayer(g, playerId) {
+export function removePlayer(g: AvalonContext, playerId: string): void {
   const count = g.room.players.length;
   lobby.removePlayer(g, playerId);
   if (g.room.players.length !== count) resetOptionsForPlayerCount(g);
 }
 
-/** @param {AvalonContext} g @param {string} playerId @param {Record<string, any>} options */
-export function setOptions(g, playerId, options) {
+export function setOptions(g: AvalonContext, playerId: string, options: SetOptions): void {
   require_(g.state.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.room.hostId, 'hostOnly');
   if (options.houseRules) lobby.setHouseRules(g, options.houseRules, HOUSE_RULE_KEYS);
@@ -91,7 +95,11 @@ export function setOptions(g, playerId, options) {
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {{ shuffle?: <T>(list: T[]) => T[] }} [options] */
-export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list) } = {}) {
+export function startGame(
+  g: AvalonContext,
+  playerId: string,
+  { shuffle = <T>(list: T[]) => shuffleWith(g, list) }: ShuffleOptions = {},
+): void {
   require_(g.state.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.room.hostId, 'hostOnly');
   require_(g.room.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
@@ -104,7 +112,7 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
   const seats = randomLeader ? shuffle(g.room.players.slice()) : g.room.players.slice();
   g.state.options = options;
   g.room.players = seats;
-  g.state.roles = Object.fromEntries(seats.map((p, i) => [p.id, /** @type {string} */ (roleList[i])]));
+  g.state.roles = Object.fromEntries(seats.map((player, index) => [player.id, roleList[index]!]));
 
   g.state.phase = 'reveal';
   g.state.ready = {};
@@ -114,7 +122,7 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
 
 /** Every player confirms they have read their role; then the first leader proposes. */
 /** @param {AvalonContext} g @param {string} playerId */
-export function confirmRole(g, playerId) {
+export function confirmRole(g: AvalonContext, playerId: string): void {
   require_(g.state.phase === 'reveal', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
   const ready = g.state.ready ??= {};
@@ -128,12 +136,14 @@ export function confirmRole(g, playerId) {
 // ---------------------------------------------------------------- quests
 
 /** @param {AvalonContext} g */
-export const currentTeamSize = (g) => teamSize(g.room.players.length, g.state.round);
+export const currentTeamSize = (g: AvalonContext): number =>
+  teamSize(g.room.players.length, g.state.round)!;
 /** @param {AvalonContext} g */
-export const currentFailsRequired = (g) => failsRequired(g.room.players.length, g.state.round);
+export const currentFailsRequired = (g: AvalonContext): number =>
+  failsRequired(g.room.players.length, g.state.round);
 
 /** @param {AvalonContext} g @param {string} playerId @param {string[]} memberIds */
-export function proposeTeam(g, playerId, memberIds) {
+export function proposeTeam(g: AvalonContext, playerId: string, memberIds: string[]): void {
   require_(g.state.phase === 'team', 'wrongPhase');
   require_(playerId === leader(g).id, 'notLeader');
   const unique = [...new Set(memberIds)];
@@ -146,12 +156,12 @@ export function proposeTeam(g, playerId, memberIds) {
   g.state.phase = 'vote';
   logEvent(g, 'log.teamProposed', {
     name: leader(g).name,
-    members: unique.map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)).name),
+    members: unique.map((id) => playerById(g, id)!.name),
   });
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {boolean} approve */
-export function castVote(g, playerId, approve) {
+export function castVote(g: AvalonContext, playerId: string, approve: boolean): void {
   require_(g.state.phase === 'vote', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
   require_(!(playerId in g.state.votes), 'alreadyVoted');
@@ -160,7 +170,7 @@ export function castVote(g, playerId, approve) {
 }
 
 /** @param {AvalonContext} g */
-function resolveVote(g) {
+function resolveVote(g: AvalonContext): void {
   const approvals = g.room.players.filter((p) => g.state.votes[p.id]).length;
   const approved = approvals * 2 > g.room.players.length;
   g.state.lastVote = {
@@ -196,23 +206,25 @@ function resolveVote(g) {
 }
 
 /** @param {AvalonContext} g */
-function nextLeader(g) {
+function nextLeader(g: AvalonContext): void {
   g.state.leaderIndex = (g.state.leaderIndex + 1) % g.room.players.length;
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {boolean} success */
-export function playCard(g, playerId, success) {
+export function playCard(g: AvalonContext, playerId: string, success: boolean): void {
   require_(g.state.phase === 'quest', 'wrongPhase');
   require_(g.state.team.includes(playerId), 'notOnTeam');
   require_(!(playerId in g.state.cards), 'alreadyPlayed');
   const wantsFail = success === false;
-  require_(!(wantsFail && sideOf(g.state.roles[playerId]) === 'good'), 'goodMustSucceed');
+  const role = g.state.roles[playerId];
+  require_(role, 'notInGame');
+  require_(!(wantsFail && sideOf(role) === 'good'), 'goodMustSucceed');
   g.state.cards[playerId] = !wantsFail;
   if (g.state.team.every((id) => id in g.state.cards)) resolveQuest(g);
 }
 
 /** @param {AvalonContext} g */
-function resolveQuest(g) {
+function resolveQuest(g: AvalonContext): void {
   const fails = g.state.team.filter((id) => g.state.cards[id] === false).length;
   const success = fails < currentFailsRequired(g);
   g.state.quests.push({ round: g.state.round, team: g.state.team.slice(), fails, success });
@@ -225,7 +237,7 @@ function resolveQuest(g) {
 
 /** Where a settled quest leaves the game. */
 /** @param {AvalonContext} g */
-function afterQuest(g) {
+function afterQuest(g: AvalonContext): void {
   const successes = g.state.quests.filter((q) => q.success).length;
   const failures = g.state.quests.length - successes;
 
@@ -253,7 +265,7 @@ function afterQuest(g) {
  * shot.
  */
 /** @param {AvalonContext} g @param {string} playerId @param {string} targetId */
-export function assassinate(g, playerId, targetId) {
+export function assassinate(g: AvalonContext, playerId: string, targetId: string): void {
   require_(g.state.phase === 'assassin', 'wrongPhase');
   require_(g.state.roles[playerId] === 'assassin', 'assassinOnly');
   const target = playerById(g, targetId);
@@ -267,7 +279,7 @@ export function assassinate(g, playerId, targetId) {
 }
 
 /** @param {AvalonContext} g @param {'good' | 'evil'} winner @param {string} reason */
-function finish(g, winner, reason) {
+function finish(g: AvalonContext, winner: 'good' | 'evil', reason: string): void {
   g.state.phase = 'over';
   g.state.winner = winner;
   g.state.winReason = reason;
@@ -276,14 +288,18 @@ function finish(g, winner, reason) {
 
 /** What this table agreed to before the cards came out, and keeps. */
 /** @param {AvalonContext} g */
-const lobbyKeeps = (g) => ({
+const lobbyKeeps = (g: AvalonContext): Partial<AvalonState> => ({
   options: g.state.options,
   optionsTouched: Boolean(g.state.optionsTouched),
   houseRules: houseRulesOf(g),
 });
 
 /** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
-export function resetToLobby(g, playerId, { now = Date.now } = {}) {
+export function resetToLobby(
+  g: AvalonContext,
+  playerId: string,
+  { now = Date.now }: { now?: () => number } = {},
+): void {
   lobby.resetToLobby(g, playerId, () => ({
     fresh: createGame(g.room.code, { now, seed: g.room.seed }),
     keep: lobbyKeeps(g),
@@ -291,7 +307,11 @@ export function resetToLobby(g, playerId, { now = Date.now } = {}) {
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
-export function restartToLobby(g, playerId, { now = Date.now } = {}) {
+export function restartToLobby(
+  g: AvalonContext,
+  playerId: string,
+  { now = Date.now }: { now?: () => number } = {},
+): void {
   lobby.restartToLobby(g, playerId, () => ({
     fresh: createGame(g.room.code, { now, seed: g.room.seed }),
     keep: lobbyKeeps(g),
@@ -307,7 +327,7 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
  * @param {string} viewerId
  * @returns {AvalonView}
  */
-export function viewFor(g, viewerId) {
+export function viewFor(g: AvalonContext, viewerId: string): AvalonView {
   const me = playerById(g, viewerId);
   const myRole = g.state.roles[viewerId] ?? null;
   const common = {
@@ -402,16 +422,15 @@ export function viewFor(g, viewerId) {
 }
 
 /** @param {string[]} roles */
-function countRoles(roles) {
-  /** @type {Record<string, number>} */
-  const counts = {};
+function countRoles(roles: AvalonRole[]): Record<string, number> {
+  const counts: Record<string, number> = {};
   for (const role of roles) counts[role] = (counts[role] ?? 0) + 1;
   return counts;
 }
 
 /** The lobby's deck, or nothing when this table cannot be dealt as asked. */
 /** @param {AvalonContext} g */
-function safeRoleCounts(g) {
+function safeRoleCounts(g: AvalonContext): Record<string, number> | null {
   try {
     return countRoles(buildRoleList(g.room.players.length, liveOptions(g)));
   } catch {
@@ -421,7 +440,7 @@ function safeRoleCounts(g) {
 
 /** How the last vote went, without saying who made it go that way. */
 /** @param {AvalonContext} g */
-function voteTally(g) {
+function voteTally(g: AvalonContext) {
   if (!g.state.lastVote) return null;
   const ballots = Object.values(g.state.lastVote.votes);
   const yes = ballots.filter(Boolean).length;
@@ -435,13 +454,13 @@ function voteTally(g) {
 }
 
 /** @param {AvalonContext} g */
-function waitingFor(g) {
+function waitingFor(g: AvalonContext): Player[] {
   switch (g.state.phase) {
     case 'reveal': return g.room.players.filter((p) => !g.state.ready?.[p.id]);
     case 'team':   return [leader(g)];
     case 'vote':   return g.room.players.filter((p) => !(p.id in g.state.votes));
     case 'quest':  return g.state.team
-      .map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)))
+      .map((id) => playerById(g, id)!)
       .filter((p) => !(p.id in g.state.cards));
     case 'assassin': return g.room.players.filter((p) => g.state.roles[p.id] === 'assassin');
     default: return [];

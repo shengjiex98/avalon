@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import * as w from '../src/games/onuw/game.js';
-import { nightScript, stepMillis } from '../src/games/onuw/rules.js';
+import * as w from '../src/games/onuw/game.ts';
+import { nightScript, stepMillis } from '../src/games/onuw/rules.ts';
 
 let clock = 1_700_000_000_000;
 const now = () => clock;

@@ -5,8 +5,8 @@
 import { h, toast } from './ui.js';
 import { ApiError } from './transport.js';
 
-/** @typedef {import('../types/contracts.js').JoinCommand} JoinCommand */
-/** @typedef {import('../types/contracts.js').ValidatedAction} ValidatedAction */
+/** @typedef {import('../src/contracts/types.ts').JoinCommand} JoinCommand */
+/** @typedef {import('../src/contracts/types.ts').ValidatedAction} ValidatedAction */
 /** @typedef {import('./room-session.js').SessionApp & { testMode: boolean }} TestSeatsApp */
 
 /** Anything `request` rejects with carries a message key; a fault carries none. */

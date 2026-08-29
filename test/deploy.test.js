@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { API_PROTOCOL } from '../src/api-protocol.js';
+import { API_PROTOCOL } from '../src/api-protocol.ts';
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
@@ -94,7 +94,7 @@ test('development type checking is locked, no-emit, and separate from the releas
   const pkg = JSON.parse(await read('../package.json'));
   const lock = JSON.parse(await read('../package-lock.json'));
   const config = JSON.parse(await read('../tsconfig.json'));
-  const contracts = await read('../types/contracts.d.ts');
+  const contracts = await read('../src/contracts/types.ts');
   const ci = await read('../.github/workflows/ci.yml');
   const deploy = await read('../.github/workflows/deploy.yml');
 
@@ -106,6 +106,8 @@ test('development type checking is locked, no-emit, and separate from the releas
   assert.equal(config.compilerOptions.noEmit, true);
   assert.equal(config.compilerOptions.strict, true);
   assert.match(contracts, /ValidatedAction|PersistedRoom|PublicView|GamePhase/);
+  assert.ok(config.include.includes('src/**/*.ts'), 'native server TypeScript is checked');
+  assert.ok(config.include.includes('test/**/*.test.ts'), 'native test TypeScript is checked');
 
   // The browser client is what talks to the API, so leaving it out of the
   // program is what let a request body drift from the contract unnoticed.
@@ -126,7 +128,8 @@ test('the deploy workflow tests the exact archive with trusted checked-out code'
   assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
   assert.match(workflow, /tar -xzf "\$archive" --strip-components=1 -C "\$tree"/);
   assert.match(workflow, /node scripts\/verify-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
-  assert.match(workflow, /cd "\$tree"[\s\S]*node --test "test\/\*\*\/\*\.test\.js"/);
+  assert.match(workflow,
+    /cd "\$tree"[\s\S]*node --test "test\/\*\*\/\*\.test\.js" "test\/\*\*\/\*\.test\.ts"/);
   assert.doesNotMatch(workflow, /"\$tree\/deploy\/controller\.sh"|NTFY_TOPIC=ci-canary/,
     'CI never executes candidate deployment code');
 

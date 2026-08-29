@@ -1,116 +1,109 @@
-export type GameId = import('../src/contracts/actions.ts').GameId;
+import type {
+  AvalonAction, CreateRoomCommand, GameId, JoinCommand, OnuwAction,
+  OnuwNightAction, ValidatedAction,
+} from './actions.ts';
+import type {
+  GameEvent, JournalEntry, LogEntry, PersistedRoom, Player, SnapshotFile,
+} from './persistence.ts';
+
+export type {
+  GameEvent, JournalEntry, LogEntry, OnuwNightAction, PersistedRoom, Player, SnapshotFile,
+};
+export type { GameId };
 export type AvalonPhase = 'lobby' | 'reveal' | 'team' | 'vote' | 'quest' | 'assassin' | 'over';
 export type OnuwPhase = 'lobby' | 'reveal' | 'night' | 'day' | 'vote' | 'over';
 export type GamePhase = AvalonPhase | OnuwPhase;
 
-export type Player = import('../src/contracts/persistence.ts').Player;
-export type LogEntry = import('../src/contracts/persistence.ts').LogEntry;
-export type JournalEntry = import('../src/contracts/persistence.ts').JournalEntry;
-
+export type AvalonRole = 'merlin' | 'percival' | 'servant' | 'assassin'
+  | 'morgana' | 'mordred' | 'oberon' | 'minion';
 export interface AvalonState {
   phase: AvalonPhase;
-  options: Record<string, boolean>;
+  options: { percival: boolean; morgana: boolean; mordred: boolean; oberon: boolean };
   optionsTouched: boolean;
-  houseRules: Record<string, boolean>;
-  roles: Record<string, string>;
+  houseRules: { randomLeader: boolean; hiddenVotes: boolean; resetRejects: boolean };
+  roles: Record<string, AvalonRole>;
   round: number;
   leaderIndex: number;
   rejects: number;
   team: string[];
   votes: Record<string, boolean>;
   lastVote: null | {
-    round: number;
-    attempt: number;
-    team: string[];
-    votes: Record<string, boolean>;
-    approved: boolean;
+    round: number; attempt: number; team: string[];
+    votes: Record<string, boolean>; approved: boolean;
   };
   cards: Record<string, boolean>;
   quests: Array<{ round: number; team: string[]; fails: number; success: boolean }>;
   assassinTarget: string | null;
   winner: 'good' | 'evil' | null;
   winReason: string | null;
-  ready?: Record<string, boolean>;
+  ready?: Record<string, boolean> | undefined;
 }
 
-export interface OnuwScriptStep {
-  key: string;
-  role?: string;
-  seconds: number;
-}
-
-export interface GameEvent {
-  key: string;
-  params: Record<string, unknown>;
-}
-
-export interface OnuwNightAction {
-  skip?: true;
-  centre?: number;
-  target?: string;
-  targets?: string[];
-  mode?: 'player' | 'centre';
-  centres?: number[];
-}
-
+export type OnuwRole = 'werewolf' | 'minion' | 'mason' | 'seer' | 'robber'
+  | 'troublemaker' | 'drunk' | 'insomniac' | 'hunter' | 'tanner' | 'villager';
+export interface OnuwScriptStep { key: string; role?: OnuwRole | undefined; seconds: number }
 export interface OnuwState {
   phase: OnuwPhase;
-  options: Record<string, boolean>;
+  options: {
+    minion: boolean; mason: boolean; drunk: boolean; insomniac: boolean;
+    hunter: boolean; tanner: boolean;
+  };
   optionsTouched: boolean;
-  houseRules: Record<string, boolean>;
-  pace: string;
+  houseRules: { decisiveVote: boolean };
+  pace: 'brisk' | 'normal' | 'relaxed';
   script: OnuwScriptStep[];
   step: number;
   stepEndsAt: number;
   ready: Record<string, boolean>;
-  startRoles: Record<string, string>;
-  centreStart: string[];
-  finalRoles: Record<string, string>;
-  centre: string[];
+  startRoles: Record<string, OnuwRole>;
+  centreStart: OnuwRole[];
+  finalRoles: Record<string, OnuwRole>;
+  centre: OnuwRole[];
   nightActions: Record<string, OnuwNightAction>;
   info: Record<string, GameEvent[]>;
   swaps: GameEvent[];
   votes: Record<string, string>;
   dead: string[];
-  winners: string[];
+  winners: Array<'village' | 'werewolf' | 'tanner'>;
 }
 
-export type PersistedRoom = import('../src/contracts/persistence.ts').PersistedRoom;
-export type CreatedRoom = Omit<PersistedRoom, 'touchedAt'>;
+type PersistedRoomFor<G extends GameId> = Extract<PersistedRoom, { game: { id: G } }>;
+type StateFor<G extends GameId> = G extends 'avalon' ? AvalonState : OnuwState;
+type RoomWithRuntimeState<G extends GameId> = Omit<PersistedRoomFor<G>, 'game'> & {
+  game: { id: G; state: StateFor<G> };
+};
+export type CreatedRoomFor<G extends GameId> = Omit<RoomWithRuntimeState<G>, 'touchedAt'>;
+export type CreatedRoom = CreatedRoomFor<'avalon'> | CreatedRoomFor<'onuw'>;
 
 export interface Subscription {
   playerId: string;
   send: (view: PublicView) => void;
 }
 
-export type RuntimeRoom = PersistedRoom & {
+export type RuntimeRoomFor<G extends GameId> = RoomWithRuntimeState<G> & {
   subscribers: Set<Subscription>;
   timer: NodeJS.Timeout | null;
 };
+export type RuntimeRoom = RuntimeRoomFor<'avalon'> | RuntimeRoomFor<'onuw'>;
 
-type ContextRoom<R extends PersistedRoom> = Omit<R, 'touchedAt'>
-  & Partial<Pick<R, 'touchedAt'>>
-  & { subscribers?: Set<Subscription>; timer?: NodeJS.Timeout | null };
+type ContextRoom<G extends GameId> = Omit<RuntimeRoomFor<G>, 'touchedAt' | 'subscribers' | 'timer'>
+  & { touchedAt?: number; subscribers?: Set<Subscription>; timer?: NodeJS.Timeout | null };
 export type AvalonContext = {
-  room: ContextRoom<import('../src/contracts/persistence.ts').AvalonPersistedRoom>;
+  room: ContextRoom<'avalon'>;
   state: AvalonState;
 };
 export type OnuwContext = {
-  room: ContextRoom<import('../src/contracts/persistence.ts').OnuwPersistedRoom>;
+  room: ContextRoom<'onuw'>;
   state: OnuwState;
 };
 export type GameContext = AvalonContext | OnuwContext;
 
-export type SnapshotFile = import('../src/contracts/persistence.ts').SnapshotFile;
-
 /** A seat this browser holds, remembered so a reload can offer it back. */
 export type StoredSeat = { id: string; name: string };
 
-export type CreateRoomCommand = import('../src/contracts/actions.ts').CreateRoomCommand;
-export type JoinCommand = import('../src/contracts/actions.ts').JoinCommand;
-export type AvalonCommand = import('../src/contracts/actions.ts').AvalonAction;
-export type OnuwCommand = import('../src/contracts/actions.ts').OnuwAction;
-export type ValidatedAction = import('../src/contracts/actions.ts').ValidatedAction;
+export type { CreateRoomCommand, JoinCommand, ValidatedAction };
+export type AvalonCommand = AvalonAction;
+export type OnuwCommand = OnuwAction;
 type ActorOptional<T> = T extends { playerId: string }
   ? Omit<T, 'playerId'> & { playerId?: string }
   : T;
@@ -260,26 +253,27 @@ export type OnuwOverView = OnuwInGame<'over', OnuwOverYou, OnuwOverPlayer> & {
 export type OnuwView = OnuwLobbyView | OnuwRevealView | OnuwNightView
   | OnuwDayView | OnuwVoteView | OnuwOverView;
 export type PublicView = AvalonView | OnuwView;
+type PublicViewFor<G extends GameId> = G extends 'avalon' ? AvalonView : OnuwView;
 
-export interface GameEntry {
-  id: GameId;
+export interface GameEntry<G extends GameId> {
+  id: G;
   minPlayers: number;
   maxPlayers: number;
-  create(code: string, options?: { now?: () => number; seed?: number }): CreatedRoom;
+  create(code: string, options?: { now?: () => number; seed?: number }): CreatedRoomFor<G>;
   rosterChange(
-    room: RuntimeRoom,
+    room: RuntimeRoomFor<G>,
     type: 'join' | 'leave',
     player: { id: string; name?: string; avatar?: string },
   ): unknown;
   command(
-    room: RuntimeRoom,
+    room: RuntimeRoomFor<G>,
     playerId: string,
     body: RoomCommand,
     operationContext: { now: () => number },
   ): unknown;
-  view(room: RuntimeRoom, playerId: string, now: number): PublicView;
-  deadline(room: RuntimeRoom): number | null;
-  tick(room: RuntimeRoom, now: number): boolean;
+  view(room: RuntimeRoomFor<G>, playerId: string, now: number): PublicViewFor<G>;
+  deadline(room: RuntimeRoomFor<G>): number | null;
+  tick(room: RuntimeRoomFor<G>, now: number): boolean;
 }
 
 export interface RoomRegistry {

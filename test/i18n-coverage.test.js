@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 
 import { STRINGS } from '../public/i18n.js';
-import { ROLES } from '../src/games/avalon/rules.js';
+import { ROLES } from '../src/games/avalon/rules.ts';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
@@ -13,9 +13,9 @@ const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 async function serverSources() {
   const dir = new URL('../src/', import.meta.url);
   const files = await readdir(dir, { recursive: true });
-  const js = files.filter((f) => f.endsWith('.js')).sort();
-  assert.ok(js.length >= 5, `expected to find the server sources, found ${js.length}`);
-  return Promise.all(js.map((f) => readFile(new URL(f, dir), 'utf8')));
+  const sources = files.filter((f) => f.endsWith('.js') || f.endsWith('.ts')).sort();
+  assert.ok(sources.length >= 5, `expected to find the server sources, found ${sources.length}`);
+  return Promise.all(sources.map((f) => readFile(new URL(f, dir), 'utf8')));
 }
 
 /** Every client source, so a game's panels cannot skip the check either. */
