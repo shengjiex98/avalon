@@ -156,7 +156,11 @@ export function createRoomSession({
     code = code.toUpperCase();
     try {
       const response = await request(`/api/rooms/${code}/join`, {
-        body: { name, playerId: store.playerFor(code), avatar: app.avatarUpload ?? undefined },
+        body: {
+          name,
+          playerId: store.playerFor(code) ?? undefined,
+          avatar: app.avatarUpload ?? undefined,
+        },
       });
       app.code = code;
       app.playerId = response.playerId;

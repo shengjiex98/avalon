@@ -146,7 +146,7 @@ export interface SnapshotFile {
 }
 
 export type CreateRoomCommand = { game?: string };
-export type JoinCommand = { name: string; playerId?: string; avatar?: string | false };
+export type JoinCommand = { name: string; playerId?: string | null; avatar?: string | false };
 type PlayerCommand<T extends string> = { type: T; playerId: string };
 export type SharedCommand =
   | (PlayerCommand<'setGame'> & { game: string })

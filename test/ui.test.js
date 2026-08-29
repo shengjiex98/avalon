@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
+import { validateCreateRoom, validateJoin } from '../src/api-validation.js';
 
 const dom = installDom();
 // A game this build no longer knows, left behind by an older one.
@@ -170,6 +171,24 @@ test('pressing Enter in the name field triggers the action that fits', async () 
   fresh.byId('nameInput').dispatch('keydown', { key: 'Enter' });
   await new Promise((r) => setTimeout(r, 0));
   assert.ok(dom.calls.some((c) => c.path === '/api/rooms' && c.method === 'POST'), 'otherwise it creates');
+});
+
+test('creating a room sends bodies the server will accept', async () => {
+  const view = home();
+  view.byId('nameInput').value = 'Ann';
+  dom.state.responses.set('/api/rooms', { code: 'NEW1' });
+  dom.state.responses.set('/api/rooms/NEW1/join', { playerId: 'pid-1', code: 'NEW1' });
+  view.findAll((n) => n.tagName === 'BUTTON').find((b) => /create/i.test(b.text)).dispatch('click');
+  await new Promise((r) => setTimeout(r, 0));
+
+  // The brand-new room holds no seat for this browser, so the join carries no
+  // id at all rather than a null one the request validator would reject.
+  const create = dom.calls.find((c) => c.path === '/api/rooms' && c.method === 'POST');
+  const join = dom.calls.find((c) => c.path === '/api/rooms/NEW1/join');
+  assert.ok(create && join, 'creating a room joins it');
+  assert.ok(!('playerId' in join.body), 'no stored seat means no id, not a null one');
+  validateCreateRoom(create.body);
+  validateJoin(join.body);
 });
 
 test('the language toggle redraws the whole screen in Chinese', () => {
