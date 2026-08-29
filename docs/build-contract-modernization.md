@@ -192,14 +192,34 @@ nothing the engines do not already guard, while making every additive field a
 protocol-compatibility event for a client that ships on a different schedule
 than the server. Engine-level legality checks are unaffected. Phase 2 owns it.
 
-**D2 — The `gameContext` Proxy is decided on purpose, not incidentally.** The
-Proxy in `src/games/index.js` forwards ten room fields onto engine state so
-engines keep a flat API. No build decision created it, and TypeScript makes it
-harder rather than easier, because a Proxy is exactly what a structural type
-system cannot see through. Phase 3 must either replace it with explicit context
-construction or keep it and type its boundary honestly — and must say which, in
-the PR, before converting the modules around it. Do not let it be removed as a
-side effect of a rename.
+**D2 — The `gameContext` Proxy is removed, not typed around.** `gameContext` in
+`src/games/index.js` wraps `room.game.state` in a Proxy and forwards ten room
+fields onto it, so engines can read `g.players` (room) and `g.roles` (state) off
+one flat object. `splitState` is its inverse, and `ROOM_FIELDS` is the lookup
+table both consult — including three renames (`version`/`revision`,
+`actions`/`journal`, `actionsDropped`/`journalDropped`).
+
+No build decision created this, and TypeScript cannot check it: a Proxy is typed
+as its target, so the claim that the result is `EngineShared & AvalonState` is an
+unchecked assertion, and the string table connecting the two shapes is invisible
+to the compiler. That gap admits two silent failures — a field added to
+`EngineShared` but not to `ROOM_FIELDS` type-checks and returns `undefined`, and
+a field missed by `splitState` persists into `game.state` where `restore.js`
+rejects the whole snapshot on the next restart, ending every live game.
+
+The decision is to remove it. Engines take an explicit context — `{ room, state }`
+— and address `c.room.players` and `c.state.roles` directly. This deletes
+`gameContext`, `splitState`, and `ROOM_FIELDS` outright rather than typing around
+them, removes the four places `rooms.js` builds a Proxy merely to read one field,
+and sorts the `lobby.js` helpers into those that need the room and those that
+need game state. That boundary is what `docs/architecture.md` already claims the
+design has; today it is asserted in prose and erased by the facade.
+
+The cost is real and is accepted: it changes signatures and field access across
+roughly a thousand lines of stable engine code. It is bounded by the existing
+behavioral suites — `game.test.js`, `onuw.test.js`, `determinism.test.js`, and
+`rooms.test.js` — which must pass unchanged throughout, and it is sequenced in
+Phase 3 to keep the diff reviewable.
 
 **D3 — No browser automation is added.** Playwright was considered and
 rejected. It is a large dependency, a browser download in CI, a second test
@@ -318,7 +338,7 @@ count.
 | 0 | - [ ] | Characterize behavior and prove the toolchain | Old and candidate builds pass the same characterization tests |
 | 1 | - [ ] | Add a production build beside the current entrypoints | `dist/` is reproducible and not yet deployed |
 | 2 | - [ ] | Establish shared contracts and schema parsing | Parsed commands are typed and dispatched; D1 is in effect |
-| 3 | - [ ] | Convert the server and game engines to TypeScript | No server JSDoc type layer remains; D2 is answered |
+| 3 | - [ ] | Remove the Proxy (3a), then convert the server to TypeScript (3b) | The flattening facade is gone and no server JSDoc type layer remains |
 | 4 | - [ ] | Discriminate public views by game and phase | No catch-all view field; renderers narrow before reading |
 | 5 | - [ ] | Convert the browser client to TypeScript | Every browser module is strictly checked; action casts are gone |
 | 6 | - [ ] | Switch release and Pages to the new artifact shape | Production runs the extracted archive with rollback intact |
@@ -443,13 +463,49 @@ Acceptance:
 Goal: make the server implementation readable as typed source rather than
 JavaScript surrounded by assertions.
 
-Answer D2 first. Before converting `src/games/`, decide in writing whether the
-`gameContext` Proxy is replaced by explicit context construction or kept and
-typed at its boundary, and say why in the PR. This is the single item most
-likely to expand, because it is where the current architecture and a structural
-type system disagree. It gets its own PR either way.
+This phase has two halves and they must not be interleaved. **3a removes the
+Proxy while the code is still JavaScript. 3b converts to TypeScript.** Doing the
+refactor first, in JavaScript, keeps each diff about one thing: 3a is a pure
+signature and field-access change that the existing engine tests fully cover, and
+3b is then the mechanical rename working rule 4 asks for. Doing it the other way
+round, or at once, produces one large diff mixing renames with logic and gives up
+the ability to bisect a behavior regression to either cause.
 
-Suggested conversion order after that:
+#### Phase 3a — remove the Proxy (JavaScript, behavior-preserving)
+
+Target shape: each engine takes a context object `{ room, state }` in the
+position `g` occupies today, so call-site arity does not change. `createGame`
+returns `{ room, state }` directly instead of a flat object for `splitState` to
+tear apart. `lobby.js` helpers that touch only room fields (`record`, `randInt`,
+`shuffleWith`, `playerById`, `logEvent`, `addPlayer`, `removePlayer`) take the
+room; the rest take the context.
+
+- [ ] Convert `lobby.js` helpers first, since both engines depend on them.
+- [ ] Convert Avalon and ONUW engines, one PR each. Mechanical substitution:
+      `g.<room field>` becomes `c.room.<field>`, everything else becomes
+      `c.state.<field>`. Apply the three renames at their new call sites.
+- [ ] Replace the four `gameContext(room)` uses in `rooms.js` with direct
+      access; none of them needed a facade.
+- [ ] Change `restore.js` validators to take `{ room, state }` instead of a
+      context plus a redundant second state argument.
+- [ ] Delete `gameContext`, `splitState`, and `ROOM_FIELDS` in the PR that
+      removes their last caller.
+- [ ] Do not change persisted JSON. The stored shape is already
+      `{ room fields..., game: { id, state } }`; this phase only stops
+      pretending it is flat.
+
+Acceptance for 3a:
+
+- `gameContext`, `splitState`, and `ROOM_FIELDS` no longer exist.
+- Every engine and room test passes unchanged; no test is edited except where a
+  signature it calls directly has changed.
+- Persisted snapshots written before the change still restore, and
+  `STATE_VERSION` is unchanged.
+- The source is still JavaScript. No `.ts` file is introduced in 3a.
+
+#### Phase 3b — convert to TypeScript
+
+Suggested conversion order:
 
 1. version constants, rules, and small shared primitives;
 2. lobby and game engines;
@@ -461,14 +517,17 @@ Suggested conversion order after that:
 Tasks:
 
 - [ ] Rename one coherent module group at a time and update imports
-      mechanically. Do not combine a rename with a behavioral refactor.
+      mechanically. Do not combine a rename with a behavioral refactor — 3a
+      exists so that this is possible.
 - [ ] Replace JSDoc imports, `@ts-check`, and `/** @type */` assertions with
       TypeScript declarations or real narrowing.
 - [ ] Model the game registry with explicit generic/discriminated operations.
       Remove `Record<string, any>` and module-wide `any` once focused game and
       room tests have direct typed seams.
-- [ ] Keep the persisted room envelope separate from game-owned state in both
-      types and runtime data.
+- [ ] Type the room envelope and game-owned state as separate shapes, matching
+      the split 3a made explicit at runtime. The context is
+      `{ room: RuntimeRoom, state: AvalonState | OnuwState }`, discriminated per
+      game so an engine cannot reach the other game's fields.
 - [ ] Convert restore validation to strict Zod schemas, keeping the cross-field
       refinements for roster references and phase invariants as explicit,
       readable rules rather than dissolving them into schema shape.
@@ -478,7 +537,7 @@ Tasks:
 - [ ] Keep tests behavior-focused; do not add tests that assert `.ts` suffixes
       or particular type aliases exist.
 
-Acceptance:
+Acceptance for 3b:
 
 - All server and game source is strict TypeScript.
 - No `any` remains in production server code without a one-line explanation at
@@ -664,7 +723,9 @@ Acceptance:
    change. D1 is the one named behavior change in this plan. State
    `API_PROTOCOL` and `STATE_VERSION` impact in every PR.
 4. Prefer mechanical rename-only commits before typed refactors. This keeps
-   review and `git blame` useful.
+   review and `git blame` useful. Phase 3a is the deliberate exception and its
+   own reason: it lands a behavior-preserving refactor in JavaScript *before*
+   the rename, so that the rename can stay mechanical.
 5. When introducing a schema, delete the corresponding hand-written validator in
    the same PR, or explain the short-lived duplication and name the PR that will
    remove it.
