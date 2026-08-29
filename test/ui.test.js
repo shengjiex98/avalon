@@ -38,6 +38,11 @@ function lobbyView(viewerId, count = 2) {
   const me = players.find((p) => p.id === viewerId);
   return {
     code: 'WXYZ', gameId: 'avalon', phase: 'lobby', hostId: 'p1',
+    setup: {
+      minPlayers: 5, maxPlayers: 10,
+      options: ['percival', 'morgana', 'mordred', 'oberon'],
+      houseRules: ['randomLeader', 'hiddenVotes', 'resetRejects'],
+    },
     you: { id: me.id, name: me.name, role: null, side: null },
     players,
     options: { percival: false, morgana: false, mordred: false, oberon: false },
@@ -204,9 +209,9 @@ test('the Pages client remembers a compatible server', async () => {
 test('an incompatible server reports both protocol versions', () => {
   home();
   app.serverStatus = 'incompatible';
-  app.serverProtocol = 3;
+  app.serverProtocol = 4;
   render();
-  assert.match(dom.fixtures.view.text, /protocol 2.*server uses 3/);
+  assert.match(dom.fixtures.view.text, /protocol 3.*server uses 4/);
 });
 
 test('the lobby shows the room code and every player', () => {

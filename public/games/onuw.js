@@ -3,7 +3,6 @@
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
 
 export const id = 'onuw';
-export const minPlayers = 3;
 export const rulesKey = 'onuw.rules.body';
 export const taglineKey = 'onuw.tagline';
 
@@ -154,7 +153,6 @@ function onView() {
   announce(night);
 }
 
-const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
 /**
  * House rules are variants, not cards, so they sit under their own heading and
  * keep their description on screen: the table has to be able to read what it is
@@ -162,7 +160,6 @@ const OPTIONS = ['minion', 'mason', 'drunk', 'insomniac', 'hunter', 'tanner'];
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const HOUSE_RULES = ['decisiveVote'];
 const roleName = (role) => T(`onuw.role.${role}`);
 const houseRuleName = (rule) => T(`onuw.house.${rule}`);
 
@@ -266,13 +263,13 @@ function lobbyOptions() {
     h('h2', { text: T('lobby.roles') }),
     isHost ? null : h('p', { class: 'muted', text: T('lobby.hostOnlyRoles') }),
     h('p', { class: 'option-room', text: T('onuw.optionRoom', { n: v.optionRoom }) }),
-    h('div', { class: 'role-options' }, OPTIONS.map(toggle)),
+    h('div', { class: 'role-options' }, v.setup.options.map(toggle)),
     ...(v.houseRules ? [
       h('h3', { text: T('onuw.houseRules') }),
-      h('div', { class: 'house-rules' }, HOUSE_RULES.map(houseToggle)),
+      h('div', { class: 'house-rules' }, v.setup.houseRules.map(houseToggle)),
     ] : []),
     h('h3', { text: T('onuw.pace') }),
-    h('div', { class: 'row pace-picker' }, ['brisk', 'normal', 'relaxed'].map((pace) => h('button', {
+    h('div', { class: 'row pace-picker' }, v.setup.paces.map((pace) => h('button', {
       class: `btn grow ${v.pace === pace ? 'primary' : ''}`, id: `pace-${pace}`, disabled: !isHost,
       onclick: () => send('options', { options: { pace } }),
     }, T(`onuw.pace.${pace}`)))),
@@ -396,7 +393,7 @@ function closeInfoPopup() {
 }
 
 /** The variants this table switched on, in the order they are listed. */
-const houseRulesInForce = () => HOUSE_RULES.filter((rule) => app.view.houseRules?.[rule]);
+const houseRulesInForce = () => app.view.setup.houseRules.filter((rule) => app.view.houseRules?.[rule]);
 
 /**
  * Which roles are in this game, what each of them does, and the order the
@@ -719,7 +716,7 @@ function dispose() {
 }
 
 return {
-  id, minPlayers, rulesKey, taglineKey,
+  id, rulesKey, taglineKey,
   onView, formatParams, lobbyOptions, header_, paneKey, panes, dispose,
 };
 }

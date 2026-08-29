@@ -383,73 +383,100 @@ export function viewFor(g, viewerId, now = Date.now()) {
   const startRole = g.startRoles[viewerId] ?? null;
   const step = currentStep(g);
   const awake = night && isAwake(g, viewerId);
+  const action = awake ? actionFor(g, viewerId) : null;
   // Readiness is public before night begins. During the night, nobody is
   // waited on by name — see the note at the top of this file.
   const waiting = g.phase === 'reveal'
     ? g.players.filter((p) => !g.ready[p.id])
     : g.phase === 'vote' ? g.players.filter((p) => !(p.id in g.votes)) : [];
 
-  return {
+  const common = {
     ...lobby.baseView(g, viewerId),
+    setup: {
+      minPlayers: MIN_PLAYERS,
+      maxPlayers: MAX_PLAYERS,
+      options: OPTIONAL_ROLES.slice(),
+      houseRules: HOUSE_RULE_KEYS.slice(),
+      paces: Object.keys(PACES),
+    },
     you: me ? {
       id: me.id, name: me.name, avatar: me.avatar ?? null,
-      role: startRole,
-      team: startRole ? teamOf(startRole) : null,
-      finalRole: over ? g.finalRoles[viewerId] : undefined,
-      awake,
-      action: awake ? actionFor(g, viewerId) : null,
-      acted: viewerId in g.nightActions,
-      voted: viewerId in g.votes,
+      ...(g.phase === 'lobby' ? {} : {
+        role: startRole,
+        team: startRole ? teamOf(startRole) : null,
+      }),
+      ...(over ? { finalRole: g.finalRoles[viewerId] } : {}),
+      ...(night ? {
+        awake,
+        ...(action ? { action } : {}),
+        acted: viewerId in g.nightActions,
+      } : {}),
+      ...(g.phase === 'vote' ? { voted: viewerId in g.votes } : {}),
     } : null,
     players: g.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar ?? null,
       seat: i,
-      ready: g.phase === 'reveal' ? Boolean(g.ready[p.id]) : undefined,
+      ...(g.phase === 'reveal' ? { ready: Boolean(g.ready[p.id]) } : {}),
       // No `acted` at night: it would be false only for players holding an
       // action role, which is the deck read straight off the screen.
-      voted: g.phase === 'vote' ? p.id in g.votes : undefined,
-      votedFor: over ? g.votes[p.id] ?? null : undefined,
-      dead: over ? g.dead.includes(p.id) : undefined,
-      startRole: over ? g.startRoles[p.id] : undefined,
-      finalRole: over ? g.finalRoles[p.id] : undefined,
+      ...(g.phase === 'vote' ? { voted: p.id in g.votes } : {}),
+      ...(over ? {
+        votedFor: g.votes[p.id] ?? null,
+        dead: g.dead.includes(p.id),
+        startRole: g.startRoles[p.id],
+        finalRole: g.finalRoles[p.id],
+      } : {}),
     })),
+  };
+
+  if (g.phase === 'lobby') return {
+    ...common,
     options: { ...liveOptions(g) },
     houseRules: houseRulesOf(g),
     optionRoom: roomForOptions(g.players.length),
-    deck: g.phase === 'lobby'
-      ? safeDeck(g)
-      : countRoles([...Object.values(g.startRoles), ...g.centreStart]),
-    centreCount: g.centreStart.length || 3,
-    // Never the contents — only how many face-down cards are on the table.
-    centre: over ? g.centre : null,
-    centreStart: over ? g.centreStart : null,
+    deck: safeDeck(g),
+    pace: g.pace,
+    nightScript: lobbyScript(g).map((entry) => entry.key),
+    nightSeconds: nightLength(lobbyDeck(g), g.pace) / 1000,
+  };
+
+  const inGame = {
+    ...common,
+    houseRules: houseRulesOf(g),
+    deck: countRoles([...Object.values(g.startRoles), ...g.centreStart]),
+    centreCount: g.centreStart.length,
+    nightScript: g.script.map((entry) => entry.key),
+    info: g.info[viewerId] ?? [],
+  };
+
+  if (g.phase === 'reveal') return { ...inGame, waitingFor: waiting.map((p) => p.id) };
+  if (g.phase === 'night') return {
+    ...inGame,
     // The same clock for every player, so the countdown can never be read as
     // a signal about who is doing what.
-    night: night && step ? {
+    night: step ? {
       index: g.step,
       total: g.script.length,
       key: step.key,
       msLeft: Math.max(0, g.stepEndsAt - now),
       msTotal: stepMillis(step, g.pace),
     } : null,
-    pace: g.pace,
-    nightScript: (g.script.length ? g.script : lobbyScript(g)).map((entry) => entry.key),
-    nightSeconds: nightLength(g.script.length ? scriptDeck(g) : lobbyDeck(g), g.pace) / 1000,
-    // Only ever this player's own findings, and only once they have them.
-    info: g.info[viewerId] ?? [],
-    swaps: over ? g.swaps : [],
-    votes: over ? { ...g.votes } : {},
-    dead: over ? g.dead : [],
-    winners: over ? g.winners : [],
-    youWon: over && me ? g.winners.includes(teamOf(g.finalRoles[viewerId])) : undefined,
-    waitingFor: waiting.map((p) => p.id),
   };
+  if (g.phase === 'day') return inGame;
+  if (g.phase === 'vote') return { ...inGame, waitingFor: waiting.map((p) => p.id) };
+  if (g.phase === 'over') return {
+    ...inGame,
+    centre: g.centre,
+    swaps: g.swaps,
+    dead: g.dead,
+    winners: g.winners,
+    ...(me ? { youWon: g.winners.includes(teamOf(g.finalRoles[viewerId])) } : {}),
+  };
+  throw new Error(`unknown One Night phase: ${g.phase}`);
 }
 
-/** The deck this game was dealt from, for describing its night. */
-const scriptDeck = (g) => [...Object.values(g.startRoles), ...g.centreStart];
 const lobbyDeck = (g) => safeDeckList(g) ?? [];
 const lobbyScript = (g) => nightScript(lobbyDeck(g));
 

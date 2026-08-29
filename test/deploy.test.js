@@ -74,6 +74,22 @@ test('game renderers are constructed without mutable module bindings', async () 
   }
 });
 
+test('the Pages renderers consume server-owned setup metadata', async () => {
+  const app = await read('../public/app.js');
+  const avalon = await read('../public/games/avalon.js');
+  const onuw = await read('../public/games/onuw.js');
+
+  assert.match(app, /v\.setup\.minPlayers/);
+  assert.match(avalon, /v\.setup\.options/);
+  assert.match(avalon, /v\.setup\.houseRules/);
+  assert.match(onuw, /v\.setup\.options/);
+  assert.match(onuw, /v\.setup\.houseRules/);
+  assert.match(onuw, /v\.setup\.paces/);
+  for (const source of [avalon, onuw]) {
+    assert.doesNotMatch(source, /export const minPlayers|const (?:OPTIONS|HOUSE_RULES)\s*=/);
+  }
+});
+
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);

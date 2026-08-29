@@ -39,8 +39,8 @@ Fixed decisions:
 
 | Order | Tracking | Planned change | Involvement | Expected LOC effect | Why | Theirs / mine / combined |
 |---:|:---:|---|---|:---:|---|---|
-| 17 | - [ ] | Strictly validate API requests and return accurate HTTP statuses | Small–medium | Adds | Non-object JSON must not cause 500s, and absence, conflict, size, and rate errors should be distinct. | **Mine** — I reproduced the malformed-request failures and the broad error mapping. |
-| 18 | - [ ] | Make server views authoritative and phase-specific | Medium | Maintains | The Pages client should consume server-owned metadata and receive only fields valid for the current phase. | **Combined** — they proposed server metadata; mine adds discriminated public views. |
+| 17 | - [x] | Strictly validate API requests and return accurate HTTP statuses | Small–medium | Adds | Non-object JSON must not cause 500s, and absence, conflict, size, and rate errors should be distinct. | **Mine** — I reproduced the malformed-request failures and the broad error mapping. |
+| 18 | - [x] | Make server views authoritative and phase-specific | Medium | Maintains | The Pages client should consume server-owned metadata and receive only fields valid for the current phase. | **Combined** — they proposed server metadata; mine adds discriminated public views. |
 | 19 | - [ ] | Add configurable room, request, join, action, and avatar-work limits | Medium | Adds | Public endpoints need finite memory, work, and provider-quota exposure. | **Mine** — this is the abuse-resistance portion of my public-server review. |
 | 20 | - [ ] | Add a complete avatar lifecycle policy | Medium | Adds | Persistent quotas, retention, and stale-job protection bound disk use and asynchronous races. | **Combined** — their review identified memory growth; mine extends it to persistent resources and ordering. |
 | 21 | - [ ] | Add real seat authentication while retaining Pages and multi-seat test mode | Involved, critical | Adds | A public seat ID must not authorize private views or actions. | **Mine, Pages-compatible** — this combines the authentication and cross-origin transport consequences. |

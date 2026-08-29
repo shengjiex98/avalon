@@ -264,6 +264,39 @@ test('the view tells each client who the game is waiting on', () => {
   assert.deepEqual(g.viewFor(game, 'p0').waitingFor, ['p1', 'p2', 'p3', 'p4']);
 });
 
+test('Avalon views are discriminated by phase and carry server-owned setup metadata', () => {
+  const game = setup(5);
+  game.team = ['p0', 'p1'];
+
+  const view = (phase) => {
+    game.phase = phase;
+    return g.viewFor(game, 'p0');
+  };
+
+  const lobby = view('lobby');
+  assert.equal(lobby.gameId, 'avalon');
+  assert.deepEqual(lobby.setup, {
+    minPlayers: 5, maxPlayers: 10,
+    options: ['percival', 'morgana', 'mordred', 'oberon'],
+    houseRules: ['randomLeader', 'hiddenVotes', 'resetRejects'],
+  });
+  assert.ok('options' in lobby && 'deck' in lobby);
+  assert.ok(!('round' in lobby) && !('roleCounts' in lobby));
+
+  const reveal = view('reveal');
+  assert.ok('waitingFor' in reveal && !('team' in reveal));
+  const team = view('team');
+  assert.ok('teamSize' in team && 'failsRequired' in team && 'team' in team);
+  const vote = view('vote');
+  assert.ok('team' in vote && 'hasVoted' in vote.players[0] && !('failsRequired' in vote));
+  const quest = view('quest');
+  assert.ok('failsRequired' in quest && 'hasPlayed' in quest.players[0]);
+  const assassin = view('assassin');
+  assert.ok('assassinTarget' in assassin && !('winner' in assassin));
+  const over = view('over');
+  assert.ok('winner' in over && 'role' in over.players[0] && !('waitingFor' in over));
+});
+
 test('play again returns the same table to the lobby', () => {
   const game = setup(5);
   runQuest(game, { fails: 1 }); runQuest(game, { fails: 1 }); runQuest(game, { fails: 1 });

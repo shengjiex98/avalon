@@ -12,7 +12,7 @@ const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
 const VERSION_CHECK_MS = 60_000;
 const PROBE_RETRY_MS = 15_000;
-const API_PROTOCOL = 2;
+const API_PROTOCOL = 3;
 const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 
 // ---------------------------------------------------------------- state
@@ -548,7 +548,7 @@ const paneTestMode = () => testSeats.pane();
 function paneLobby(game) {
   const v = app.view;
   const isHost = v.you?.id === v.hostId;
-  const enough = v.players.length >= game.minPlayers;
+  const enough = v.players.length >= v.setup.minPlayers;
 
   return [
     h('div', { class: 'card stack' },
@@ -577,7 +577,7 @@ function paneLobby(game) {
         ? h('button', {
             class: 'btn primary grow', id: 'startBtn', disabled: !enough,
             onclick: () => send('start'),
-          }, enough ? T('lobby.start') : T('lobby.needMore', { min: game.minPlayers, n: v.players.length }))
+          }, enough ? T('lobby.start') : T('lobby.needMore', { min: v.setup.minPlayers, n: v.players.length }))
         : h('span', { class: 'muted grow', text: T('lobby.waitingHost') }),
       h('button', { class: 'btn ghost', onclick: leaveRoom }, T('lobby.leave')),
     ),

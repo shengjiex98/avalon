@@ -25,6 +25,9 @@ async function withServer(fn, options = {}) {
 const post = (base, path, body) =>
   fetch(base + path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) });
 
+const postText = (base, path, body, contentType = 'application/json') =>
+  fetch(base + path, { method: 'POST', headers: { 'content-type': contentType }, body });
+
 /** Read SSE frames from a room as an async iterator of parsed views. */
 async function* views(base, code, playerId, signal) {
   const res = await fetch(`${base}/api/rooms/${code}/events?playerId=${playerId}`, { signal });
@@ -226,7 +229,7 @@ test('a room round-trips create, join and reconnect', async () => {
     assert.equal(again.playerId, first.playerId);
 
     const dup = await post(base, `/api/rooms/${code}/join`, { name: 'ann' });
-    assert.equal(dup.status, 400);
+    assert.equal(dup.status, 409);
     assert.equal((await dup.json()).error, 'nameTaken');
   });
 });
@@ -234,7 +237,7 @@ test('a room round-trips create, join and reconnect', async () => {
 test('a stale event stream gets a clean error without crashing the server', async () => {
   await withServer(async (base) => {
     const stale = await fetch(`${base}/api/rooms/ZZZZ/events?playerId=gone`);
-    assert.equal(stale.status, 400);
+    assert.equal(stale.status, 404);
     assert.equal((await stale.json()).error, 'noSuchRoom');
 
     const health = await fetch(base + '/api/health');
@@ -249,18 +252,88 @@ test('game errors come back as translatable keys, not prose', async () => {
     const { playerId } = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
 
     const early = await post(base, `/api/rooms/${code}/action`, { type: 'start', playerId });
-    assert.equal(early.status, 400);
+    assert.equal(early.status, 409);
     assert.deepEqual(await early.json(), { error: 'needMorePlayers', params: { min: 5 } });
 
     const bogus = await post(base, `/api/rooms/${code}/action`, { type: 'nope', playerId });
+    assert.equal(bogus.status, 400);
     assert.equal((await bogus.json()).error, 'unknownAction');
 
     const stranger = await post(base, `/api/rooms/${code}/action`, { type: 'start', playerId: 'not-a-player' });
+    assert.equal(stranger.status, 403);
     assert.equal((await stranger.json()).error, 'notInGame');
 
     const missing = await post(base, '/api/rooms/ZZZZ/join', { name: 'Ann' });
+    assert.equal(missing.status, 404);
     assert.equal((await missing.json()).error, 'noSuchRoom');
   });
+});
+
+test('malformed and wrong-type JSON is rejected before room dispatch', async () => {
+  const rooms = new Rooms();
+  await withServer(async (base) => {
+    for (const body of ['null', '[]', '"text"', '{']) {
+      const response = await postText(base, '/api/rooms', body);
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: 'badRequest', params: {} });
+    }
+
+    const { code } = await (await post(base, '/api/rooms')).json();
+    const badJoin = await post(base, `/api/rooms/${code}/join`, { name: [] });
+    assert.equal(badJoin.status, 400);
+    assert.equal((await badJoin.json()).error, 'badRequest');
+
+    const joined = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
+    const before = rooms.peek(code).revision;
+    for (const body of [
+      null,
+      [],
+      { type: 'vote', playerId: joined.playerId, approve: 'yes' },
+      { type: 'options', playerId: joined.playerId, options: { percival: 1 } },
+      { type: 'start', playerId: joined.playerId, extra: true },
+    ]) {
+      const response = await postText(base, `/api/rooms/${code}/action`, JSON.stringify(body));
+      assert.equal(response.status, 400);
+      assert.equal((await response.json()).error, 'badRequest');
+      assert.equal(rooms.peek(code).revision, before, 'invalid input never reached dispatch');
+    }
+  }, { rooms });
+});
+
+test('API failures use accurate status classes and structured bodies', async () => {
+  await withServer(async (base) => {
+    const wrongMethod = await fetch(base + '/api/rooms');
+    assert.equal(wrongMethod.status, 405);
+    assert.equal(wrongMethod.headers.get('allow'), 'POST');
+    assert.deepEqual(await wrongMethod.json(), { error: 'methodNotAllowed', params: {} });
+
+    const unsupported = await postText(base, '/api/rooms', '{}', 'text/plain');
+    assert.equal(unsupported.status, 415);
+    assert.deepEqual(await unsupported.json(), { error: 'unsupportedMediaType', params: {} });
+
+    const oversized = await postText(base, '/api/rooms', JSON.stringify({ padding: 'x'.repeat(70 * 1024) }));
+    assert.equal(oversized.status, 413);
+    assert.deepEqual(await oversized.json(), { error: 'payloadTooLarge', params: {} });
+
+    const absent = await fetch(base + '/api/not-a-route');
+    assert.equal(absent.status, 404);
+    assert.deepEqual(await absent.json(), { error: 'notFound', params: {} });
+  });
+});
+
+test('unexpected API failures stay server errors', async () => {
+  const rooms = { activeGameCount() { throw new Error('unexpected'); } };
+  const original = console.error;
+  console.error = () => {};
+  try {
+    await withServer(async (base) => {
+      const response = await fetch(base + '/api/health');
+      assert.equal(response.status, 500);
+      assert.deepEqual(await response.json(), { error: 'serverError', params: {} });
+    }, { rooms });
+  } finally {
+    console.error = original;
+  }
 });
 
 test('an action pushes a fresh view to every subscriber', async () => {
@@ -394,8 +467,8 @@ test('a three player werewolf game plays through over the wire', async () => {
     let view = await viewOf(ids[0]);
     assert.equal(view.phase, 'reveal');
     assert.ok(view.you.role, 'each player is dealt a card');
-    assert.equal(view.centre, null, 'the centre is face down');
-    assert.equal(view.night, null, 'the clock waits while roles are being read');
+    assert.equal('centre' in view, false, 'the centre is face down');
+    assert.equal('night' in view, false, 'the clock waits while roles are being read');
 
     for (const id of ids.slice(0, -1)) assert.equal((await act(id, { type: 'confirm' })).status, 200);
     view = await viewOf(ids[0]);
@@ -411,14 +484,14 @@ test('a three player werewolf game plays through over the wire', async () => {
     // Nobody can be identified by what the night is waiting on.
     for (const id of ids) {
       const mine = await viewOf(id);
-      assert.deepEqual(mine.waitingFor, []);
+      assert.equal('waitingFor' in mine, false);
       assert.ok(mine.players.every((p) => p.acted === undefined));
     }
 
     skipNight(code);
     view = await viewOf(ids[0]);
     assert.equal(view.phase, 'day');
-    assert.equal(view.night, null);
+    assert.equal('night' in view, false);
 
     await act(ids[0], { type: 'startVote' });
     await act(ids[0], { type: 'vote', target: ids[1] });

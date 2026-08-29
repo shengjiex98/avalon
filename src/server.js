@@ -9,6 +9,7 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { API_PROTOCOL } from './api-protocol.js';
+import { validateAction, validateCreateRoom, validateJoin } from './api-validation.js';
 import { Avatars } from './avatars.js';
 import { GameError } from './lobby.js';
 import { defaultStateFile, load, save } from './persistence.js';
@@ -69,6 +70,16 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
 };
 
+const CONFLICT_ERRORS = new Set([
+  'alreadyActed', 'alreadyPlayed', 'alreadyVoted', 'assassinOnly', 'badCentreCard',
+  'badPlayerCount', 'badTarget', 'cannotLeaveMidGame', 'cannotTargetSelf',
+  'cannotVoteSelf', 'drunkMustSwap', 'duplicateMember', 'gameAlreadyStarted',
+  'gameInProgress', 'goodMustSucceed', 'hostOnly', 'nameTaken', 'needMorePlayers',
+  'noNightAction', 'notLeader', 'notOnTeam', 'notYourTurn', 'roomFull', 'roomsFull',
+  'tooManyEvilRoles', 'tooManyGoodRoles', 'tooManyRoles', 'troublemakerNotSelf',
+  'unknownMember', 'wrongPhase', 'wrongTeamSize',
+]);
+
 export function createApp({
   rooms = new Rooms(),
   avatars = new Avatars(),
@@ -91,9 +102,13 @@ export function createApp({
       }
       return await serveStatic(req, res, url);
     } catch (err) {
-      if (err instanceof GameError) return json(res, 400, { error: err.key, params: err.params });
+      if (err instanceof GameError) {
+        if (res.headersSent) return res.end();
+        const status = errorStatus(err.key);
+        return json(res, status, { error: err.key, params: err.params });
+      }
       console.error(err);
-      if (!res.headersSent) json(res, 500, { error: 'serverError' });
+      if (!res.headersSent) json(res, 500, { error: 'serverError', params: {} });
       else res.end();
     }
   };
@@ -111,7 +126,8 @@ async function api(rooms, avatars, req, res, url) {
 
   // Liveness always stays healthy. Updaters use /update to avoid interrupting
   // any room whose game has left the lobby.
-  if (req.method === 'GET' && (url.pathname === '/api/health' || url.pathname === '/api/health/update')) {
+  if (url.pathname === '/api/health' || url.pathname === '/api/health/update') {
+    requireMethod(req, res, ['GET']);
     const activeGames = rooms.activeGameCount();
     const updateSafe = activeGames === 0;
     const status = url.pathname === '/api/health/update' && !updateSafe ? 409 : 200;
@@ -129,9 +145,10 @@ async function api(rooms, avatars, req, res, url) {
     });
   }
 
-  if ((req.method === 'GET' || req.method === 'HEAD') && parts[1] === 'avatars' && parts[2] && !parts[3]) {
+  if (parts[1] === 'avatars' && parts[2] && !parts[3]) {
+    requireMethod(req, res, ['GET', 'HEAD']);
     const avatar = await avatars.read(parts[2]);
-    if (!avatar) return json(res, 404, { error: 'notFound' });
+    if (!avatar) throw new GameError('notFound');
     res.writeHead(200, {
       'content-type': avatar.mime,
       'content-length': avatar.bytes.length,
@@ -141,22 +158,28 @@ async function api(rooms, avatars, req, res, url) {
     return res.end(req.method === 'HEAD' ? undefined : avatar.bytes);
   }
 
-  if (req.method === 'POST' && url.pathname === '/api/rooms') {
-    const body = await readJson(req);
+  if (url.pathname === '/api/rooms') {
+    requireMethod(req, res, ['POST']);
+    const body = validateCreateRoom(await readJson(req));
+    if (body.game !== undefined && !GAME_IDS.includes(body.game)) {
+      throw new GameError('noSuchGame', { game: body.game });
+    }
     return json(res, 200, { code: rooms.create(body.game) });
   }
 
   if (parts[0] !== 'api' || parts[1] !== 'rooms' || !parts[2]) {
-    return json(res, 404, { error: 'notFound' });
+    throw new GameError('notFound');
   }
   const code = parts[2].toUpperCase();
   const tail = parts[3];
+  if (parts[4]) throw new GameError('notFound');
 
   // What a reconnecting browser asks after its stream drops: is the room still
   // here, and is my seat still in it? A restart that lost the snapshot answers
   // both, so the client can stop retrying instead of saying "reconnecting"
   // forever. Looking rather than getting: a probe must not renew a room's life.
-  if (req.method === 'GET' && !tail) {
+  if (!tail) {
+    requireMethod(req, res, ['GET']);
     const room = rooms.peek(code);
     const playerId = url.searchParams.get('playerId');
     return json(res, 200, {
@@ -165,12 +188,14 @@ async function api(rooms, avatars, req, res, url) {
     });
   }
 
-  if (req.method === 'GET' && tail === 'events') {
+  if (tail === 'events') {
+    requireMethod(req, res, ['GET']);
     return stream(rooms, req, res, code, url.searchParams.get('playerId'));
   }
 
-  if (req.method === 'POST' && tail === 'join') {
-    const body = await readJson(req, 384 * 1024);
+  if (tail === 'join') {
+    requireMethod(req, res, ['POST']);
+    const body = validateJoin(await readJson(req, 384 * 1024));
     let playerId = typeof body.playerId === 'string' ? body.playerId : null;
     const room = rooms.get(code);
     const known = playerId && room.players.some((p) => p.id === playerId);
@@ -190,19 +215,40 @@ async function api(rooms, avatars, req, res, url) {
     return;
   }
 
-  if (req.method === 'POST' && tail === 'action') {
+  if (tail === 'action') {
+    requireMethod(req, res, ['POST']);
     const body = await readJson(req);
-    if (typeof body.playerId !== 'string') return json(res, 400, { error: 'notInGame' });
-
+    const room = rooms.peek(code);
+    if (!room) throw new GameError('noSuchRoom', { code });
+    validateAction(room.game.id, body);
+    if (body.type === 'setGame' && !GAME_IDS.includes(body.game)) {
+      throw new GameError('noSuchGame', { game: body.game });
+    }
     rooms.dispatch(code, body.playerId, body);
     return json(res, 200, { ok: true });
   }
 
-  return json(res, 404, { error: 'notFound' });
+  throw new GameError('notFound');
+}
+
+function requireMethod(req, res, methods) {
+  if (methods.includes(req.method)) return;
+  res.setHeader('allow', methods.join(', '));
+  throw new GameError('methodNotAllowed');
+}
+
+function errorStatus(key) {
+  if (key === 'notFound' || key === 'noSuchRoom') return 404;
+  if (key === 'methodNotAllowed') return 405;
+  if (key === 'payloadTooLarge') return 413;
+  if (key === 'unsupportedMediaType') return 415;
+  if (key === 'notInGame') return 403;
+  if (CONFLICT_ERRORS.has(key)) return 409;
+  return 400;
 }
 
 function stream(rooms, req, res, code, playerId) {
-  if (!playerId) return json(res, 400, { error: 'notInGame' });
+  if (!playerId) throw new GameError('notInGame');
   // Validate before committing the SSE headers. A stale room URL must get a
   // normal JSON error, rather than throwing after the 200 response has begun.
   const room = rooms.get(code);
@@ -279,6 +325,10 @@ function json(res, status, payload) {
 }
 
 async function readJson(req, maxBytes = 64 * 1024) {
+  const contentType = String(req.headers['content-type'] ?? '').toLowerCase().split(';', 1)[0].trim();
+  if (contentType !== 'application/json') {
+    throw new GameError('unsupportedMediaType');
+  }
   const chunks = [];
   let size = 0;
   for await (const chunk of req) {
