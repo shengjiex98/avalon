@@ -83,10 +83,11 @@ needed to gain native TypeScript.
 
 The `gameContext` proxy is not preserved as an architectural option. It exists
 to make split room/game state look like one flat mutable object, which is the
-kind of relationship structural typing cannot make honest. Phase 3 replaces it
-with explicit typed ownership and operations. If that cannot be done without
-making each game depend on room internals, the stop rule applies and the
-concrete alternative comes back for human review.
+kind of relationship structural typing cannot make honest. Phase 3 first
+replaces it in JavaScript with explicit ownership, then converts that stable
+boundary mechanically to TypeScript. If explicit ownership would instead make
+each game depend on room internals, the stop rule applies and the concrete
+alternative comes back for human review.
 
 ### Runtime schemas replace structural hand-validation
 
@@ -127,11 +128,12 @@ Browsers do not execute TypeScript. Browser modules will therefore be compiled,
 but the first implementation uses the TypeScript compiler already present in
 the repository, emitting plain ES modules into a staging directory.
 
-Initially preserve the existing static-file layout, `config.js` mechanism,
-`bootstrap.js`, and version stamper. Run those packaging operations on emitted
-output, never on TypeScript source. This makes the migration about types and
-module contracts rather than simultaneously redesigning caching and deploy
-configuration.
+Initially preserve the existing static-file layout and `config.js` mechanism.
+Treat `bootstrap.js` and the version stamper as a measured comparison, not a
+presumed destination: Phase 5 compares the existing path with a standard
+browser tool that deletes both, without inventing another project-specific
+graph rewriter. This keeps the migration about types and module contracts while
+making the known caching compromise explicit.
 
 Vite is not part of the committed plan. Reconsider it only after browser
 TypeScript is complete, using the decision gate near the end of this document.
@@ -323,11 +325,22 @@ Tasks:
   phase.
 - Define the shared lobby/player/room envelope once and compose game-specific
   views into it.
+- Compose nested overlays where presence is determined by phase. A field whose
+  presence also depends on runtime state stays optional inside the phase that
+  can carry it: `players[].hasPlayed?` within Avalon `quest`, and
+  `you.action?` within ONUW `night`.
 - Type every view builder against its exact phase result.
 - Add positive fixtures for representative views.
 - Add negative fixtures with `@ts-expect-error` for at least:
-  - a secret role on a public/lobby view;
-  - a phase-only field on the wrong phase.
+  - the viewer's role in `lobby`;
+  - another player's role outside Avalon `over`;
+  - another player's `startRole` or `finalRole` outside ONUW `over`;
+  - `hasPlayed` outside Avalon `quest`; and
+  - another phase-only top-level field on the wrong phase.
+
+Do not attempt to encode exact viewer/team predicates in the type. Existing
+secrecy tests remain authoritative for whether `hasPlayed` is present for a
+particular team member and whether `you.action` is present for an awake viewer.
 
 Acceptance:
 
@@ -390,14 +403,20 @@ TypeScript, while continuing to execute source directly.
 
 Tasks:
 
+- Phase 3a removes the facade while the implementation is still JavaScript.
+  Pass an explicit `{ room, state }` context, delete `gameContext`,
+  `splitState`, `ROOM_FIELDS`, and direct proxy-only uses, and introduce no
+  `.ts` file. Keep the engine, determinism, and room suites passing unchanged.
+- Phase 3b performs the mechanical TypeScript conversion only after Phase 3a
+  merges. Do not combine field-access changes with file conversion.
 - Convert server modules under `src/` to `.ts` in coherent dependency slices.
   Convert their focused tests to `.test.ts` in the same slice.
 - Update relative imports to explicit `.ts` extensions and use `import type`.
 - Keep `src/server.js` only as a compatibility launcher importing
   `src/server.ts`; do not duplicate server setup in it.
-- Replace the flat engine API plus `gameContext` proxy with an explicit typed
-  registry contract. Shared room data and game-specific state should be passed
-  or owned explicitly; no merged dynamic object should cross the registry.
+- Type the explicit registry contract created by Phase 3a. Shared room data and
+  game-specific state remain separate; no merged dynamic object crosses the
+  registry.
 - Give each registry entry typed `create`, `rosterChange`, `command`, `view`,
   `deadline`, `tick`, and restore operations for its game.
 - Move Phase 1 contract definitions out of `types/contracts.d.ts` into normal
@@ -407,6 +426,8 @@ Tasks:
 
 Acceptance:
 
+- Phase 3a has no proxy/facade helpers or TypeScript file conversion, and all
+  focused behavior tests pass.
 - `node src/server.js` starts the native TypeScript implementation.
 - `node --test` discovers and runs converted `.test.ts` files without a loader.
 - `tsc --noEmit` checks every server and test TypeScript module under strict
@@ -473,8 +494,13 @@ Tasks:
   modules to a clean staging directory and rewrites relative `.ts` imports to
   `.js`.
 - Add one build command that cleans the staging directory, copies static
-  assets, compiles browser modules, and then runs existing configuration/version
-  packaging on the emitted tree.
+  assets, and compiles browser modules.
+- Measure the caching path before finalizing it. Compare plain `tsc` plus the
+  existing stamper against a standard browser tool that deletes the stamper and
+  `bootstrap.js` path. Do not write a custom content-hashing or import-rewriting
+  script for either arm. A bundler adoption invokes the Phase 7 gate as its own
+  decision; if no alternative clears that gate and the artifact tests, retain
+  the stamper on emitted output and record why.
 - Keep build orchestration small and explicit. Prefer npm scripts plus focused
   existing scripts; do not create a general-purpose task runner.
 - Before converting the full graph, compile a nested-import probe with
@@ -501,8 +527,9 @@ Named deletion: remove converted browser `.js` source files. Generated output
 must stay untracked.
 
 Abort-specific check: if keeping `bootstrap.js` or the stamper forces a second
-module graph, source rewriting, or duplicated configuration, stop and invoke
-the Phase 7 Vite decision early with the concrete duplication listed.
+module graph, source rewriting beyond the existing stamper, or duplicated
+configuration, stop and invoke the Phase 7 Vite decision early with the
+concrete duplication listed.
 
 If plain `tsc` cannot emit the current module graph with browser-loadable
 relative URLs, the same stop rule applies: report the failing source import and
@@ -516,10 +543,11 @@ already tested in CI.
 Tasks:
 
 - Install locked dependencies once at the start of CI.
-- Compile and stamp the browser once into a canonical clean staging directory,
-  then copy it into self-hosted and Pages staging directories. Generate the
-  target-specific `config.js` in each copy; treat the Pages backend URL as
-  packaging configuration, not as a second authored client.
+- Compile the browser once and apply the caching path selected in Phase 5 to a
+  canonical clean staging directory, then copy it into self-hosted and Pages
+  staging directories. Generate the target-specific `config.js` in each copy;
+  treat the Pages backend URL as packaging configuration, not as a second
+  authored client.
 - Assemble the server archive from the native server entrypoint/source,
   production `node_modules`, the emitted self-hosted client, and operational
   files required by the updater.
