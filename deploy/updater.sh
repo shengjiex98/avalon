@@ -41,6 +41,7 @@ systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
 state_file=${AVALON_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/avalon/rooms.json}
 health_timeout=${AVALON_HEALTH_TIMEOUT_SECONDS:-30}
 keep_releases=${AVALON_KEEP_RELEASES:-2}
+terminal_status=
 
 log() {
   printf '%s\n' "avalon-updater: $*" >&2
@@ -49,6 +50,17 @@ log() {
 valid_commit() {
   case "${1:-}" in *[!0-9a-f]*|'') return 1 ;; esac
   [ "${#1}" -eq 40 ]
+}
+
+# Status is for the operator watching ntfy, never deployment coordination.
+# Notification failure must not change the reconciliation result.
+publish_status() {
+  terminal_status=$1
+  [ -n "${NTFY_TOPIC:-}" ] || return 0
+  valid_commit "${commit:-}" || return 0
+  short_commit=$(printf '%.7s' "$commit")
+  curl -fsS --max-time 10 -d "$terminal_status $short_commit" \
+    "${NTFY_SERVER:-https://ntfy.sh}/${NTFY_TOPIC}" >/dev/null 2>&1 || true
 }
 
 case "$PORT" in *[!0-9]*|'') log "invalid PORT $PORT"; exit 64 ;; esac
@@ -85,6 +97,13 @@ cleanup() {
     rm -rf -- "$stage"
   fi
   [ ! -d "$work" ] || rm -rf -- "$work"
+  if [ -z "$terminal_status" ]; then
+    case "$code" in
+      0) ;;
+      75) publish_status busy ;;
+      *) publish_status failed ;;
+    esac
+  fi
   exit "$code"
 }
 trap cleanup EXIT HUP INT TERM
@@ -405,6 +424,7 @@ fi
 
 if "$systemctl_bin" --user start avalon && wait_for_commit "$commit"; then
   log "deployed $commit"
+  publish_status deployed
 else
   log "release $commit failed health; rolling back to ${rollback:-no previous release}"
   "$systemctl_bin" --user stop avalon || true

@@ -145,7 +145,7 @@ test('publication prunes every archive the pointer cannot reach', async () => {
 test('the deploy job proves the server took the commit before publishing the client', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
 
-  // The public application is the only success proof. ntfy is wake-only.
+  // The public application is the only success proof. CI only writes to ntfy.
   assert.match(workflow, /\.commit \/\/ empty/);
   assert.match(workflow, /\[ "\$commit" = "\$GITHUB_SHA" \]/);
   assert.match(workflow, /curl -fsS --max-time 10 -d deploy /);

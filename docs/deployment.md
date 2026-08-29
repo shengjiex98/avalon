@@ -92,12 +92,14 @@ and [`scripts/verify-packaged-release.mjs`](../scripts/verify-packaged-release.m
 
 ## Reconciliation and rollback
 
-The installed listener treats ntfy only as a wake-up and starts the generic
-update service. The updater validates the pointer, archive, manifest, and
-rollback release before it stops Avalon. It deploys through an active game only
-when both state and API compatibility match; otherwise the server's update gate
-may defer it with exit 75. A failed exact-commit health check restores the
-previous release and snapshot.
+The installed listener treats inbound ntfy messages only as a wake-up and
+starts the generic update service. The updater publishes best-effort status
+messages for the operator watching the same topic; CI continues to prove
+success through the public health endpoint. The updater validates the pointer,
+archive, manifest, and rollback release before it stops Avalon. It deploys
+through an active game only when both state and API compatibility match;
+otherwise the server's update gate may defer it with exit 75. A failed
+exact-commit health check restores the previous release and snapshot.
 
 The transaction, safety decisions, retention policy, supported overrides, and
 operator force option are defined in [`deploy/updater.sh`](../deploy/updater.sh)
