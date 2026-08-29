@@ -27,10 +27,12 @@ the shape to copy. Comments follow the same rule: say why, not what.
 
 ## Constraints worth knowing before you write code
 
-**No dependencies, deliberately.** `package.json` declares none, the server is
-Node standard library only, and the browser client is plain ES modules with no
-build step. Adding a dependency is a design decision, not an implementation
-detail — raise it rather than assuming it.
+**Production installs nothing, deliberately.** The server currently has no
+runtime dependencies and the browser client is plain ES modules with no build
+step. The development toolchain already includes TypeScript and Node types.
+Adding a runtime/build dependency or build step is a design decision, not an
+implementation detail — follow the approved modernization phase or raise it
+rather than assuming it.
 
 **Two compatibility numbers gate deployment.** `STATE_VERSION`
 (`src/state-version.js`) covers persisted room state; `API_PROTOCOL`
