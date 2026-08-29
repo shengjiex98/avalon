@@ -283,6 +283,9 @@ test('malformed and wrong-type JSON is rejected before room dispatch', async () 
     assert.equal(badJoin.status, 400);
     assert.equal((await badJoin.json()).error, 'badRequest');
 
+    const noSeatYet = await post(base, `/api/rooms/${code}/join`, { name: 'Bo', playerId: null });
+    assert.equal(noSeatYet.status, 200, 'a browser with no stored seat may send a null id');
+
     const joined = await (await post(base, `/api/rooms/${code}/join`, { name: 'Ann' })).json();
     const before = rooms.peek(code).revision;
     for (const body of [
