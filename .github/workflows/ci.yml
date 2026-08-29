@@ -12,4 +12,6 @@ jobs:
         with:
           # Match the deployment workflow and production server runtime.
           node-version: '24'
+      - run: npm ci
       - run: npm test
+      - run: npm run typecheck

@@ -90,6 +90,28 @@ test('the Pages renderers consume server-owned setup metadata', async () => {
   }
 });
 
+test('development type checking is locked, no-emit, and separate from the release gate', async () => {
+  const pkg = JSON.parse(await read('../package.json'));
+  const lock = JSON.parse(await read('../package-lock.json'));
+  const config = JSON.parse(await read('../tsconfig.json'));
+  const contracts = await read('../types/contracts.d.ts');
+  const ci = await read('../.github/workflows/ci.yml');
+  const deploy = await read('../.github/workflows/deploy.yml');
+
+  assert.equal(pkg.scripts.typecheck, 'tsc -p tsconfig.json');
+  assert.ok(pkg.devDependencies.typescript);
+  assert.ok(pkg.devDependencies['@types/node']);
+  assert.equal(lock.lockfileVersion, 3);
+  assert.equal(config.compilerOptions.allowJs, true);
+  assert.equal(config.compilerOptions.noEmit, true);
+  assert.equal(config.compilerOptions.strict, true);
+  assert.match(contracts, /ValidatedAction|PersistedRoom|PublicView|GamePhase/);
+
+  assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
+  assert.doesNotMatch(deploy, /npm ci|npm run typecheck/,
+    'a release runs plain JavaScript and never installs development tools');
+});
+
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);

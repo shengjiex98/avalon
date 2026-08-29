@@ -1,6 +1,8 @@
 // Snapshot validators. They validate persisted data, including references
 // between engine state and the room roster, before any room is installed.
 
+// @ts-check
+
 import {
   HOUSE_RULE_KEYS as AVALON_HOUSE_RULES,
   OPTIONAL_ROLES as AVALON_OPTIONS,
@@ -13,32 +15,53 @@ import {
   ROLES as ONUW_ROLES,
 } from './onuw/rules.js';
 
+/** @typedef {import('../../types/contracts.js').AvalonContext} AvalonContext */
+/** @typedef {import('../../types/contracts.js').AvalonPhase} AvalonPhase */
+/** @typedef {import('../../types/contracts.js').AvalonState} AvalonState */
+/** @typedef {import('../../types/contracts.js').OnuwContext} OnuwContext */
+/** @typedef {import('../../types/contracts.js').OnuwPhase} OnuwPhase */
+/** @typedef {import('../../types/contracts.js').OnuwState} OnuwState */
+
+/** @param {unknown} value @returns {value is Record<string, any>} */
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-const integer = (value, min = 0) => Number.isInteger(value) && value >= min;
+/** @param {unknown} value @param {number} [min] */
+const integer = (value, min = 0) => Number.isInteger(value) && /** @type {number} */ (value) >= min;
+/** @param {unknown} value */
 const finite = (value) => Number.isFinite(value);
+/** @param {unknown} value */
 const strings = (value) => Array.isArray(value) && value.every((item) => typeof item === 'string');
+/** @param {unknown} value */
 const booleans = (value) => record(value) && Object.values(value).every((item) => typeof item === 'boolean');
+/** @param {unknown} value */
 const stringMap = (value) => record(value) && Object.values(value).every((item) => typeof item === 'string');
+/** @param {unknown} values @param {Set<string>} ids */
 const idsIn = (values, ids) => strings(values) && values.every((id) => ids.has(id));
+/** @param {unknown} value @param {Set<string>} ids */
 const keysIn = (value, ids) => record(value) && Object.keys(value).every((id) => ids.has(id));
+/** @param {any[]} values */
 const unique = (values) => new Set(values).size === values.length;
+/** @param {Record<string, any>} value @param {string[]} required @param {string[]} [optional] */
 const exactKeys = (value, required, optional = []) => {
   const keys = Object.keys(value);
   return required.every((key) => keys.includes(key))
     && keys.every((key) => required.includes(key) || optional.includes(key));
 };
+/** @param {unknown} value @param {Set<string>} ids @param {string[]} values */
 const enumMap = (value, ids, values) => stringMap(value)
   && keysIn(value, ids)
-  && Object.values(value).every((item) => values.includes(item));
+  && Object.values(/** @type {Record<string, string>} */ (value)).every((item) => values.includes(item));
+/** @param {unknown} value @param {string[]} keys */
 const exactBooleanKeys = (value, keys) => booleans(value)
-  && exactKeys(value, keys);
+  && exactKeys(/** @type {Record<string, any>} */ (value), keys);
 
+/** @param {AvalonContext | OnuwContext} g @param {(AvalonPhase | OnuwPhase)[]} phases */
 function common(g, phases) {
   if (!phases.includes(g.phase)) return false;
   if (!record(g.options) || !booleans(g.houseRules)) return false;
   return true;
 }
 
+/** @param {AvalonContext} g @param {AvalonState} state */
 export function validateAvalon(g, state) {
   const ids = new Set(g.players.map((player) => player.id));
   const stateKeys = [
@@ -67,6 +90,7 @@ export function validateAvalon(g, state) {
   return true;
 }
 
+/** @param {any} vote @param {Set<string>} ids */
 function validateAvalonVote(vote, ids) {
   return record(vote)
     && integer(vote.round)
@@ -78,6 +102,7 @@ function validateAvalonVote(vote, ids) {
     && typeof vote.approved === 'boolean';
 }
 
+/** @param {any} quest @param {Set<string>} ids */
 function validateQuest(quest, ids) {
   return record(quest)
     && integer(quest.round)
@@ -87,6 +112,7 @@ function validateQuest(quest, ids) {
     && typeof quest.success === 'boolean';
 }
 
+/** @param {OnuwContext} g @param {OnuwState} state */
 export function validateOnuw(g, state) {
   const ids = new Set(g.players.map((player) => player.id));
   const stateKeys = [
@@ -120,10 +146,13 @@ export function validateOnuw(g, state) {
   return true;
 }
 
+/** @param {any} step */
 const validateScriptStep = (step) => record(step)
   && typeof step.key === 'string'
   && finite(step.seconds) && step.seconds > 0
   && (step.role === undefined || step.role in ONUW_ROLES);
 
+/** @param {any} event */
 const validateEvent = (event) => record(event) && typeof event.key === 'string' && record(event.params);
+/** @param {unknown} events */
 const validateInfo = (events) => Array.isArray(events) && events.every(validateEvent);

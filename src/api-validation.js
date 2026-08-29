@@ -1,3 +1,5 @@
+// @ts-check
+
 import { GameError } from './lobby.js';
 import {
   HOUSE_RULE_KEYS as AVALON_HOUSE_RULES,
@@ -9,13 +11,26 @@ import {
   PACES,
 } from './games/onuw/rules.js';
 
+/** @typedef {import('../types/contracts.js').CreateRoomCommand} CreateRoomCommand */
+/** @typedef {import('../types/contracts.js').GameId} GameId */
+/** @typedef {import('../types/contracts.js').JoinCommand} JoinCommand */
+/** @typedef {import('../types/contracts.js').ValidatedAction} ValidatedAction */
+
+/** @returns {never} */
 const fail = () => { throw new GameError('badRequest'); };
+/** @param {unknown} value @returns {Record<string, unknown>} */
 const record = (value) => {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) fail();
-  return value;
+  return /** @type {Record<string, unknown>} */ (value);
 };
+/** @param {unknown} value */
 const string = (value) => typeof value === 'string' && value.length > 0;
 
+/**
+ * @param {unknown} value
+ * @param {string[]} allowed
+ * @param {string[]} [required]
+ */
 function exact(value, allowed, required = []) {
   const body = record(value);
   if (Object.keys(body).some((key) => !allowed.includes(key))) fail();
@@ -23,25 +38,29 @@ function exact(value, allowed, required = []) {
   return body;
 }
 
+/** @param {unknown} value @param {string[]} allowed */
 function booleanSettings(value, allowed) {
   const settings = exact(value, allowed);
   if (Object.values(settings).some((entry) => typeof entry !== 'boolean')) fail();
 }
 
+/** @param {unknown} value @returns {CreateRoomCommand} */
 export function validateCreateRoom(value) {
   const body = exact(value, ['game']);
   if ('game' in body && !string(body.game)) fail();
-  return body;
+  return /** @type {CreateRoomCommand} */ (body);
 }
 
+/** @param {unknown} value @returns {JoinCommand} */
 export function validateJoin(value) {
   const body = exact(value, ['name', 'playerId', 'avatar'], ['name']);
   if (typeof body.name !== 'string') fail();
   if ('playerId' in body && !string(body.playerId)) fail();
   if ('avatar' in body && body.avatar !== false && typeof body.avatar !== 'string') fail();
-  return body;
+  return /** @type {JoinCommand} */ (body);
 }
 
+/** @param {GameId} gameId @param {unknown} value @returns {ValidatedAction} */
 export function validateAction(gameId, value) {
   const body = record(value);
   if (!string(body.type) || !string(body.playerId)) fail();
@@ -49,19 +68,20 @@ export function validateAction(gameId, value) {
   if (body.type === 'setGame') {
     exact(body, ['type', 'playerId', 'game'], ['game']);
     if (!string(body.game)) fail();
-    return body;
+    return /** @type {ValidatedAction} */ (body);
   }
   if (body.type === 'leave') {
     exact(body, ['type', 'playerId']);
-    return body;
+    return /** @type {ValidatedAction} */ (body);
   }
 
   if (gameId === 'avalon') validateAvalonAction(body);
   else if (gameId === 'onuw') validateOnuwAction(body);
   else throw new GameError('noSuchGame', { game: gameId });
-  return body;
+  return /** @type {ValidatedAction} */ (body);
 }
 
+/** @param {Record<string, unknown>} body */
 function validateAvalonAction(body) {
   switch (body.type) {
     case 'options': {
@@ -95,6 +115,7 @@ function validateAvalonAction(body) {
   }
 }
 
+/** @param {Record<string, unknown>} body */
 function validateOnuwAction(body) {
   switch (body.type) {
     case 'options': {
@@ -102,7 +123,8 @@ function validateOnuwAction(body) {
       const options = exact(body.options, [...ONUW_OPTIONS, 'houseRules', 'pace']);
       for (const key of ONUW_OPTIONS) if (key in options && typeof options[key] !== 'boolean') fail();
       if ('houseRules' in options) booleanSettings(options.houseRules, ONUW_HOUSE_RULES);
-      if ('pace' in options && !Object.hasOwn(PACES, options.pace)) fail();
+      if ('pace' in options
+          && (typeof options.pace !== 'string' || !Object.hasOwn(PACES, options.pace))) fail();
       break;
     }
     case 'start': case 'confirm': case 'startVote': case 'reset': case 'again':
@@ -121,6 +143,7 @@ function validateOnuwAction(body) {
   }
 }
 
+/** @param {unknown} value */
 function validateNightAction(value) {
   const action = record(value);
   const keys = Object.keys(action);

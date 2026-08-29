@@ -18,6 +18,8 @@
 // it, a choice that genuinely depends on night information, and it is the one
 // role this model cannot represent honestly.
 
+// @ts-check
+
 import {
   DEFAULT_PACE, HOUSE_RULES, HOUSE_RULE_KEYS, MAX_PLAYERS, MIN_PLAYERS, OPTIONAL_ROLES,
   PACES, ROLES, buildDeck, decideWinners, defaultOptions, nightLength, nightScript,
@@ -26,9 +28,14 @@ import {
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
+/** @typedef {import('../../../types/contracts.js').OnuwContext} OnuwContext */
+/** @typedef {import('../../../types/contracts.js').OnuwNightAction} OnuwNightAction */
+/** @typedef {import('../../../types/contracts.js').OnuwView} OnuwView */
+
+/** @param {string} code @param {{ now?: () => number, seed?: number }} [options] @returns {OnuwContext} */
 export function createGame(code, { now = Date.now, seed } = {}) {
-  return {
-    ...lobby.baseState(code, 'onuw', { now, seed }),
+  return /** @type {OnuwContext} */ ({
+    ...lobby.baseState(code, 'onuw', { now, ...(seed === undefined ? {} : { seed }) }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,   // until the host picks, follow the table size
     houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
@@ -47,18 +54,24 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     votes: {},               // playerId -> who they pointed at
     dead: [],
     winners: [],
-  };
+  });
 }
 
+/** @param {OnuwContext} g @param {{ id: string, name?: string, avatar?: string }} player */
 export const addPlayer = (g, player) => lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
-export const removePlayer = lobby.removePlayer;
+/** @param {OnuwContext} g @param {string} playerId */
+export const removePlayer = (g, playerId) => lobby.removePlayer(g, playerId);
 
+/** @param {OnuwContext} g @param {string} id */
 const nameOf = (g, id) => playerById(g, id)?.name ?? '?';
 /** The deck the lobby is currently describing. */
+/** @param {OnuwContext} g */
 const liveOptions = (g) => (g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
+/** @param {OnuwContext} g */
 const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
+/** @param {OnuwContext} g @param {string} playerId @param {Record<string, any>} options */
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
@@ -67,6 +80,7 @@ export function setOptions(g, playerId, options) {
     g.pace = options.pace;
   }
   if (options.houseRules) lobby.setHouseRules(g, options.houseRules, HOUSE_RULE_KEYS);
+  /** @type {Record<string, boolean>} */
   const next = { ...liveOptions(g) };
   for (const role of OPTIONAL_ROLES) if (role in options) next[role] = Boolean(options[role]);
   buildDeck(g.players.length, next);   // throws before anything is committed
@@ -74,6 +88,7 @@ export function setOptions(g, playerId, options) {
   g.optionsTouched = true;
 }
 
+/** @param {OnuwContext} g @param {string} playerId @param {{ shuffle?: <T>(list: T[]) => T[], now?: () => number }} [options] */
 export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list), now = Date.now } = {}) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
@@ -82,7 +97,7 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
   const deck = shuffle(buildDeck(g.players.length, liveOptions(g)));
   g.options = liveOptions(g);
   g.players = shuffle(g.players.slice());
-  g.startRoles = Object.fromEntries(g.players.map((p, i) => [p.id, deck[i]]));
+  g.startRoles = Object.fromEntries(g.players.map((p, i) => [p.id, /** @type {string} */ (deck[i])]));
   g.centreStart = deck.slice(g.players.length);
 
   // The night mutates these as each step closes.
@@ -98,6 +113,7 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
 }
 
 /** Every player gets time to inspect their card before the shared clock begins. */
+/** @param {OnuwContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function confirmRole(g, playerId, { now = Date.now } = {}) {
   require_(g.phase === 'reveal', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
@@ -106,26 +122,30 @@ export function confirmRole(g, playerId, { now = Date.now } = {}) {
 
   g.phase = 'night';
   g.step = 0;
-  g.stepEndsAt = now() + stepMillis(g.script[0], g.pace);
+  g.stepEndsAt = now() + stepMillis(/** @type {import('../../../types/contracts.js').OnuwScriptStep} */ (g.script[0]), g.pace);
   openStep(g);
 }
 
 // ---------------------------------------------------------------- the night
 
+/** @param {OnuwContext} g */
 const wolvesAmongPlayers = (g) => g.players.filter((p) => g.startRoles[p.id] === 'werewolf');
 
+/** @param {OnuwContext} g */
 export const currentStep = (g) => (g.phase === 'night' ? g.script[g.step] ?? null : null);
 
 /** What this player must decide during their role's step, if anything. */
+/** @param {OnuwContext} g @param {string} playerId */
 export function actionFor(g, playerId) {
-  const role = g.startRoles[playerId];
-  const kind = ROLES[role]?.acts;
+  const role = /** @type {string} */ (g.startRoles[playerId]);
+  const kind = /** @type {Record<string, { acts?: string }>} */ (ROLES)[role]?.acts;
   if (!kind) return null;
   if (kind === 'loneWolf') return wolvesAmongPlayers(g).length === 1 ? 'loneWolf' : null;
   return kind;
 }
 
 /** Is it this player's turn to be awake right now? */
+/** @param {OnuwContext} g @param {string} playerId */
 export function isAwake(g, playerId) {
   const step = currentStep(g);
   return Boolean(step?.role && g.startRoles[playerId] === step.role);
@@ -135,9 +155,12 @@ export function isAwake(g, playerId) {
  * What a player learns simply by being woken — their packmates, the other
  * Mason, who the werewolves are. Shown during their own step, and repeated in
  * the morning.
+ * @param {OnuwContext} g
+ * @param {string} playerId
  */
 export function staticKnowledge(g, playerId) {
   const role = g.startRoles[playerId];
+  /** @param {(player: import('../../../types/contracts.js').Player) => boolean} test */
   const others = (test) => g.players.filter((p) => p.id !== playerId && test(p)).map((p) => p.name);
   const out = [];
 
@@ -163,6 +186,7 @@ export function staticKnowledge(g, playerId) {
   return out;
 }
 
+/** @param {OnuwContext} g @param {string} playerId @param {OnuwNightAction} [action] */
 export function submitNight(g, playerId, action = {}) {
   require_(g.phase === 'night', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
@@ -171,49 +195,60 @@ export function submitNight(g, playerId, action = {}) {
   require_(kind, 'noNightAction');
   require_(!(playerId in g.nightActions), 'alreadyActed');
 
-  const known = (id) => Boolean(playerById(g, id));
-  const centreIndex = (i) => Number.isInteger(i) && i >= 0 && i < g.centreStart.length;
+  /** @param {unknown} id */
+  const known = (id) => typeof id === 'string' && Boolean(playerById(g, id));
+  /** @param {unknown} i */
+  const centreIndex = (i) => Number.isInteger(i) && /** @type {number} */ (i) >= 0
+    && /** @type {number} */ (i) < g.centreStart.length;
 
   if (action.skip) {
     require_(kind !== 'drunk', 'drunkMustSwap');   // the Drunk has no choice
     g.nightActions[playerId] = { skip: true };
   } else if (kind === 'loneWolf') {
     require_(centreIndex(action.centre), 'badCentreCard');
-    g.nightActions[playerId] = { centre: action.centre };
+    g.nightActions[playerId] = { centre: /** @type {number} */ (action.centre) };
   } else if (kind === 'seer') {
     if (action.mode === 'player') {
       require_(known(action.target) && action.target !== playerId, 'badTarget');
-      g.nightActions[playerId] = { mode: 'player', target: action.target };
+      g.nightActions[playerId] = { mode: 'player', target: /** @type {string} */ (action.target) };
     } else {
       const [a, b] = action.centres ?? [];
       require_(centreIndex(a) && centreIndex(b) && a !== b, 'badCentreCard');
-      g.nightActions[playerId] = { mode: 'centre', centres: [a, b] };
+      g.nightActions[playerId] = {
+        mode: 'centre',
+        centres: [/** @type {number} */ (a), /** @type {number} */ (b)],
+      };
     }
   } else if (kind === 'robber') {
     require_(known(action.target) && action.target !== playerId, 'badTarget');
-    g.nightActions[playerId] = { target: action.target };
+    g.nightActions[playerId] = { target: /** @type {string} */ (action.target) };
   } else if (kind === 'troublemaker') {
     const [a, b] = action.targets ?? [];
     require_(known(a) && known(b) && a !== b, 'badTarget');
     require_(a !== playerId && b !== playerId, 'troublemakerNotSelf');
-    g.nightActions[playerId] = { targets: [a, b] };
+    g.nightActions[playerId] = {
+      targets: [/** @type {string} */ (a), /** @type {string} */ (b)],
+    };
   } else if (kind === 'drunk') {
     require_(centreIndex(action.centre), 'badCentreCard');
-    g.nightActions[playerId] = { centre: action.centre };
+    g.nightActions[playerId] = { centre: /** @type {number} */ (action.centre) };
   }
 
   // Resolve now, so the player sees what they looked at or took while they are
   // still awake. Order is safe: only this role acts during this step.
-  resolve(g, playerId, g.nightActions[playerId]);
+  resolve(g, playerId, /** @type {OnuwNightAction} */ (g.nightActions[playerId]));
   // Deliberately no early advance: the clock is the same for everyone.
 }
 
 /** When the room layer should look in on this game again. */
+/** @param {OnuwContext} g */
 export const nextDeadline = (g) => (g.phase === 'night' ? g.stepEndsAt : null);
 
 /**
  * Advance the night if its clock has run out. Loops, so a server that was
  * busy for a while catches up rather than drifting.
+ * @param {OnuwContext} g
+ * @param {number} [now]
  */
 export function tick(g, now = Date.now()) {
   if (g.phase !== 'night') return false;
@@ -223,20 +258,23 @@ export function tick(g, now = Date.now()) {
     g.step += 1;
     moved = true;
     if (g.step >= g.script.length) { dawn(g); break; }
-    g.stepEndsAt += stepMillis(g.script[g.step], g.pace);
+    g.stepEndsAt += stepMillis(/** @type {import('../../../types/contracts.js').OnuwScriptStep} */ (g.script[g.step]), g.pace);
     openStep(g);
   }
   return moved;
 }
 
+/** @param {OnuwContext} g @param {string} id @param {string} key @param {Record<string, unknown>} [params] */
 const addInfo = (g, id, key, params = {}) => { (g.info[id] ??= []).push({ key, params }); };
 
+/** @param {OnuwContext} g @param {string} role */
 const actorsFor = (g, role) => g.players.filter((p) => g.startRoles[p.id] === role);
 
 /**
  * Entering a step. Everything that needs no decision happens the moment the
  * role opens its eyes: who your packmates are, what the Insomniac is holding.
  */
+/** @param {OnuwContext} g */
 function openStep(g) {
   const step = currentStep(g);
   if (!step?.role) return;
@@ -247,48 +285,59 @@ function openStep(g) {
 }
 
 /** Apply one player's choice. Called as soon as they make it. */
+/** @param {OnuwContext} g @param {string} playerId @param {OnuwNightAction} a */
 function resolve(g, playerId, a) {
   const roles = g.finalRoles;
   const centre = g.centre;
   const role = g.startRoles[playerId];
-  const me = playerById(g, playerId);
+  const me = /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, playerId));
 
   if (role === 'werewolf') {
     if (Number.isInteger(a.centre)) {
-      addInfo(g, playerId, 'onuw.info.sawCentre', { index: a.centre + 1, role: centre[a.centre] });
+      const i = /** @type {number} */ (a.centre);
+      addInfo(g, playerId, 'onuw.info.sawCentre', { index: i + 1, role: centre[i] });
     }
   } else if (role === 'seer') {
-    if (a.mode === 'player') addInfo(g, playerId, 'onuw.info.sawPlayer', { name: nameOf(g, a.target), role: roles[a.target] });
+    if (a.mode === 'player') {
+      const target = /** @type {string} */ (a.target);
+      addInfo(g, playerId, 'onuw.info.sawPlayer', { name: nameOf(g, target), role: roles[target] });
+    }
     else if (a.mode === 'centre') {
+      const [first, second] = /** @type {[number, number]} */ (a.centres);
       addInfo(g, playerId, 'onuw.info.sawTwoCentre', {
-        a: a.centres[0] + 1, roleA: centre[a.centres[0]],
-        b: a.centres[1] + 1, roleB: centre[a.centres[1]],
+        a: first + 1, roleA: centre[first],
+        b: second + 1, roleB: centre[second],
       });
     } else addInfo(g, playerId, 'onuw.info.lookedAtNothing');
   } else if (role === 'robber') {
     if (a.target) {
-      const taken = roles[a.target];
-      roles[a.target] = roles[playerId];
+      const taken = /** @type {string} */ (roles[a.target]);
+      roles[a.target] = /** @type {string} */ (roles[playerId]);
       roles[playerId] = taken;
       addInfo(g, playerId, 'onuw.info.robbed', { name: nameOf(g, a.target), role: taken });
       g.swaps.push({ key: 'onuw.swap.robber', params: { a: me.name, b: nameOf(g, a.target) } });
     } else addInfo(g, playerId, 'onuw.info.robbedNobody');
   } else if (role === 'troublemaker') {
     if (a.targets) {
-      const [x, y] = a.targets;
-      [roles[x], roles[y]] = [roles[y], roles[x]];
+      const [x, y] = /** @type {[string, string]} */ (a.targets);
+      const first = /** @type {string} */ (roles[x]);
+      roles[x] = /** @type {string} */ (roles[y]);
+      roles[y] = first;
       addInfo(g, playerId, 'onuw.info.swapped', { a: nameOf(g, x), b: nameOf(g, y) });
       g.swaps.push({ key: 'onuw.swap.troublemaker', params: { a: nameOf(g, x), b: nameOf(g, y) } });
     } else addInfo(g, playerId, 'onuw.info.swappedNobody');
   } else if (role === 'drunk') {
-    const i = a.centre;
-    [roles[playerId], centre[i]] = [centre[i], roles[playerId]];
+    const i = /** @type {number} */ (a.centre);
+    const playerRole = /** @type {string} */ (roles[playerId]);
+    roles[playerId] = /** @type {string} */ (centre[i]);
+    centre[i] = playerRole;
     addInfo(g, playerId, 'onuw.info.drunk', { index: i + 1 });
     g.swaps.push({ key: 'onuw.swap.drunk', params: { a: me.name, index: i + 1 } });
   }
 }
 
 /** Leaving a step: whoever let the clock run out gets the default outcome. */
+/** @param {OnuwContext} g */
 function closeStep(g) {
   const step = currentStep(g);
   if (!step?.role) return;
@@ -297,6 +346,7 @@ function closeStep(g) {
     if (!actionFor(g, p.id)) continue;
     // The Drunk always swaps, even asleep at the wheel — with a card nobody
     // could have predicted.
+    /** @type {OnuwNightAction} */
     const fallback = step.role === 'drunk'
       ? { centre: randInt(g, g.centre.length) }
       : { skip: true };
@@ -305,6 +355,7 @@ function closeStep(g) {
   }
 }
 
+/** @param {OnuwContext} g */
 function dawn(g) {
   g.phase = 'day';
   g.step = g.script.length;
@@ -313,6 +364,7 @@ function dawn(g) {
 
 // ---------------------------------------------------------------- the day
 
+/** @param {OnuwContext} g @param {string} playerId */
 export function startVote(g, playerId) {
   require_(g.phase === 'day', 'wrongPhase');
   require_(playerId === g.hostId, 'hostOnly');
@@ -320,6 +372,7 @@ export function startVote(g, playerId) {
   logEvent(g, 'log.voteStarted', {});
 }
 
+/** @param {OnuwContext} g @param {string} playerId @param {string} targetId */
 export function castVote(g, playerId, targetId) {
   require_(g.phase === 'vote', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
@@ -330,6 +383,7 @@ export function castVote(g, playerId, targetId) {
   if (Object.keys(g.votes).length === g.players.length) resolveVote(g);
 }
 
+/** @param {OnuwContext} g */
 function resolveVote(g) {
   const ids = g.players.map((p) => p.id);
   const { dead } = tallyVotes(ids, g.votes);
@@ -353,6 +407,7 @@ function resolveVote(g) {
 }
 
 /** What this table agreed to before the cards came out, and keeps. */
+/** @param {OnuwContext} g */
 const lobbyKeeps = (g) => ({
   options: g.options,
   optionsTouched: g.optionsTouched,
@@ -360,6 +415,7 @@ const lobbyKeeps = (g) => ({
   pace: g.pace,
 });
 
+/** @param {OnuwContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.resetToLobby(g, playerId, () => ({
     fresh: createGame(g.code, { now, seed: g.seed }),
@@ -367,6 +423,7 @@ export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   }));
 }
 
+/** @param {OnuwContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.restartToLobby(g, playerId, () => ({
     fresh: createGame(g.code, { now, seed: g.seed }),
@@ -376,6 +433,7 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
 
 // ---------------------------------------------------------------- views
 
+/** @param {OnuwContext} g @param {string} viewerId @param {number} [now] @returns {OnuwView} */
 export function viewFor(g, viewerId, now = Date.now()) {
   const me = playerById(g, viewerId);
   const over = g.phase === 'over';
@@ -477,9 +535,12 @@ export function viewFor(g, viewerId, now = Date.now()) {
   throw new Error(`unknown One Night phase: ${g.phase}`);
 }
 
+/** @param {OnuwContext} g */
 const lobbyDeck = (g) => safeDeckList(g) ?? [];
+/** @param {OnuwContext} g */
 const lobbyScript = (g) => nightScript(lobbyDeck(g));
 
+/** @param {OnuwContext} g */
 function safeDeckList(g) {
   try {
     return buildDeck(g.players.length, liveOptions(g));
@@ -489,12 +550,15 @@ function safeDeckList(g) {
 }
 
 /** The lobby shows the deck; an impossible choice shows as no deck at all. */
+/** @param {OnuwContext} g */
 function safeDeck(g) {
   const deck = safeDeckList(g);
   return deck ? countRoles(deck) : null;
 }
 
+/** @param {string[]} list */
 function countRoles(list) {
+  /** @type {Record<string, number>} */
   const counts = {};
   for (const role of list) counts[role] = (counts[role] ?? 0) + 1;
   return counts;

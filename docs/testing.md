@@ -8,7 +8,20 @@ npm test
 
 The project uses Node's built-in test runner, needs no dependency installation,
 network access, or browser, and discovers `test/**/*.test.js`. CI and release
-packaging run the same gate on Node 24; see [`package.json`](../package.json),
+packaging run the same gate on Node 24.
+
+Development also checks the JavaScript boundary contracts after installing the
+locked development tools:
+
+```bash
+npm ci
+npm run typecheck
+```
+
+The no-emit checker covers validated commands, room and engine state,
+snapshots, phase-specific views, and the game registry. It does not build or
+change the shipped modules, and it does not replace `npm test`. CI runs both;
+see [`package.json`](../package.json),
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), and
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 

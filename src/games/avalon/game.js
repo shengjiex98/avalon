@@ -1,6 +1,8 @@
 // The Avalon state machine. Pure logic: it never touches the network, the
 // clock (beyond timestamps) or randomness it was not handed.
 
+// @ts-check
+
 import {
   HOUSE_RULES, HOUSE_RULE_KEYS, MAX_PLAYERS, MAX_REJECTS, MIN_PLAYERS, OPTIONAL_ROLES,
   buildRoleList, defaultOptions, failsRequired, knowledgeFor, sideOf, teamSize,
@@ -8,9 +10,13 @@ import {
 import * as lobby from '../../lobby.js';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.js';
 
+/** @typedef {import('../../../types/contracts.js').AvalonContext} AvalonContext */
+/** @typedef {import('../../../types/contracts.js').AvalonView} AvalonView */
+
+/** @param {string} code @param {{ now?: () => number, seed?: number }} [options] @returns {AvalonContext} */
 export function createGame(code, { now = Date.now, seed } = {}) {
-  return {
-    ...lobby.baseState(code, 'avalon', { now, seed }),
+  return /** @type {AvalonContext} */ ({
+    ...lobby.baseState(code, 'avalon', { now, ...(seed === undefined ? {} : { seed }) }),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,  // manual choices last only until the table size changes
     houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
@@ -26,28 +32,34 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     assassinTarget: null,
     winner: null,           // 'good' | 'evil'
     winReason: null,
-  };
+  });
 }
 
-const leader = (g) => g.players[g.leaderIndex];
+/** @param {AvalonContext} g */
+const leader = (g) => /** @type {import('../../../types/contracts.js').Player} */ (g.players[g.leaderIndex]);
+/** @param {AvalonContext} g */
 const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'evil');
 
 /**
  * The deck the lobby is currently describing. Once the cards are out, it is
  * whatever they were dealt from.
  */
+/** @param {AvalonContext} g */
 const liveOptions = (g) =>
   (g.phase !== 'lobby' || g.optionsTouched ? g.options : defaultOptions(g.players.length));
 
+/** @param {AvalonContext} g */
 const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
 // ---------------------------------------------------------------- lobby
 
+/** @param {AvalonContext} g */
 function resetOptionsForPlayerCount(g) {
   g.options = defaultOptions(g.players.length);
   g.optionsTouched = false;
 }
 
+/** @param {AvalonContext} g @param {{ id: string, name?: string, avatar?: string }} player */
 export function addPlayer(g, player) {
   const count = g.players.length;
   const joined = lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
@@ -55,12 +67,14 @@ export function addPlayer(g, player) {
   return joined;
 }
 
+/** @param {AvalonContext} g @param {string} playerId */
 export function removePlayer(g, playerId) {
   const count = g.players.length;
   lobby.removePlayer(g, playerId);
   if (g.players.length !== count) resetOptionsForPlayerCount(g);
 }
 
+/** @param {AvalonContext} g @param {string} playerId @param {Record<string, any>} options */
 export function setOptions(g, playerId, options) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
@@ -74,6 +88,7 @@ export function setOptions(g, playerId, options) {
   g.optionsTouched = touched;
 }
 
+/** @param {AvalonContext} g @param {string} playerId @param {{ shuffle?: <T>(list: T[]) => T[] }} [options] */
 export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list) } = {}) {
   require_(g.phase === 'lobby', 'gameAlreadyStarted');
   require_(playerId === g.hostId, 'hostOnly');
@@ -87,7 +102,7 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
   const seats = randomLeader ? shuffle(g.players.slice()) : g.players.slice();
   g.options = options;
   g.players = seats;
-  g.roles = Object.fromEntries(seats.map((p, i) => [p.id, roleList[i]]));
+  g.roles = Object.fromEntries(seats.map((p, i) => [p.id, /** @type {string} */ (roleList[i])]));
 
   g.phase = 'reveal';
   g.ready = {};
@@ -96,11 +111,13 @@ export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list
 }
 
 /** Every player confirms they have read their role; then the first leader proposes. */
+/** @param {AvalonContext} g @param {string} playerId */
 export function confirmRole(g, playerId) {
   require_(g.phase === 'reveal', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
-  g.ready[playerId] = true;
-  if (g.players.every((p) => g.ready[p.id])) {
+  const ready = g.ready ??= {};
+  ready[playerId] = true;
+  if (g.players.every((p) => ready[p.id])) {
     g.phase = 'team';
     logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
   }
@@ -108,9 +125,12 @@ export function confirmRole(g, playerId) {
 
 // ---------------------------------------------------------------- quests
 
+/** @param {AvalonContext} g */
 export const currentTeamSize = (g) => teamSize(g.players.length, g.round);
+/** @param {AvalonContext} g */
 export const currentFailsRequired = (g) => failsRequired(g.players.length, g.round);
 
+/** @param {AvalonContext} g @param {string} playerId @param {string[]} memberIds */
 export function proposeTeam(g, playerId, memberIds) {
   require_(g.phase === 'team', 'wrongPhase');
   require_(playerId === leader(g).id, 'notLeader');
@@ -124,10 +144,11 @@ export function proposeTeam(g, playerId, memberIds) {
   g.phase = 'vote';
   logEvent(g, 'log.teamProposed', {
     name: leader(g).name,
-    members: unique.map((id) => playerById(g, id).name),
+    members: unique.map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)).name),
   });
 }
 
+/** @param {AvalonContext} g @param {string} playerId @param {boolean} approve */
 export function castVote(g, playerId, approve) {
   require_(g.phase === 'vote', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
@@ -136,6 +157,7 @@ export function castVote(g, playerId, approve) {
   if (Object.keys(g.votes).length === g.players.length) resolveVote(g);
 }
 
+/** @param {AvalonContext} g */
 function resolveVote(g) {
   const approvals = g.players.filter((p) => g.votes[p.id]).length;
   const approved = approvals * 2 > g.players.length;
@@ -171,10 +193,12 @@ function resolveVote(g) {
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
 }
 
+/** @param {AvalonContext} g */
 function nextLeader(g) {
   g.leaderIndex = (g.leaderIndex + 1) % g.players.length;
 }
 
+/** @param {AvalonContext} g @param {string} playerId @param {boolean} success */
 export function playCard(g, playerId, success) {
   require_(g.phase === 'quest', 'wrongPhase');
   require_(g.team.includes(playerId), 'notOnTeam');
@@ -185,6 +209,7 @@ export function playCard(g, playerId, success) {
   if (g.team.every((id) => id in g.cards)) resolveQuest(g);
 }
 
+/** @param {AvalonContext} g */
 function resolveQuest(g) {
   const fails = g.team.filter((id) => g.cards[id] === false).length;
   const success = fails < currentFailsRequired(g);
@@ -197,6 +222,7 @@ function resolveQuest(g) {
 }
 
 /** Where a settled quest leaves the game. */
+/** @param {AvalonContext} g */
 function afterQuest(g) {
   const successes = g.quests.filter((q) => q.success).length;
   const failures = g.quests.length - successes;
@@ -224,6 +250,7 @@ function afterQuest(g) {
  * refusing the pick would answer that question for free and hand back the
  * shot.
  */
+/** @param {AvalonContext} g @param {string} playerId @param {string} targetId */
 export function assassinate(g, playerId, targetId) {
   require_(g.phase === 'assassin', 'wrongPhase');
   require_(g.roles[playerId] === 'assassin', 'assassinOnly');
@@ -237,6 +264,7 @@ export function assassinate(g, playerId, targetId) {
   finish(g, hit ? 'evil' : 'good', hit ? 'win.merlinSlain' : 'win.threeSuccesses');
 }
 
+/** @param {AvalonContext} g @param {'good' | 'evil'} winner @param {string} reason */
 function finish(g, winner, reason) {
   g.phase = 'over';
   g.winner = winner;
@@ -245,12 +273,14 @@ function finish(g, winner, reason) {
 }
 
 /** What this table agreed to before the cards came out, and keeps. */
+/** @param {AvalonContext} g */
 const lobbyKeeps = (g) => ({
   options: g.options,
   optionsTouched: Boolean(g.optionsTouched),
   houseRules: houseRulesOf(g),
 });
 
+/** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.resetToLobby(g, playerId, () => ({
     fresh: createGame(g.code, { now, seed: g.seed }),
@@ -258,6 +288,7 @@ export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   }));
 }
 
+/** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.restartToLobby(g, playerId, () => ({
     fresh: createGame(g.code, { now, seed: g.seed }),
@@ -270,6 +301,9 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
 /**
  * What one player is allowed to see. Roles of others are only ever included
  * through `knowledge`, or once the game is over.
+ * @param {AvalonContext} g
+ * @param {string} viewerId
+ * @returns {AvalonView}
  */
 export function viewFor(g, viewerId) {
   const me = playerById(g, viewerId);
@@ -357,13 +391,16 @@ export function viewFor(g, viewerId) {
   throw new Error(`unknown Avalon phase: ${g.phase}`);
 }
 
+/** @param {string[]} roles */
 function countRoles(roles) {
+  /** @type {Record<string, number>} */
   const counts = {};
   for (const role of roles) counts[role] = (counts[role] ?? 0) + 1;
   return counts;
 }
 
 /** The lobby's deck, or nothing when this table cannot be dealt as asked. */
+/** @param {AvalonContext} g */
 function safeRoleCounts(g) {
   try {
     return countRoles(buildRoleList(g.players.length, liveOptions(g)));
@@ -373,6 +410,7 @@ function safeRoleCounts(g) {
 }
 
 /** How the last vote went, without saying who made it go that way. */
+/** @param {AvalonContext} g */
 function voteTally(g) {
   if (!g.lastVote) return null;
   const ballots = Object.values(g.lastVote.votes);
@@ -386,12 +424,15 @@ function voteTally(g) {
   };
 }
 
+/** @param {AvalonContext} g */
 function waitingFor(g) {
   switch (g.phase) {
     case 'reveal': return g.players.filter((p) => !g.ready?.[p.id]);
     case 'team':   return [leader(g)];
     case 'vote':   return g.players.filter((p) => !(p.id in g.votes));
-    case 'quest':  return g.team.map((id) => playerById(g, id)).filter((p) => !(p.id in g.cards));
+    case 'quest':  return g.team
+      .map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)))
+      .filter((p) => !(p.id in g.cards));
     case 'assassin': return g.players.filter((p) => g.roles[p.id] === 'assassin');
     default: return [];
   }

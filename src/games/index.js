@@ -2,12 +2,21 @@
 // flat state-machine API; rooms store only the engine-specific portion and the
 // registry supplies the shared room fields while an engine operation runs.
 
+// @ts-check
+
 import { GameError } from '../lobby.js';
 import * as avalon from './avalon/game.js';
 import { MAX_PLAYERS as AVALON_MAX, MIN_PLAYERS as AVALON_MIN } from './avalon/rules.js';
 import * as onuw from './onuw/game.js';
 import { MAX_PLAYERS as ONUW_MAX, MIN_PLAYERS as ONUW_MIN } from './onuw/rules.js';
 import { validateAvalon, validateOnuw } from './restore.js';
+
+/** @typedef {import('../../types/contracts.js').CreatedRoom} CreatedRoom */
+/** @typedef {import('../../types/contracts.js').GameContext} GameContext */
+/** @typedef {import('../../types/contracts.js').GameEntry} GameEntry */
+/** @typedef {import('../../types/contracts.js').GameId} GameId */
+/** @typedef {import('../../types/contracts.js').PersistedRoom} PersistedRoom */
+/** @typedef {import('../../types/contracts.js').RuntimeRoom} RuntimeRoom */
 
 const ROOM_FIELDS = new Map([
   ['code', 'code'],
@@ -23,31 +32,34 @@ const ROOM_FIELDS = new Map([
 ]);
 
 /** A temporary engine-facing facade; never stored or serialized. */
+/** @param {PersistedRoom} room @returns {GameContext} */
 export function gameContext(room) {
-  const state = room.game.state;
-  return new Proxy(state, {
+  const state = /** @type {Record<string | symbol, any>} */ (room.game.state);
+  return /** @type {GameContext} */ (new Proxy(state, {
     get(target, key, receiver) {
       if (key === 'gameId') return room.game.id;
-      const roomKey = ROOM_FIELDS.get(key);
-      return roomKey ? room[roomKey] : Reflect.get(target, key, receiver);
+      const roomKey = typeof key === 'string' ? ROOM_FIELDS.get(key) : undefined;
+      return roomKey ? /** @type {any} */ (room)[roomKey] : Reflect.get(target, key, receiver);
     },
     set(target, key, value, receiver) {
       if (key === 'gameId') {
         room.game.id = value;
         return true;
       }
-      const roomKey = ROOM_FIELDS.get(key);
+      const roomKey = typeof key === 'string' ? ROOM_FIELDS.get(key) : undefined;
       if (roomKey) {
-        room[roomKey] = value;
+        /** @type {any} */ (room)[roomKey] = value;
         return true;
       }
       return Reflect.set(target, key, value, receiver);
     },
-  });
+  }));
 }
 
+/** @param {any} flat */
 function splitState(flat) {
   const state = { ...flat };
+  /** @type {Record<string, any>} */
   const room = {};
   for (const [engineKey, roomKey] of ROOM_FIELDS) {
     room[roomKey] = state[engineKey];
@@ -58,6 +70,17 @@ function splitState(flat) {
   return { room, state };
 }
 
+/**
+ * @param {{
+ *   id: GameId,
+ *   minPlayers: number,
+ *   maxPlayers: number,
+ *   module: any,
+ *   actions: Record<string, (...args: any[]) => unknown>,
+ *   validate: (context: any, state: any) => boolean,
+ * }} definition
+ * @returns {GameEntry & Record<string, any>}
+ */
 function entry({ id, minPlayers, maxPlayers, module, actions, validate }) {
   return {
     id,
@@ -67,7 +90,7 @@ function entry({ id, minPlayers, maxPlayers, module, actions, validate }) {
     /** Create the persisted room fields and engine member together. */
     create(code, options) {
       const split = splitState(module.createGame(code, options));
-      return { ...split.room, game: { id, state: split.state } };
+      return /** @type {CreatedRoom} */ ({ ...split.room, game: { id, state: split.state } });
     },
 
     /** The only game hook for room membership changes. */
@@ -111,6 +134,7 @@ function entry({ id, minPlayers, maxPlayers, module, actions, validate }) {
   };
 }
 
+/** @type {Record<GameId, GameEntry & Record<string, any>>} */
 export const GAMES = {
   avalon: entry({
     id: 'avalon',
@@ -153,8 +177,9 @@ export const GAMES = {
 export const DEFAULT_GAME = 'avalon';
 export const GAME_IDS = Object.keys(GAMES);
 
+/** @param {unknown} id @returns {GameEntry & Record<string, any>} */
 export function gameFor(id) {
-  const game = GAMES[id];
+  const game = /** @type {Record<string, GameEntry & Record<string, any>>} */ (GAMES)[String(id)];
   if (!game) throw new GameError('noSuchGame', { game: id });
   return game;
 }
