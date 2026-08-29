@@ -87,7 +87,7 @@ test('an invalid release identity is rejected rather than reported', async () =>
 test('the trusted workflow verifier checks the packaged manifest and required files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
   const commit = 'd'.repeat(40);
-  for (const name of ['package.json', 'src/server.js', 'public/index.html']) {
+  for (const name of ['package.json', 'node_modules/zod/package.json', 'src/server.js', 'public/index.html']) {
     await mkdir(dirname(join(dir, name)), { recursive: true });
     await writeFile(join(dir, name), name);
   }
@@ -159,6 +159,13 @@ test('the packaged release carries the control plane that deploys it', async (t)
   for (const file of CONTROL_PLANE) {
     assert.ok(files.has(file), `the artifact must ship ${file}`);
   }
+  assert.ok(files.has('node_modules/zod/package.json'), 'the artifact must ship its runtime schema package');
+
+  const extracted = await mkdtemp(join(tmpdir(), 'avalon-production-deps-'));
+  const unpacked = await run('tar', ['-xzf', archive, '--strip-components=1', '-C', extracted]);
+  assert.equal(unpacked.code, 0, unpacked.stderr);
+  const imported = await run(process.execPath, ['--input-type=module', '-e', "await import('zod')"], { cwd: extracted });
+  assert.equal(imported.code, 0, imported.stderr);
 });
 
 // A pipeline reports only its last stage, which is how a failed extraction

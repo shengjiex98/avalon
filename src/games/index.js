@@ -9,7 +9,6 @@ import * as avalon from './avalon/game.js';
 import { MAX_PLAYERS as AVALON_MAX, MIN_PLAYERS as AVALON_MIN } from './avalon/rules.js';
 import * as onuw from './onuw/game.js';
 import { MAX_PLAYERS as ONUW_MAX, MIN_PLAYERS as ONUW_MIN } from './onuw/rules.js';
-import { validateAvalon, validateOnuw } from './restore.js';
 
 /** @typedef {import('../../types/contracts.js').CreatedRoom} CreatedRoom */
 /** @typedef {import('../../types/contracts.js').GameContext} GameContext */
@@ -77,11 +76,10 @@ function splitState(flat) {
  *   maxPlayers: number,
  *   module: any,
  *   actions: Record<string, (...args: any[]) => unknown>,
- *   validate: (context: any, state: any) => boolean,
  * }} definition
  * @returns {GameEntry & Record<string, any>}
  */
-function entry({ id, minPlayers, maxPlayers, module, actions, validate }) {
+function entry({ id, minPlayers, maxPlayers, module, actions }) {
   return {
     id,
     minPlayers,
@@ -120,10 +118,6 @@ function entry({ id, minPlayers, maxPlayers, module, actions, validate }) {
       return module.tick?.(gameContext(room), now) ?? false;
     },
 
-    validateRestore(room) {
-      return validate(gameContext(room), room.game.state);
-    },
-
     // Direct game-module seams remain for focused rule tests. Room code uses
     // the explicit operations above.
     addPlayer: module.addPlayer,
@@ -141,7 +135,6 @@ export const GAMES = {
     minPlayers: AVALON_MIN,
     maxPlayers: AVALON_MAX,
     module: avalon,
-    validate: validateAvalon,
     actions: {
       options: (g, id, body) => avalon.setOptions(g, id, body.options ?? {}),
       start: (g, id) => avalon.startGame(g, id),
@@ -160,7 +153,6 @@ export const GAMES = {
     minPlayers: ONUW_MIN,
     maxPlayers: ONUW_MAX,
     module: onuw,
-    validate: validateOnuw,
     actions: {
       options: (g, id, body) => onuw.setOptions(g, id, body.options ?? {}),
       start: (g, id, _body, { now } = {}) => onuw.startGame(g, id, { now }),

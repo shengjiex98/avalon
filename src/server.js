@@ -9,7 +9,7 @@ import { dirname, extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { API_PROTOCOL } from './api-protocol.js';
-import { validateAction, validateCreateRoom, validateJoin } from './api-validation.js';
+import { parseAction, parseCreateRoom, parseJoin, parseRoomCode } from './contracts/actions.ts';
 import { Avatars } from './avatars.js';
 import { GameError } from './lobby.js';
 import { defaultStateFile, load, save } from './persistence.js';
@@ -160,7 +160,7 @@ async function api(rooms, avatars, req, res, url) {
 
   if (url.pathname === '/api/rooms') {
     requireMethod(req, res, ['POST']);
-    const body = validateCreateRoom(await readJson(req));
+    const body = parseCreateRoom(await readJson(req));
     if (body.game !== undefined && !GAME_IDS.includes(body.game)) {
       throw new GameError('noSuchGame', { game: body.game });
     }
@@ -170,7 +170,7 @@ async function api(rooms, avatars, req, res, url) {
   if (parts[0] !== 'api' || parts[1] !== 'rooms' || !parts[2]) {
     throw new GameError('notFound');
   }
-  const code = parts[2].toUpperCase();
+  const code = parseRoomCode(parts[2]);
   const tail = parts[3];
   if (parts[4]) throw new GameError('notFound');
 
@@ -195,7 +195,7 @@ async function api(rooms, avatars, req, res, url) {
 
   if (tail === 'join') {
     requireMethod(req, res, ['POST']);
-    const body = validateJoin(await readJson(req, 384 * 1024));
+    const body = parseJoin(await readJson(req, 384 * 1024));
     let playerId = body.playerId ?? null;
     const room = rooms.get(code);
     const known = playerId && room.players.some((p) => p.id === playerId);
@@ -217,10 +217,10 @@ async function api(rooms, avatars, req, res, url) {
 
   if (tail === 'action') {
     requireMethod(req, res, ['POST']);
-    const body = await readJson(req);
+    const input = await readJson(req);
     const room = rooms.peek(code);
     if (!room) throw new GameError('noSuchRoom', { code });
-    validateAction(room.game.id, body);
+    const body = parseAction(room.game.id, input);
     if (body.type === 'setGame' && !GAME_IDS.includes(body.game)) {
       throw new GameError('noSuchGame', { game: body.game });
     }

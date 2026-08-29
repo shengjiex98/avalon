@@ -1,26 +1,11 @@
-export type GameId = 'avalon' | 'onuw';
+export type GameId = import('../src/contracts/actions.ts').GameId;
 export type AvalonPhase = 'lobby' | 'reveal' | 'team' | 'vote' | 'quest' | 'assassin' | 'over';
 export type OnuwPhase = 'lobby' | 'reveal' | 'night' | 'day' | 'vote' | 'over';
 export type GamePhase = AvalonPhase | OnuwPhase;
 
-export interface Player {
-  id: string;
-  name: string;
-  avatar?: string;
-}
-
-export interface LogEntry {
-  key: string;
-  params: Record<string, unknown>;
-  at: number;
-}
-
-export interface JournalEntry {
-  t: string;
-  p: string;
-  b: Record<string, unknown>;
-  at: number;
-}
+export type Player = import('../src/contracts/persistence.ts').Player;
+export type LogEntry = import('../src/contracts/persistence.ts').LogEntry;
+export type JournalEntry = import('../src/contracts/persistence.ts').JournalEntry;
 
 export interface EngineShared {
   code: string;
@@ -109,24 +94,7 @@ export type AvalonContext = EngineShared & AvalonState & { gameId: 'avalon' };
 export type OnuwContext = EngineShared & OnuwState & { gameId: 'onuw' };
 export type GameContext = AvalonContext | OnuwContext;
 
-interface PersistedRoomBase {
-  code: string;
-  createdAt: number;
-  players: Player[];
-  hostId: string | null;
-  log: LogEntry[];
-  seed: number;
-  rng: number;
-  revision: number;
-  journal: JournalEntry[];
-  journalDropped?: true;
-  touchedAt: number;
-}
-
-export type PersistedRoom = PersistedRoomBase & (
-  | { game: { id: 'avalon'; state: AvalonState } }
-  | { game: { id: 'onuw'; state: OnuwState } }
-);
+export type PersistedRoom = import('../src/contracts/persistence.ts').PersistedRoom;
 export type CreatedRoom = Omit<PersistedRoom, 'touchedAt'>;
 
 export interface Subscription {
@@ -139,48 +107,21 @@ export type RuntimeRoom = PersistedRoom & {
   timer: NodeJS.Timeout | null;
 };
 
-export interface SnapshotFile {
-  stateVersion: number;
-  savedAt: number;
-  rooms: PersistedRoom[];
-}
+export type SnapshotFile = import('../src/contracts/persistence.ts').SnapshotFile;
 
 /** A seat this browser holds, remembered so a reload can offer it back. */
 export type StoredSeat = { id: string; name: string };
 
-export type CreateRoomCommand = { game?: string };
-export type JoinCommand = { name: string; playerId?: string; avatar?: string | false };
-type PlayerCommand<T extends string> = { type: T; playerId: string };
-export type SharedCommand =
-  | (PlayerCommand<'setGame'> & { game: string })
-  | PlayerCommand<'join'> & { id: string; name: string }
-  | PlayerCommand<'leave'>;
-export type AvalonCommand =
-  | (PlayerCommand<'options'> & { options: Record<string, unknown> })
-  | PlayerCommand<'start' | 'confirm' | 'reset' | 'again'>
-  | (PlayerCommand<'propose'> & { team: string[] })
-  | (PlayerCommand<'vote'> & { approve: boolean })
-  | (PlayerCommand<'card'> & { success: boolean })
-  | (PlayerCommand<'assassinate'> & { target: string });
-export type OnuwCommand =
-  | (PlayerCommand<'options'> & { options: Record<string, unknown> })
-  | PlayerCommand<'start' | 'confirm' | 'startVote' | 'reset' | 'again'>
-  | (PlayerCommand<'night'> & { action: Record<string, unknown> })
-  | (PlayerCommand<'vote'> & { target: string });
-export type ValidatedAction = SharedCommand | AvalonCommand | OnuwCommand;
-export interface RoomCommand {
-  type: string;
-  playerId?: string;
-  id?: string;
-  name?: string;
-  game?: GameId;
-  options?: Record<string, unknown>;
-  team?: string[];
-  approve?: boolean;
-  success?: boolean;
-  target?: string;
-  action?: Record<string, unknown>;
-}
+export type CreateRoomCommand = import('../src/contracts/actions.ts').CreateRoomCommand;
+export type JoinCommand = import('../src/contracts/actions.ts').JoinCommand;
+export type AvalonCommand = import('../src/contracts/actions.ts').AvalonAction;
+export type OnuwCommand = import('../src/contracts/actions.ts').OnuwAction;
+export type ValidatedAction = import('../src/contracts/actions.ts').ValidatedAction;
+type ActorOptional<T> = T extends { playerId: string }
+  ? Omit<T, 'playerId'> & { playerId?: string }
+  : T;
+type InternalJoinCommand = { type: 'join'; id: string; name: string; playerId?: string };
+export type RoomCommand = ActorOptional<ValidatedAction> | InternalJoinCommand;
 
 export interface PublicViewBase<G extends GameId, P extends GamePhase> {
   code: string;
@@ -345,7 +286,6 @@ export interface GameEntry {
   view(room: RuntimeRoom, playerId: string, now: number): PublicView;
   deadline(room: RuntimeRoom): number | null;
   tick(room: RuntimeRoom, now: number): boolean;
-  validateRestore(room: PersistedRoom): boolean;
 }
 
 export interface RoomRegistry {

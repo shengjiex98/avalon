@@ -2,6 +2,7 @@ import type {
   AvalonLobbyView, AvalonQuestView, AvalonTeamView, AvalonView,
   OnuwLobbyView, OnuwNightView, OnuwOverView, OnuwView,
 } from './contracts.js';
+import type { AvalonAction, OnuwAction } from '../src/contracts/actions.ts';
 
 declare const avalonLobby: AvalonLobbyView;
 declare const avalonQuest: AvalonQuestView;
@@ -62,3 +63,10 @@ avalonTeam.players[0]?.hasPlayed;
 avalonQuest.teamSize;
 // @ts-expect-error the night clock does not exist in the One Night lobby
 onuwLobby.night;
+
+// @ts-expect-error propose requires its team payload
+const missingAvalonPayload: AvalonAction = { type: 'propose', playerId: 'p0' };
+// @ts-expect-error a One Night action cannot cross the Avalon registry boundary
+const wrongGameAction: AvalonAction = { type: 'night', playerId: 'p0', action: { skip: true } };
+// @ts-expect-error an Avalon action cannot cross the One Night registry boundary
+const otherWrongGameAction: OnuwAction = { type: 'card', playerId: 'p0', success: true };

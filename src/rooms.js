@@ -5,6 +5,8 @@
 
 import { randomInt } from 'node:crypto';
 
+import { persistedRoomsSchema } from './contracts/persistence.ts';
+import { validateRestoreInvariants } from './contracts/restore-invariants.ts';
 import { GameError, logEvent, record, require_ } from './lobby.js';
 import { DEFAULT_GAME, gameContext, gameFor } from './games/index.js';
 
@@ -105,11 +107,13 @@ export class Rooms {
       let result;
       if (body.type === 'setGame') {
         result = this.replaceGame(room, playerId, /** @type {GameId} */ (body.game));
-      } else if (body.type === 'join' || body.type === 'leave') {
-        result = gameFor(room.game.id).rosterChange(room, body.type, {
+      } else if (body.type === 'join') {
+        result = gameFor(room.game.id).rosterChange(room, 'join', {
           id: body.id ?? playerId,
-          ...(body.name === undefined ? {} : { name: body.name }),
+          name: body.name,
         });
+      } else if (body.type === 'leave') {
+        result = gameFor(room.game.id).rosterChange(room, 'leave', { id: playerId });
       } else {
         result = gameFor(room.game.id).command(room, playerId, body, { now: () => at });
       }
@@ -233,21 +237,16 @@ export class Rooms {
   /** Validate the whole snapshot before installing any room. */
   /** @param {unknown} entries */
   restore(entries) {
-    if (!Array.isArray(entries)) return false;
+    const parsed = persistedRoomsSchema.safeParse(entries);
+    if (!parsed.success) return false;
     const codes = new Set();
-    for (const candidate of entries) {
-      if (!validRoomEnvelope(candidate)) return false;
-      const room = /** @type {PersistedRoom} */ (candidate);
+    for (const room of parsed.data) {
       if (codes.has(room.code) || this.rooms.has(room.code)) return false;
       codes.add(room.code);
-      let engine;
-      try { engine = gameFor(room.game.id); }
-      catch { return false; }
-      if (!engine.validateRestore(room)) return false;
+      if (!validateRestoreInvariants(room)) return false;
     }
 
-    for (const candidate of entries) {
-      const entry = /** @type {PersistedRoom} */ (candidate);
+    for (const entry of parsed.data) {
       const room = this.runtimeRoom(entry);
       this.rooms.set(room.code, room);
       this.scheduleTick(room.code);
@@ -255,54 +254,6 @@ export class Rooms {
     return true;
   }
 }
-
-/** @param {any} room */
-function validRoomEnvelope(room) {
-  if (!plainRecord(room) || !CODE_PATTERN.test(room.code)) return false;
-  if (!Number.isFinite(room.createdAt) || !Number.isFinite(room.touchedAt)) return false;
-  if (!uint32(room.seed) || !uint32(room.rng) || !Number.isInteger(room.revision) || room.revision < 0) return false;
-  if (!Array.isArray(room.players) || !room.players.every(validPlayer)) return false;
-  const ids = room.players.map((player) => player.id);
-  if (new Set(ids).size !== ids.length) return false;
-  const names = room.players.map((player) => player.name.toLowerCase());
-  if (new Set(names).size !== names.length) return false;
-  if (room.hostId !== null && !ids.includes(room.hostId)) return false;
-  if ((room.players.length === 0) !== (room.hostId === null)) return false;
-  if (!Array.isArray(room.log) || !room.log.every(validLog)) return false;
-  if (!Array.isArray(room.journal) || !room.journal.every(validJournal)) return false;
-  if (room.journalDropped !== undefined && room.journalDropped !== true) return false;
-  if (!plainRecord(room.game) || !exactKeys(room.game, ['id', 'state'])) return false;
-  if (typeof room.game.id !== 'string' || !plainRecord(room.game.state)) return false;
-  const required = ['code', 'createdAt', 'players', 'hostId', 'log', 'seed', 'rng', 'revision', 'journal', 'touchedAt', 'game'];
-  if (!exactKeys(room, required, ['journalDropped'])) return false;
-  const forbidden = ['code', 'gameId', 'createdAt', 'players', 'hostId', 'log', 'seed', 'rng', 'version', 'actions', 'actionsDropped'];
-  return forbidden.every((key) => !(key in room.game.state));
-}
-
-/** @param {unknown} value @returns {value is Record<string, any>} */
-const plainRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-/** @param {Record<string, any>} value @param {string[]} required @param {string[]} [optional] */
-const exactKeys = (value, required, optional = []) => {
-  const keys = Object.keys(value);
-  return required.every((key) => keys.includes(key))
-    && keys.every((key) => required.includes(key) || optional.includes(key));
-};
-/** @param {unknown} value */
-const uint32 = (value) => Number.isInteger(value) && /** @type {number} */ (value) >= 0
-  && /** @type {number} */ (value) <= 0xffffffff;
-/** @param {any} player */
-const validPlayer = (player) => plainRecord(player)
-  && exactKeys(player, ['id', 'name'], ['avatar'])
-  && typeof player.id === 'string' && player.id.length > 0
-  && typeof player.name === 'string' && player.name.length > 0 && player.name.length <= 24
-  && (player.avatar === undefined || typeof player.avatar === 'string');
-/** @param {any} entry */
-const validLog = (entry) => plainRecord(entry)
-  && typeof entry.key === 'string' && plainRecord(entry.params) && Number.isFinite(entry.at);
-/** @param {any} entry */
-const validJournal = (entry) => plainRecord(entry)
-  && typeof entry.t === 'string' && typeof entry.p === 'string'
-  && plainRecord(entry.b) && Number.isFinite(entry.at);
 
 export function randomCode(length = CODE_LENGTH) {
   let out = '';

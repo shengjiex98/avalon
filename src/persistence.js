@@ -4,6 +4,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'n
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { snapshotFileSchema } from './contracts/persistence.ts';
 import { STATE_VERSION } from './state-version.js';
 
 /** @typedef {import('../types/contracts.js').RoomRegistry} RoomRegistry */
@@ -40,21 +41,24 @@ export function save(rooms, file) {
 /** Restore a compatible snapshot, or leave the registry empty on any bad input. */
 /** @param {RoomRegistry} rooms @param {string} file */
 export function load(rooms, file) {
-  /** @type {{ stateVersion?: unknown, rooms?: unknown }} */
-  let parsed;
+  let input;
   try {
-    parsed = JSON.parse(readFileSync(file, 'utf8'));
+    input = JSON.parse(readFileSync(file, 'utf8'));
   } catch (err) {
     const missing = err !== null && typeof err === 'object' && 'code' in err && err.code === 'ENOENT';
     const reason = missing ? 'no snapshot found' : 'snapshot is unreadable; starting empty';
     return { restored: 0, reason };
   }
-  if (parsed.stateVersion !== STATE_VERSION) {
-    const reason = `snapshot is state version ${parsed.stateVersion}, expected ${STATE_VERSION}; discarding`;
+  const parsed = snapshotFileSchema.safeParse(input);
+  if (!parsed.success) {
+    return { restored: 0, reason: 'snapshot is invalid; starting empty' };
+  }
+  if (parsed.data.stateVersion !== STATE_VERSION) {
+    const reason = `snapshot is state version ${parsed.data.stateVersion}, expected ${STATE_VERSION}; discarding`;
     return { restored: 0, reason };
   }
-  const entries = parsed.rooms ?? [];
-  if (!Array.isArray(entries) || !rooms.restore(entries)) {
+  const entries = parsed.data.rooms;
+  if (!rooms.restore(entries)) {
     return { restored: 0, reason: 'snapshot is invalid; starting empty' };
   }
   return {

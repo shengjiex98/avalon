@@ -17,7 +17,7 @@ in [`test/server.test.js`](../test/server.test.js).
 
 Exact methods, status codes, and limits belong in
 [`src/server.js`](../src/server.js). Request bodies are treated as unknown
-input and validated by [`src/api-validation.js`](../src/api-validation.js)
+input and validated by [`src/contracts/actions.ts`](../src/contracts/actions.ts)
 before dispatch; game-specific actions remain defined by
 [`src/games/index.js`](../src/games/index.js) and the individual game modules.
 
