@@ -188,6 +188,17 @@ test('the installed updater owns compatibility, activation, and rollback orderin
   assert.ok(gated < stopped && stopped < backedUp && backedUp < selected && selected < started);
   assert.match(updater, /409\) log .*; exit 75/);
   assert.match(updater, /select_release "\$rollback"[\s\S]*restore_snapshot/);
+});
+
+test('the server and the updater snapshot the same file', async () => {
   const unit = await read('../deploy/avalon.service');
-  assert.match(unit, /StateDirectory=avalon/);
+  const updater = await read('../deploy/updater.sh');
+  const installer = await read('../deploy/install-updater.sh');
+  // StateDirectory= resolved under $XDG_CONFIG_HOME for user units before
+  // systemd 256, so the updater backed up a file the server never wrote.
+  assert.doesNotMatch(unit, /^StateDirectory/m);
+  assert.match(unit, /Environment=XDG_STATE_HOME=%h\/\.local\/state$/m);
+  assert.match(unit, /ReadWritePaths=%h\/\.local\/state\/avalon$/m);
+  assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$\{XDG_STATE_HOME:-\$HOME\/\.local\/state\}\/avalon\/rooms\.json\}/);
+  assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
 });

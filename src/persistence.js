@@ -4,10 +4,14 @@ import { dirname, join } from 'node:path';
 
 import { STATE_VERSION } from './state-version.js';
 
-/** systemd's StateDirectory when running as a service; XDG fallback for dev. */
+/**
+ * The XDG state path, or AVALON_STATE_FILE. Deliberately not systemd's
+ * StateDirectory: for a user unit that resolves under $XDG_CONFIG_HOME before
+ * systemd 256, which silently diverges from the snapshot deploy/updater.sh
+ * backs up and restores.
+ */
 export function defaultStateFile() {
-  const dir = process.env.STATE_DIRECTORY
-    ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'avalon');
+  const dir = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'avalon');
   return process.env.AVALON_STATE_FILE ?? join(dir, 'rooms.json');
 }
 
