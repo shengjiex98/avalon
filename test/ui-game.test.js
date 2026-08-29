@@ -20,8 +20,8 @@ function newGame({ confirm = true } = {}) {
   // Pin the deck: the lobby otherwise picks one to suit the table size.
   g.setOptions(game, 'p0', { percival: false, morgana: false, mordred: false, oberon: false });
   g.startGame(game, 'p0', { shuffle: (l) => l });
-  game.leaderIndex = 0;
-  if (confirm) for (const p of game.players) g.confirmRole(game, p.id);
+  game.state.leaderIndex = 0;
+  if (confirm) for (const p of game.room.players) g.confirmRole(game, p.id);
   return game;
 }
 
@@ -30,7 +30,7 @@ function show(game, playerId, lang = 'en') {
   app.lang = lang;
   app.server = '';
   app.serverStatus = 'ready';
-  app.code = game.code;
+  app.code = game.room.code;
   app.playerId = playerId;
   app.selection = [];
   app.infoPopup = null;
@@ -54,9 +54,9 @@ test('the Avalon lobby uses the shared aligned role picker', () => {
 
 const buttons = (node) => node.findAll((n) => n.tagName === 'BUTTON');
 const labelled = (node, re) => buttons(node).filter((b) => re.test(b.text));
-const evilId = (game) => game.players.find((p) => sideOf(game.roles[p.id]) === 'evil').id;
-const goodId = (game) => game.players.find((p) => sideOf(game.roles[p.id]) === 'good').id;
-const roleId = (game, role) => game.players.find((p) => game.roles[p.id] === role).id;
+const evilId = (game) => game.room.players.find((p) => sideOf(game.state.roles[p.id]) === 'evil').id;
+const goodId = (game) => game.room.players.find((p) => sideOf(game.state.roles[p.id]) === 'good').id;
+const roleId = (game, role) => game.room.players.find((p) => game.state.roles[p.id] === role).id;
 
 // Any of these appearing verbatim means a string was never translated.
 const KEY_PREFIXES = ['log', 'err', 'role', 'roleDesc', 'phase', 'vote', 'quest', 'board', 'team',
@@ -72,7 +72,7 @@ test('the reveal screen shows your own role and waits for everyone', () => {
   const merlin = roleId(game, 'merlin');
   const view = show(game, merlin);
 
-  const self = view.byClass('player').find((row) => row.byClass('name')[0]?.text === game.players.find((p) => p.id === merlin).name);
+  const self = view.byClass('player').find((row) => row.byClass('name')[0]?.text === game.room.players.find((p) => p.id === merlin).name);
   assert.match(self.className, /is-you/, 'the current player is a styled row, not another tag');
   assert.equal(self.byClass('tag').some((tag) => tag.text === 'you'), false);
   assert.ok(self.byClass('player-number').length, 'the seat number rides on the avatar');
@@ -116,7 +116,7 @@ test('only the host can confirm an active-game reset', () => {
   let view = show(game, 'p1');
   assert.equal(view.byId('resetGame'), null);
 
-  view = show(game, game.hostId);
+  view = show(game, game.room.hostId);
   dom.calls.length = 0;
   dom.state.confirmations.length = 0;
   dom.state.confirmResult = false;
@@ -134,7 +134,7 @@ test('only the host can confirm an active-game reset', () => {
 
 test('the reset confirmation follows the host language', () => {
   const game = newGame();
-  const view = show(game, game.hostId, 'zh');
+  const view = show(game, game.room.hostId, 'zh');
   dom.state.confirmations.length = 0;
   dom.state.confirmResult = false;
   view.byId('resetGame').dispatch('click');
@@ -150,8 +150,8 @@ test('Merlin is shown who is evil, but never told their roles', () => {
   const view = show(game, merlin);
   view.byId('roleToggle').dispatch('click');
 
-  const evilNames = game.players
-    .filter((p) => sideOf(game.roles[p.id]) === 'evil')
+  const evilNames = game.room.players
+    .filter((p) => sideOf(game.state.roles[p.id]) === 'evil')
     .map((p) => p.name);
   // The marker is the moon sigil the reveal card teaches, not the word "evil".
   const tags = dom.fixtures.view.byClass('faction-sigil').filter((t) => t.className.includes('mini'));
@@ -220,7 +220,7 @@ test('the vote screen offers approve and reject, then reports the tally', () => 
   assertNoRawKeys(view, 'vote');
 
   g.castVote(game, 'p1', false);
-  for (const p of game.players.slice(2)) g.castVote(game, p.id, true);
+  for (const p of game.room.players.slice(2)) g.castVote(game, p.id, true);
   view = show(game, 'p2');
   assert.match(view.text, /4 approve, 1 reject/);
   assert.match(view.text, /approved/);
@@ -238,7 +238,7 @@ test('only evil players are offered a fail card', () => {
   const evil = evilId(game);
   const good = goodId(game);
   g.proposeTeam(game, 'p0', [good, evil]);
-  for (const p of game.players) g.castVote(game, p.id, true);
+  for (const p of game.room.players) g.castVote(game, p.id, true);
 
   const evilView = show(game, evil);
   assert.equal(labelled(evilView, /^Success$/).length, 1);
@@ -250,7 +250,7 @@ test('only evil players are offered a fail card', () => {
   assert.match(goodView.text, /must play Success/);
 
   // A player not on the quest just watches.
-  const bystander = game.players.map((p) => p.id).find((id) => id !== good && id !== evil);
+  const bystander = game.room.players.map((p) => p.id).find((id) => id !== good && id !== evil);
   const watching = show(game, bystander);
   assert.equal(labelled(watching, /^Success$/).length, 0);
 });
@@ -261,7 +261,7 @@ test('the board marks a failed quest and warns on the fifth rejection', () => {
   const evil = evilId(game);
   const good = goodId(game);
   g.proposeTeam(game, 'p0', [good, evil]);
-  for (const p of game.players) g.castVote(game, p.id, true);
+  for (const p of game.room.players) g.castVote(game, p.id, true);
   g.playCard(game, good, true);
   g.playCard(game, evil, false);
 
@@ -271,9 +271,9 @@ test('the board marks a failed quest and warns on the fifth rejection', () => {
 
   // Now stack up four rejections.
   for (let i = 0; i < 4; i++) {
-    const leader = game.players[game.leaderIndex].id;
-    g.proposeTeam(game, leader, game.players.slice(0, g.currentTeamSize(game)).map((p) => p.id));
-    for (const p of game.players) g.castVote(game, p.id, false);
+    const leader = game.room.players[game.state.leaderIndex].id;
+    g.proposeTeam(game, leader, game.room.players.slice(0, g.currentTeamSize(game)).map((p) => p.id));
+    for (const p of game.room.players) g.castVote(game, p.id, false);
   }
   view = show(game, 'p0');
   assert.match(view.text, /One more rejection and evil wins/);
@@ -283,13 +283,13 @@ test('the board marks a failed quest and warns on the fifth rejection', () => {
 test('the assassin is asked to name Merlin and good players are not', () => {
   const game = newGame();
   for (let round = 0; round < 3; round++) {
-    const leader = game.players[game.leaderIndex].id;
-    const team = game.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
+    const leader = game.room.players[game.state.leaderIndex].id;
+    const team = game.room.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
     g.proposeTeam(game, leader, team);
-    for (const p of game.players) g.castVote(game, p.id, true);
+    for (const p of game.room.players) g.castVote(game, p.id, true);
     for (const id of team) g.playCard(game, id, true);
   }
-  assert.equal(game.phase, 'assassin');
+  assert.equal(game.state.phase, 'assassin');
 
   const assassin = roleId(game, 'assassin');
   const view = show(game, assassin);
@@ -305,10 +305,10 @@ test('the assassin is asked to name Merlin and good players are not', () => {
 test('the end screen names the winner and reveals every role', () => {
   const game = newGame();
   for (let round = 0; round < 3; round++) {
-    const leader = game.players[game.leaderIndex].id;
-    const team = game.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
+    const leader = game.room.players[game.state.leaderIndex].id;
+    const team = game.room.players.slice(0, g.currentTeamSize(game)).map((p) => p.id);
     g.proposeTeam(game, leader, team);
-    for (const p of game.players) g.castVote(game, p.id, true);
+    for (const p of game.room.players) g.castVote(game, p.id, true);
     for (const id of team) g.playCard(game, id, true);
   }
   g.assassinate(game, roleId(game, 'assassin'), roleId(game, 'merlin'));
@@ -336,7 +336,7 @@ test('the whole game reads in Chinese too', () => {
 test('the history reads as sentences, not keys, in both languages', () => {
   const game = newGame();
   g.proposeTeam(game, 'p0', ['p0', 'p1']);
-  for (const p of game.players) g.castVote(game, p.id, true);
+  for (const p of game.room.players) g.castVote(game, p.id, true);
 
   const en = show(game, 'p0');
   assert.match(en.text, /Ann proposed Ann, 张三/);
@@ -362,7 +362,7 @@ test('the middle pane keeps its scroll position across a redraw', () => {
   assert.equal(view.byClass('phase-area')[0].scrollTop, 180);
 
   // A new phase is new content, so it starts at the top again.
-  for (const p of game.players) g.castVote(game, p.id, true);
+  for (const p of game.room.players) g.castVote(game, p.id, true);
   app.view = g.viewFor(game, 'p2');
   render();
   assert.equal(view.byClass('phase-area')[0].scrollTop, 0);
@@ -454,7 +454,7 @@ test('the house rules in force are named in the reference panel, in both languag
   const game = lobby(5);
   g.setOptions(game, 'p0', { houseRules: { resetRejects: true } });
   g.startGame(game, 'p0', { shuffle: (l) => l });
-  for (const p of game.players) g.confirmRole(game, p.id);
+  for (const p of game.room.players) g.confirmRole(game, p.id);
 
   let view = show(game, 'p0');
   assert.doesNotMatch(view.text, /Reset rejection count/, 'it lives behind the reference button');
@@ -478,9 +478,9 @@ function voted(rules) {
     percival: false, morgana: false, mordred: false, oberon: false, houseRules: rules,
   });
   g.startGame(game, 'p0', { shuffle: (l) => l });
-  for (const p of game.players) g.confirmRole(game, p.id);
+  for (const p of game.room.players) g.confirmRole(game, p.id);
   g.proposeTeam(game, 'p0', ['p0', 'p1']);
-  game.players.forEach((p, i) => g.castVote(game, p.id, i < 2));   // 2–3, rejected
+  game.room.players.forEach((p, i) => g.castVote(game, p.id, i < 2));   // 2–3, rejected
   return game;
 }
 
@@ -504,8 +504,8 @@ test('a hidden vote shows the tally and no ballots at all', () => {
 test('the reset rule still warns that the fifth rejection gives evil the game', () => {
   const game = voted({ resetRejects: true });
   for (let i = 0; i < 3; i++) {          // four rejections in all: one to go
-    g.proposeTeam(game, game.players[game.leaderIndex].id, ['p0', 'p1']);
-    for (const p of game.players) g.castVote(game, p.id, false);
+    g.proposeTeam(game, game.room.players[game.state.leaderIndex].id, ['p0', 'p1']);
+    for (const p of game.room.players) g.castVote(game, p.id, false);
   }
   assert.match(show(game, 'p2').byClass('banner')[0].text, /evil wins/);
 });

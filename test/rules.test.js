@@ -114,13 +114,13 @@ test('the default deck for each table size is the standard setup', () => {
 
 test('house rules all start off, and one a snapshot predates stays off', () => {
   assert.deepEqual(HOUSE_RULES, { randomLeader: false, hiddenVotes: false, resetRejects: false });
-  assert.deepEqual(houseRulesInForce({ houseRules: { hiddenVotes: true } }, HOUSE_RULE_KEYS), {
+  assert.deepEqual(houseRulesInForce({ state: { houseRules: { hiddenVotes: true } } }, HOUSE_RULE_KEYS), {
     randomLeader: false, hiddenVotes: true, resetRejects: false,
   });
 });
 
 test('setting house rules touches only the keys this game offers', () => {
-  const g = { houseRules: { randomLeader: true } };
+  const g = { state: { houseRules: { randomLeader: true } } };
   setHouseRules(g, { hiddenVotes: 1, decisiveVote: true, resetRejects: false }, HOUSE_RULE_KEYS);
-  assert.deepEqual(g.houseRules, { randomLeader: true, hiddenVotes: true, resetRejects: false });
+  assert.deepEqual(g.state.houseRules, { randomLeader: true, hiddenVotes: true, resetRejects: false });
 });

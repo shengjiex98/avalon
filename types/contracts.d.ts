@@ -7,21 +7,6 @@ export type Player = import('../src/contracts/persistence.ts').Player;
 export type LogEntry = import('../src/contracts/persistence.ts').LogEntry;
 export type JournalEntry = import('../src/contracts/persistence.ts').JournalEntry;
 
-export interface EngineShared {
-  code: string;
-  gameId: GameId;
-  createdAt: number;
-  players: Player[];
-  hostId: string | null;
-  log: LogEntry[];
-  seed: number;
-  rng: number;
-  version: number;
-  actions: JournalEntry[];
-  actionsDropped?: true;
-}
-export type BaseGameState<G extends GameId = GameId> = EngineShared & { gameId: G; phase: 'lobby' };
-
 export interface AvalonState {
   phase: AvalonPhase;
   options: Record<string, boolean>;
@@ -90,10 +75,6 @@ export interface OnuwState {
   winners: string[];
 }
 
-export type AvalonContext = EngineShared & AvalonState & { gameId: 'avalon' };
-export type OnuwContext = EngineShared & OnuwState & { gameId: 'onuw' };
-export type GameContext = AvalonContext | OnuwContext;
-
 export type PersistedRoom = import('../src/contracts/persistence.ts').PersistedRoom;
 export type CreatedRoom = Omit<PersistedRoom, 'touchedAt'>;
 
@@ -106,6 +87,19 @@ export type RuntimeRoom = PersistedRoom & {
   subscribers: Set<Subscription>;
   timer: NodeJS.Timeout | null;
 };
+
+type ContextRoom<R extends PersistedRoom> = Omit<R, 'touchedAt'>
+  & Partial<Pick<R, 'touchedAt'>>
+  & { subscribers?: Set<Subscription>; timer?: NodeJS.Timeout | null };
+export type AvalonContext = {
+  room: ContextRoom<import('../src/contracts/persistence.ts').AvalonPersistedRoom>;
+  state: AvalonState;
+};
+export type OnuwContext = {
+  room: ContextRoom<import('../src/contracts/persistence.ts').OnuwPersistedRoom>;
+  state: OnuwState;
+};
+export type GameContext = AvalonContext | OnuwContext;
 
 export type SnapshotFile = import('../src/contracts/persistence.ts').SnapshotFile;
 
@@ -132,7 +126,7 @@ export interface PublicViewBase<G extends GameId, P extends GamePhase> {
   me: null | { id: string; name: string; avatar: string | null };
   log: LogEntry[];
 }
-export type SharedViewFor<C extends GameContext> = PublicViewBase<C['gameId'], C['phase']>;
+export type SharedViewFor<C extends GameContext> = PublicViewBase<C['room']['game']['id'], C['state']['phase']>;
 
 interface ViewPerson {
   id: string;

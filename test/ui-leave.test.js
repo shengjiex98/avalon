@@ -23,7 +23,7 @@ function seatedInGame({ started = true, seat = 'p1' } = {}) {
   ['Ann', '张三', 'Cai', 'Dee', 'Eli'].forEach((name, i) => g.addPlayer(game, { id: `p${i}`, name }));
   if (started) {
     g.startGame(game, 'p0', { shuffle: (list) => list });
-    for (const p of game.players) g.confirmRole(game, p.id);
+    for (const p of game.room.players) g.confirmRole(game, p.id);
   }
   Object.assign(app, {
     lang: 'en', server: '', serverStatus: 'ready', code: 'WXYZ', playerId: seat,

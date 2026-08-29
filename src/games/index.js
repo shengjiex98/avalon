@@ -1,6 +1,5 @@
-// The registry is the room/game boundary. Game modules keep their focused,
-// flat state-machine API; rooms store only the engine-specific portion and the
-// registry supplies the shared room fields while an engine operation runs.
+// The registry is the room/game boundary. It gives game modules an explicit
+// view of the shared room and the engine-owned state while an operation runs.
 
 // @ts-check
 
@@ -11,63 +10,10 @@ import * as onuw from './onuw/game.js';
 import { MAX_PLAYERS as ONUW_MAX, MIN_PLAYERS as ONUW_MIN } from './onuw/rules.js';
 
 /** @typedef {import('../../types/contracts.js').CreatedRoom} CreatedRoom */
-/** @typedef {import('../../types/contracts.js').GameContext} GameContext */
 /** @typedef {import('../../types/contracts.js').GameEntry} GameEntry */
 /** @typedef {import('../../types/contracts.js').GameId} GameId */
 /** @typedef {import('../../types/contracts.js').PersistedRoom} PersistedRoom */
 /** @typedef {import('../../types/contracts.js').RuntimeRoom} RuntimeRoom */
-
-const ROOM_FIELDS = new Map([
-  ['code', 'code'],
-  ['createdAt', 'createdAt'],
-  ['players', 'players'],
-  ['hostId', 'hostId'],
-  ['log', 'log'],
-  ['seed', 'seed'],
-  ['rng', 'rng'],
-  ['version', 'revision'],
-  ['actions', 'journal'],
-  ['actionsDropped', 'journalDropped'],
-]);
-
-/** A temporary engine-facing facade; never stored or serialized. */
-/** @param {PersistedRoom} room @returns {GameContext} */
-export function gameContext(room) {
-  const state = /** @type {Record<string | symbol, any>} */ (room.game.state);
-  return /** @type {GameContext} */ (new Proxy(state, {
-    get(target, key, receiver) {
-      if (key === 'gameId') return room.game.id;
-      const roomKey = typeof key === 'string' ? ROOM_FIELDS.get(key) : undefined;
-      return roomKey ? /** @type {any} */ (room)[roomKey] : Reflect.get(target, key, receiver);
-    },
-    set(target, key, value, receiver) {
-      if (key === 'gameId') {
-        room.game.id = value;
-        return true;
-      }
-      const roomKey = typeof key === 'string' ? ROOM_FIELDS.get(key) : undefined;
-      if (roomKey) {
-        /** @type {any} */ (room)[roomKey] = value;
-        return true;
-      }
-      return Reflect.set(target, key, value, receiver);
-    },
-  }));
-}
-
-/** @param {any} flat */
-function splitState(flat) {
-  const state = { ...flat };
-  /** @type {Record<string, any>} */
-  const room = {};
-  for (const [engineKey, roomKey] of ROOM_FIELDS) {
-    room[roomKey] = state[engineKey];
-    delete state[engineKey];
-  }
-  delete state.gameId;
-  if (room.journalDropped === undefined) delete room.journalDropped;
-  return { room, state };
-}
 
 /**
  * @param {{
@@ -87,13 +33,12 @@ function entry({ id, minPlayers, maxPlayers, module, actions }) {
 
     /** Create the persisted room fields and engine member together. */
     create(code, options) {
-      const split = splitState(module.createGame(code, options));
-      return /** @type {CreatedRoom} */ ({ ...split.room, game: { id, state: split.state } });
+      return /** @type {CreatedRoom} */ (module.createGame(code, options).room);
     },
 
     /** The only game hook for room membership changes. */
     rosterChange(room, type, player) {
-      const context = gameContext(room);
+      const context = { room, state: room.game.state };
       if (type === 'join') return module.addPlayer(context, player);
       if (type === 'leave') return module.removePlayer(context, player.id);
       throw new GameError('unknownAction', { type });
@@ -103,19 +48,19 @@ function entry({ id, minPlayers, maxPlayers, module, actions }) {
     command(room, playerId, body, operationContext) {
       const action = actions[body.type];
       if (!action) throw new GameError('unknownAction', { type: body.type });
-      return action(gameContext(room), playerId, body, operationContext);
+      return action({ room, state: room.game.state }, playerId, body, operationContext);
     },
 
     view(room, playerId, now) {
-      return module.viewFor(gameContext(room), playerId, now);
+      return module.viewFor({ room, state: room.game.state }, playerId, now);
     },
 
     deadline(room) {
-      return module.nextDeadline?.(gameContext(room)) ?? null;
+      return module.nextDeadline?.({ room, state: room.game.state }) ?? null;
     },
 
     tick(room, now) {
-      return module.tick?.(gameContext(room), now) ?? false;
+      return module.tick?.({ room, state: room.game.state }, now) ?? false;
     },
 
     // Direct game-module seams remain for focused rule tests. Room code uses

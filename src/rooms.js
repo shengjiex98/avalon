@@ -8,9 +8,10 @@ import { randomInt } from 'node:crypto';
 import { persistedRoomsSchema } from './contracts/persistence.ts';
 import { validateRestoreInvariants } from './contracts/restore-invariants.ts';
 import { GameError, logEvent, record, require_ } from './lobby.js';
-import { DEFAULT_GAME, gameContext, gameFor } from './games/index.js';
+import { DEFAULT_GAME, gameFor } from './games/index.js';
 
 /** @typedef {import('../types/contracts.js').GameId} GameId */
+/** @typedef {import('../types/contracts.js').GameContext} GameContext */
 /** @typedef {import('../types/contracts.js').PersistedRoom} PersistedRoom */
 /** @typedef {import('../types/contracts.js').PublicView} PublicView */
 /** @typedef {import('../types/contracts.js').RoomCommand} RoomCommand */
@@ -88,12 +89,12 @@ export class Rooms {
 
   /** @param {RuntimeRoom} room @param {string} playerId @param {GameId} gameId */
   replaceGame(room, playerId, gameId) {
-    require_(gameContext(room).phase === 'lobby', 'gameAlreadyStarted');
+    require_(room.game.state.phase === 'lobby', 'gameAlreadyStarted');
     require_(playerId === room.hostId, 'hostOnly');
     if (room.game.id === gameId) return;
     const next = gameFor(gameId).create(room.code, { now: this.now, seed: room.seed });
     room.game = next.game;
-    logEvent(gameContext(room), 'log.gameSwitched', { game: gameId });
+    logEvent(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state })), 'log.gameSwitched', { game: gameId });
   }
 
   /** Player input enters through one successful-mutation boundary. */
@@ -117,7 +118,7 @@ export class Rooms {
       } else {
         result = gameFor(room.game.id).command(room, playerId, body, { now: () => at });
       }
-      record(gameContext(room), playerId, body, at);
+      record(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state })), playerId, body, at);
       return result;
     });
   }
@@ -160,13 +161,10 @@ export class Rooms {
     return () => room.subscribers.delete(sub);
   }
 
-  /**
-   * Compatibility seam for focused tests and non-player jobs. The callback
-   * receives the temporary flat game facade, but the stored state stays split.
-   */
+  /** Compatibility seam for focused tests and non-player jobs. */
   /** @param {string} code @param {(context: import('../types/contracts.js').GameContext) => unknown} fn */
   apply(code, fn) {
-    return this.mutate(code, (room) => fn(gameContext(room)));
+    return this.mutate(code, (room) => fn(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state }))));
   }
 
   /** @param {string} code @param {(room: RuntimeRoom) => unknown} fn */

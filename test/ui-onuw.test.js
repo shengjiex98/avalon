@@ -29,15 +29,15 @@ function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee'], { ready = true } =
   const game = w.createGame('WXYZ', { now });
   names.slice(0, count).forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
   w.startGame(game, 'p0', { shuffle: (l) => l, now });
-  game.startRoles = Object.fromEntries(game.players.map((p, i) => [p.id, deck[i]]));
-  game.centreStart = deck.slice(count);
-  game.finalRoles = { ...game.startRoles };
-  game.centre = game.centreStart.slice();
-  game.script = nightScript(deck);
-  game.info = {};
-  game.swaps = [];
-  game.actions = {};
-  if (ready) for (const p of game.players) w.confirmRole(game, p.id, { now });
+  game.state.startRoles = Object.fromEntries(game.room.players.map((p, i) => [p.id, deck[i]]));
+  game.state.centreStart = deck.slice(count);
+  game.state.finalRoles = { ...game.state.startRoles };
+  game.state.centre = game.state.centreStart.slice();
+  game.state.script = nightScript(deck);
+  game.state.info = {};
+  game.state.swaps = [];
+  game.state.nightActions = {};
+  if (ready) for (const p of game.room.players) w.confirmRole(game, p.id, { now });
   return game;
 }
 
@@ -45,22 +45,22 @@ function dealt(deck, names = ['Ann', '张三', 'Cai', 'Dee'], { ready = true } =
 function stepTo(game, key) {
   for (let guard = 0; guard < 50; guard++) {
     if (w.currentStep(game)?.key === key) return;
-    clock = game.stepEndsAt;
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
   throw new Error(`never reached ${key}`);
 }
 
 function finishNight(game) {
-  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
-    clock = game.stepEndsAt;
+  for (let guard = 0; guard < 50 && game.state.phase === 'night'; guard++) {
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
 }
 
 /** Draw what `playerId` sees right now. */
 function show(game, playerId, lang = 'en') {
-  app.lang = lang; app.server = ''; app.serverStatus = 'ready'; app.code = game.code; app.playerId = playerId;
+  app.lang = lang; app.server = ''; app.serverStatus = 'ready'; app.code = game.room.code; app.playerId = playerId;
   app.selection = []; app.centres = []; app.seerMode = 'player'; app.infoPopup = null;
   app.view = w.viewFor(game, playerId, clock);
   render();
@@ -69,7 +69,7 @@ function show(game, playerId, lang = 'en') {
 
 const buttons = (n) => n.findAll((x) => x.tagName === 'BUTTON');
 const labelled = (n, re) => buttons(n).filter((b) => re.test(b.text));
-const roleId = (game, role) => game.players.find((p) => game.startRoles[p.id] === role).id;
+const roleId = (game, role) => game.room.players.find((p) => game.state.startRoles[p.id] === role).id;
 
 const KEY_RE = /\b(onuw|log|err|game|lobby|over|reveal)\.[a-zA-Z]\w*/g;
 const assertNoRawKeys = (view, where) =>
@@ -200,7 +200,7 @@ test('everyone sees the same announcement and the same countdown', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');
 
-  const screens = game.players.map((p) => show(game, p.id).text);
+  const screens = game.room.players.map((p) => show(game, p.id).text);
   for (const text of screens) {
     assert.match(text, /Seer, wake up/, 'the whole table hears the same call');
     assert.match(text, /Step 3 of 5/);
@@ -211,7 +211,7 @@ test('everyone sees the same announcement and the same countdown', () => {
 test('the night screen never says who is awake or acting', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');
-  for (const p of game.players) {
+  for (const p of game.room.players) {
     const view = show(game, p.id);
     assert.ok(!/Still acting|Waiting for|◆/.test(view.text), `${p.name}'s screen names someone`);
   }
@@ -230,9 +230,9 @@ test('the night calls the deck\'s roles and no others', () => {
   // Three players; Mason, Drunk, Insomniac and Minion are not in this deck.
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   const heard = [];
-  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
+  for (let guard = 0; guard < 50 && game.state.phase === 'night'; guard++) {
     heard.push(show(game, 'p1').text);
-    clock = game.stepEndsAt;
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
   const all = heard.join('\n');
@@ -244,7 +244,7 @@ test('the night calls the deck\'s roles and no others', () => {
   for (const called of [/Seer, wake up/, /Robber, wake up/, /Troublemaker, wake up/]) {
     assert.match(all, called);
   }
-  assert.equal(heard.length, game.script.length);
+  assert.equal(heard.length, game.state.script.length);
 });
 
 test('the card starts hidden and opens in a dismissible popup', () => {
@@ -270,7 +270,7 @@ test('One Night Werewolf uses the shared host-only reset control', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   assert.equal(show(game, 'p1').byId('resetGame'), null);
 
-  const hostView = show(game, game.hostId);
+  const hostView = show(game, game.room.hostId);
   dom.calls.length = 0;
   dom.state.confirmResult = true;
   hostView.byId('resetGame').dispatch('click');
@@ -560,7 +560,7 @@ test('a house rule in force is named in the reference panel, in both languages',
 
 test('a table that switched the house rule off is not told it is playing one', () => {
   const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
-  game.houseRules = { decisiveVote: false };
+  game.state.houseRules = { decisiveVote: false };
   finishNight(game);
   const view = show(game, 'p0');
   view.byId('refToggle').dispatch('click');
@@ -652,7 +652,7 @@ test('the end screen keeps each seat\u2019s tags inside the seat\u2019s box', ()
 
   const view = show(game, 'p0');
   const rows = view.byClass('player');
-  assert.equal(rows.length, game.players.length);
+  assert.equal(rows.length, game.room.players.length);
   for (const row of rows) {
     const strips = row.byClass('player-tags');
     assert.equal(strips.length, 1, 'one strip per seat');
@@ -686,13 +686,13 @@ test('each night step starts the middle pane at the top again', () => {
   // pane would carry one step's scroll offset into the next.
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   const view = show(game, 'p1');
-  assert.equal(game.phase, 'night');
+  assert.equal(game.state.phase, 'night');
 
   view.byClass('phase-area')[0].scrollTo_(140);
   show(game, 'p1');
   assert.equal(view.byClass('phase-area')[0].scrollTop, 140, 'a redraw within a step holds its place');
 
-  clock = game.stepEndsAt;
+  clock = game.state.stepEndsAt;
   w.tick(game, clock);
   show(game, 'p1');
   assert.equal(view.byClass('phase-area')[0].scrollTop, 0, 'a new step is new content');

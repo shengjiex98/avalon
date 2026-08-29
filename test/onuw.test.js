@@ -19,15 +19,15 @@ function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus'], {
   w.startGame(game, 'p0', { shuffle: (l) => l, now });
   // Override the deal; startGame shuffled seats and cards through identity.
   // Replace the shuffled deal with the exact one under test.
-  game.startRoles = Object.fromEntries(game.players.map((p, i) => [p.id, deck[i]]));
-  game.centreStart = deck.slice(count);
-  game.finalRoles = { ...game.startRoles };
-  game.centre = game.centreStart.slice();
-  game.script = nightScript(deck);
-  game.info = {};
-  game.swaps = [];
-  game.nightActions = {};
-  if (ready) for (const p of game.players) w.confirmRole(game, p.id, { now });
+  game.state.startRoles = Object.fromEntries(game.room.players.map((p, i) => [p.id, deck[i]]));
+  game.state.centreStart = deck.slice(count);
+  game.state.finalRoles = { ...game.state.startRoles };
+  game.state.centre = game.state.centreStart.slice();
+  game.state.script = nightScript(deck);
+  game.state.info = {};
+  game.state.swaps = [];
+  game.state.nightActions = {};
+  if (ready) for (const p of game.room.players) w.confirmRole(game, p.id, { now });
   return game;
 }
 
@@ -35,7 +35,7 @@ function dealt(deck, names = ['Ann', 'Bo', 'Cai', 'Dee', 'Eli', 'Fay', 'Gus'], {
 function stepTo(game, key) {
   for (let guard = 0; guard < 50; guard++) {
     if (w.currentStep(game)?.key === key) return;
-    clock = game.stepEndsAt;
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
   throw new Error(`never reached step ${key}`);
@@ -43,15 +43,15 @@ function stepTo(game, key) {
 
 /** Run the clock forward until dawn. */
 function finishNight(game) {
-  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
-    clock = game.stepEndsAt;
+  for (let guard = 0; guard < 50 && game.state.phase === 'night'; guard++) {
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
-  assert.equal(game.phase, 'day', 'the night should have ended');
+  assert.equal(game.state.phase, 'day', 'the night should have ended');
 }
 
-const infoFor = (game, id, key) => (game.info[id] ?? []).find((e) => e.key === key);
-const roleId = (game, role) => game.players.find((p) => game.startRoles[p.id] === role).id;
+const infoFor = (game, id, key) => (game.state.info[id] ?? []).find((e) => e.key === key);
+const roleId = (game, role) => game.room.players.find((p) => game.state.startRoles[p.id] === role).id;
 
 // ---------------------------------------------------------------- deck
 
@@ -74,23 +74,23 @@ test('the night clock waits until every player is ready', () => {
     { ready: false },
   );
 
-  assert.equal(game.phase, 'reveal');
-  assert.equal(game.step, -1);
-  assert.equal(game.stepEndsAt, 0);
+  assert.equal(game.state.phase, 'reveal');
+  assert.equal(game.state.step, -1);
+  assert.equal(game.state.stepEndsAt, 0);
   assert.equal(w.nextDeadline(game), null, 'the room must not schedule a timer yet');
   assert.equal('night' in w.viewFor(game, 'p0', clock), false);
 
   w.confirmRole(game, 'p0', { now });
   w.confirmRole(game, 'p1', { now });
-  assert.equal(game.phase, 'reveal', 'one unread role still holds the game');
+  assert.equal(game.state.phase, 'reveal', 'one unread role still holds the game');
   assert.deepEqual(w.viewFor(game, 'p0', clock).waitingFor, ['p2']);
 
   const startedAt = clock;
   w.confirmRole(game, 'p2', { now });
-  assert.equal(game.phase, 'night');
+  assert.equal(game.state.phase, 'night');
   assert.equal(w.currentStep(game).key, 'nightfall');
-  assert.equal(game.stepEndsAt, startedAt + stepMillis(game.script[0], game.pace));
-  assert.equal(w.viewFor(game, 'p0', clock).night.msLeft, stepMillis(game.script[0], game.pace));
+  assert.equal(game.state.stepEndsAt, startedAt + stepMillis(game.state.script[0], game.state.pace));
+  assert.equal(w.viewFor(game, 'p0', clock).night.msLeft, stepMillis(game.state.script[0], game.state.pace));
   assert.ok(w.nextDeadline(game) > startedAt);
 });
 
@@ -131,9 +131,9 @@ test('a role whose card sits in the centre is still called', () => {
   // middle. Nobody knows that, so the night must not give it away.
   const game = dealt(['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker']);
   const called = [];
-  for (let guard = 0; guard < 50 && game.phase === 'night'; guard++) {
+  for (let guard = 0; guard < 50 && game.state.phase === 'night'; guard++) {
     called.push(w.currentStep(game).key);
-    clock = game.stepEndsAt;
+    clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
   assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker']);
@@ -149,11 +149,11 @@ test('the pace changes how long the night takes, not what happens in it', () => 
 test('a step never ends early, even once the only actor has chosen', () => {
   const game = dealt(['seer', 'werewolf', 'villager', 'robber', 'troublemaker', 'tanner']);
   stepTo(game, 'seer');
-  const deadline = game.stepEndsAt;
+  const deadline = game.state.stepEndsAt;
   w.submitNight(game, 'p0', { mode: 'centre', centres: [0, 1] });
 
   assert.equal(w.currentStep(game).key, 'seer', 'still the seer step');
-  assert.equal(game.stepEndsAt, deadline, 'ending early would announce that the seer is in play');
+  assert.equal(game.state.stepEndsAt, deadline, 'ending early would announce that the seer is in play');
   w.tick(game, deadline - 1);
   assert.equal(w.currentStep(game).key, 'seer');
   w.tick(game, deadline);
@@ -175,7 +175,7 @@ test('a night view never says who is awake or who has acted', () => {
   stepTo(game, 'seer');
   w.submitNight(game, 'p0', { mode: 'player', target: 'p1' });
 
-  for (const p of game.players) {
+  for (const p of game.room.players) {
     const view = w.viewFor(game, p.id, clock);
     assert.equal('waitingFor' in view, false, 'nobody is waited on by name');
     for (const other of view.players) {
@@ -189,7 +189,7 @@ test('a night view never says who is awake or who has acted', () => {
 test('everyone sees the same step and the same clock', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   stepTo(game, 'robber');
-  const nights = game.players.map((p) => w.viewFor(game, p.id, clock).night);
+  const nights = game.room.players.map((p) => w.viewFor(game, p.id, clock).night);
   assert.ok(nights.every((n) => n.key === 'robber'));
   assert.equal(new Set(nights.map((n) => n.msLeft)).size, 1, 'one clock for the room');
   assert.equal(new Set(nights.map((n) => n.index)).size, 1);
@@ -277,8 +277,8 @@ test('the robber takes a card and is told what they now hold', () => {
   finishNight(game);
 
   assert.equal(infoFor(game, 'p0', 'onuw.info.robbed').params.role, 'werewolf');
-  assert.equal(game.finalRoles.p0, 'werewolf');
-  assert.equal(game.finalRoles.p1, 'robber');
+  assert.equal(game.state.finalRoles.p0, 'werewolf');
+  assert.equal(game.state.finalRoles.p1, 'robber');
 });
 
 test('the troublemaker swaps two others without learning anything', () => {
@@ -288,9 +288,9 @@ test('the troublemaker swaps two others without learning anything', () => {
   w.submitNight(game, 'p0', { targets: ['p1', 'p2'] });
   finishNight(game);
 
-  assert.equal(game.finalRoles.p1, 'seer');
-  assert.equal(game.finalRoles.p2, 'werewolf');
-  assert.ok(!JSON.stringify(game.info.p0).includes('werewolf'));
+  assert.equal(game.state.finalRoles.p1, 'seer');
+  assert.equal(game.state.finalRoles.p2, 'werewolf');
+  assert.ok(!JSON.stringify(game.state.info.p0).includes('werewolf'));
 });
 
 test('the drunk must swap, and swaps even after running out of time', () => {
@@ -299,14 +299,14 @@ test('the drunk must swap, and swaps even after running out of time', () => {
   assert.throws(() => w.submitNight(game, 'p0', { skip: true }), { key: 'drunkMustSwap' });
   w.submitNight(game, 'p0', { centre: 2 });
   finishNight(game);
-  assert.equal(game.finalRoles.p0, 'tanner');
-  assert.equal(game.centre[2], 'drunk');
-  assert.ok(!JSON.stringify(game.info.p0).includes('tanner'), 'the drunk stays in the dark');
+  assert.equal(game.state.finalRoles.p0, 'tanner');
+  assert.equal(game.state.centre[2], 'drunk');
+  assert.ok(!JSON.stringify(game.state.info.p0).includes('tanner'), 'the drunk stays in the dark');
 
   const dozy = dealt(['drunk', 'werewolf', 'seer', 'robber', 'villager', 'tanner']);
   finishNight(dozy);   // never acts
-  assert.notEqual(dozy.finalRoles.p0, 'drunk', 'a silent Drunk still swaps');
-  assert.ok(dozy.centre.includes('drunk'));
+  assert.notEqual(dozy.state.finalRoles.p0, 'drunk', 'a silent Drunk still swaps');
+  assert.ok(dozy.state.centre.includes('drunk'));
 });
 
 test('the night resolves in wake order, not submission order', () => {
@@ -320,8 +320,8 @@ test('the night resolves in wake order, not submission order', () => {
 
   assert.equal(infoFor(game, 'p1', 'onuw.info.robbed').params.role, 'werewolf',
     'the robber saw what they took, before the troublemaker interfered');
-  assert.equal(game.finalRoles.p1, 'seer');
-  assert.equal(game.finalRoles.p3, 'werewolf');
+  assert.equal(game.state.finalRoles.p1, 'seer');
+  assert.equal(game.state.finalRoles.p3, 'werewolf');
 });
 
 test('the insomniac sees the card they end the night holding', () => {
@@ -409,7 +409,7 @@ test('a decisive vote does not save the werewolf side from a dead tanner', () =>
 test('a new table plays with the decisive vote, and only the host can drop it', () => {
   const game = w.createGame('TEST', { now });
   ['Ann', 'Bo', 'Cai'].forEach((name, i) => w.addPlayer(game, { id: `p${i}`, name }));
-  assert.equal(game.houseRules.decisiveVote, true, 'a new table plays with it');
+  assert.equal(game.state.houseRules.decisiveVote, true, 'a new table plays with it');
   assert.equal(w.viewFor(game, 'p1', clock).houseRules.decisiveVote, true, 'and can see that it does');
   assert.throws(() => w.setOptions(game, 'p1', { houseRules: { decisiveVote: false } }), { key: 'hostOnly' });
   w.setOptions(game, 'p0', { houseRules: { decisiveVote: false } });
@@ -427,35 +427,35 @@ test('the vote is scored by the house rule the table is playing with', () => {
     w.castVote(game, 'p1', 'p0');
     w.castVote(game, 'p2', 'p0');
     w.castVote(game, 'p0', 'p1');
-    assert.deepEqual(game.dead, ['p0']);
-    return game.winners;
+    assert.deepEqual(game.state.dead, ['p0']);
+    return game.state.winners;
   };
 
   assert.deepEqual(hang(dealt(deck)), ['village'], 'by default the table caught the pack');
 
   const byTheBook = dealt(deck);
-  byTheBook.houseRules = { decisiveVote: false };
+  byTheBook.state.houseRules = { decisiveVote: false };
   assert.deepEqual(hang(byTheBook), [], 'switched off, the same vote wins for nobody');
 });
 
 test('the table\u2019s choice survives a game ending and the next deal', () => {
   const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
-  game.houseRules = { decisiveVote: false };
+  game.state.houseRules = { decisiveVote: false };
   finishNight(game);
   w.startVote(game, 'p0');
   for (const [voter, target] of [['p0', 'p1'], ['p1', 'p0'], ['p2', 'p0']]) w.castVote(game, voter, target);
   w.resetToLobby(game, 'p0', { now });
-  assert.equal(game.phase, 'lobby');
-  assert.equal(game.houseRules.decisiveVote, false, 'the table agreed it, not that one game');
+  assert.equal(game.state.phase, 'lobby');
+  assert.equal(game.state.houseRules.decisiveVote, false, 'the table agreed it, not that one game');
 });
 
 test('a room restored from before house rules existed keeps the scoring it started under', () => {
   const game = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
-  delete game.houseRules;   // a snapshot taken by an older server
+  delete game.state.houseRules;   // a snapshot taken by an older server
   finishNight(game);
   w.startVote(game, 'p0');
   for (const [voter, target] of [['p1', 'p0'], ['p2', 'p0'], ['p0', 'p1']]) w.castVote(game, voter, target);
-  assert.deepEqual(game.winners, [], 'the book\u2019s ending, not the variant\u2019s');
+  assert.deepEqual(game.state.winners, [], 'the book\u2019s ending, not the variant\u2019s');
   assert.deepEqual(w.viewFor(game, 'p0', clock).houseRules, { decisiveVote: false });
 });
 
@@ -466,7 +466,7 @@ test('a lone minion is told the decisive vote has made him the quarry', () => {
   assert.equal(infoFor(decisive, 'p0', 'onuw.info.minionAlone'), undefined);
 
   const byTheBook = dealt(['minion', 'villager', 'seer', 'werewolf', 'werewolf', 'villager']);
-  byTheBook.houseRules = { decisiveVote: false };
+  byTheBook.state.houseRules = { decisiveVote: false };
   stepTo(byTheBook, 'minion');
   assert.ok(infoFor(byTheBook, 'p0', 'onuw.info.minionAlone'));
   assert.equal(infoFor(byTheBook, 'p0', 'onuw.info.minionIsPack'), undefined);
@@ -500,10 +500,10 @@ test('a full three player game plays through to a verdict', () => {
   w.castVote(game, 'p1', 'p2');
   w.castVote(game, 'p2', 'p0');
 
-  assert.equal(game.phase, 'over');
-  assert.deepEqual(game.dead, ['p2']);
-  assert.equal(game.finalRoles.p2, 'werewolf');
-  assert.deepEqual(game.winners, ['village']);
+  assert.equal(game.state.phase, 'over');
+  assert.deepEqual(game.state.dead, ['p2']);
+  assert.equal(game.state.finalRoles.p2, 'werewolf');
+  assert.deepEqual(game.state.winners, ['village']);
 });
 
 test('the hunter takes their target down too', () => {
@@ -514,8 +514,8 @@ test('the hunter takes their target down too', () => {
   w.castVote(game, 'p1', 'p0');
   w.castVote(game, 'p2', 'p0');
 
-  assert.deepEqual(game.dead.slice().sort(), ['p0', 'p1'], 'the hunter died and shot the wolf');
-  assert.deepEqual(game.winners, ['village']);
+  assert.deepEqual(game.state.dead.slice().sort(), ['p0', 'p1'], 'the hunter died and shot the wolf');
+  assert.deepEqual(game.state.winners, ['village']);
 });
 
 test('everything is revealed once the votes are in', () => {
@@ -538,7 +538,7 @@ test('everything is revealed once the votes are in', () => {
 test('One Night views are discriminated by phase and carry server-owned setup metadata', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
   const view = (phase) => {
-    game.phase = phase;
+    game.state.phase = phase;
     return w.viewFor(game, 'p0', clock);
   };
 
@@ -573,23 +573,23 @@ test('play again reshuffles the same table', () => {
 
   assert.throws(() => w.resetToLobby(game, 'p1'), { key: 'hostOnly' });
   w.resetToLobby(game, 'p0');
-  assert.equal(game.phase, 'lobby');
-  assert.equal(game.players.length, 3);
-  assert.deepEqual(game.dead, []);
-  assert.equal(game.step, -1);
-  assert.deepEqual(game.script, []);
+  assert.equal(game.state.phase, 'lobby');
+  assert.equal(game.room.players.length, 3);
+  assert.deepEqual(game.state.dead, []);
+  assert.equal(game.state.step, -1);
+  assert.deepEqual(game.state.script, []);
   assert.deepEqual(w.viewFor(game, 'p0', clock).players[0].startRole, undefined);
 });
 
 test('the host can abandon an active night without changing the table settings', () => {
   const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
-  game.pace = 'fast';
-  assert.equal(game.phase, 'night');
+  game.state.pace = 'fast';
+  assert.equal(game.state.phase, 'night');
   assert.throws(() => w.restartToLobby(game, 'p1'), { key: 'hostOnly' });
   w.restartToLobby(game, 'p0');
-  assert.equal(game.phase, 'lobby');
-  assert.equal(game.players.length, 3);
-  assert.equal(game.pace, 'fast');
-  assert.deepEqual(game.startRoles, {});
-  assert.deepEqual(game.script, []);
+  assert.equal(game.state.phase, 'lobby');
+  assert.equal(game.room.players.length, 3);
+  assert.equal(game.state.pace, 'fast');
+  assert.deepEqual(game.state.startRoles, {});
+  assert.deepEqual(game.state.script, []);
 });
