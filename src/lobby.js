@@ -27,49 +27,48 @@ export function require_(cond, key, params) {
   if (!cond) throw new GameError(key, params);
 }
 
-/** The fields every game's state starts with. */
+/** The shared room fields every game starts with. */
 /**
  * @param {string} code
- * @template {GameId} G
- * @param {G} gameId
+ * @param {GameId} gameId
+ * @param {import('../types/contracts.js').AvalonState | import('../types/contracts.js').OnuwState} state
  * @param {{ now?: () => number, seed?: number }} [options]
- * @returns {import('../types/contracts.js').BaseGameState<G>}
+ * @returns {import('../types/contracts.js').CreatedRoom}
  */
-export function baseState(code, gameId, { now = Date.now, seed = randomInt(0, 0x100000000) } = {}) {
+export function baseRoom(code, gameId, state, { now = Date.now, seed = randomInt(0, 0x100000000) } = {}) {
   seed >>>= 0;
-  return {
+  return /** @type {import('../types/contracts.js').CreatedRoom} */ (/** @type {unknown} */ ({
     code,
-    gameId,
     seed,
     rng: seed,
     createdAt: now(),
-    phase: 'lobby',
     players: [],        // [{ id, name }] in seating order
     hostId: null,
     log: [],
-    actions: [],
-    version: 0,
-  };
+    journal: [],
+    revision: 0,
+    game: { id: gameId, state },
+  }));
 }
 
 /** Append one successful player input without retaining transport-only fields. */
 /** @param {GameContext} g @param {string} playerId @param {RoomCommand} body @param {number} at */
 export function record(g, playerId, body, at) {
-  if (g.actionsDropped) return;
-  if (g.actions.length >= 2000) {
-    g.actions = [];
-    g.actionsDropped = true;
+  if (g.room.journalDropped) return;
+  if (g.room.journal.length >= 2000) {
+    g.room.journal = [];
+    g.room.journalDropped = true;
     return;
   }
   const { type, playerId: _transportPlayerId, ...rest } = body;
-  g.actions.push({ t: type, p: playerId, b: rest, at });
+  g.room.journal.push({ t: type, p: playerId, b: rest, at });
 }
 
-/** Mulberry32. State is a uint32 in g.rng, so a snapshot resumes the exact stream. */
+/** Mulberry32. The room's uint32 state lets a snapshot resume the exact stream. */
 /** @param {GameContext} g */
 function nextRand(g) {
-  g.rng = (g.rng + 0x6d2b79f5) >>> 0;
-  let t = g.rng;
+  g.room.rng = (g.room.rng + 0x6d2b79f5) >>> 0;
+  let t = g.room.rng;
   t = Math.imul(t ^ (t >>> 15), t | 1);
   t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
@@ -93,11 +92,11 @@ export function shuffleWith(g, list) {
 }
 
 /** @param {GameContext} g @param {string} id */
-export const playerById = (g, id) => g.players.find((p) => p.id === id);
+export const playerById = (g, id) => g.room.players.find((p) => p.id === id);
 
 /** @param {GameContext} g @param {string} key @param {Record<string, unknown>} [params] */
 export function logEvent(g, key, params = {}) {
-  g.log.push({ key, params, at: g.log.length });
+  g.room.log.push({ key, params, at: g.room.log.length });
 }
 
 /**
@@ -113,27 +112,27 @@ export function addPlayer(g, { id, name, avatar }, { maxPlayers }) {
     if (avatar !== undefined) existing.avatar = avatar;
     return existing;
   }
-  require_(g.phase === 'lobby', 'gameAlreadyStarted');
-  require_(g.players.length < maxPlayers, 'roomFull', { max: maxPlayers });
+  require_(g.state.phase === 'lobby', 'gameAlreadyStarted');
+  require_(g.room.players.length < maxPlayers, 'roomFull', { max: maxPlayers });
   const clean = String(name ?? '').trim().slice(0, 24);
   require_(clean.length > 0, 'nameRequired');
-  require_(!g.players.some((p) => p.name.toLowerCase() === clean.toLowerCase()), 'nameTaken');
+  require_(!g.room.players.some((p) => p.name.toLowerCase() === clean.toLowerCase()), 'nameTaken');
 
   const player = { id, name: clean, ...(avatar ? { avatar } : {}) };
-  g.players.push(player);
-  if (!g.hostId) g.hostId = id;
+  g.room.players.push(player);
+  if (!g.room.hostId) g.room.hostId = id;
   logEvent(g, 'log.joined', { name: clean });
   return player;
 }
 
 /** @param {GameContext} g @param {string} id */
 export function removePlayer(g, id) {
-  require_(g.phase === 'lobby', 'cannotLeaveMidGame');
+  require_(g.state.phase === 'lobby', 'cannotLeaveMidGame');
   const player = playerById(g, id);
   if (!player) return;
-  g.players = g.players.filter((p) => p.id !== id);
+  g.room.players = g.room.players.filter((p) => p.id !== id);
   logEvent(g, 'log.left', { name: player.name });
-  if (g.hostId === id) g.hostId = g.players[0]?.id ?? null;
+  if (g.room.hostId === id) g.room.hostId = g.room.players[0]?.id ?? null;
 }
 
 // ------------------------------------------------------- house rules
@@ -147,7 +146,7 @@ export function removePlayer(g, id) {
 /** @param {GameContext} g @param {string[]} keys */
 export const houseRulesInForce = (g, keys) => ({
   ...Object.fromEntries(keys.map((rule) => [rule, false])),
-  ...g.houseRules,
+  ...g.state.houseRules,
 });
 
 /** Switch the rules the host named, leaving keys this game does not offer alone. */
@@ -157,7 +156,7 @@ export function setHouseRules(g, requested, keys) {
   for (const rule of keys) {
     if (rule in requested) rules[rule] = Boolean(requested[rule]);
   }
-  g.houseRules = rules;
+  g.state.houseRules = rules;
 }
 
 // ------------------------------------------------------- back to the lobby
@@ -174,28 +173,30 @@ export function setHouseRules(g, requested, keys) {
 function rebuildLobby(g, prepare) {
   const { fresh, keep } = prepare();
   const carried = {
-    code: g.code, players: g.players, hostId: g.hostId,
-    seed: g.seed, rng: g.rng, actions: g.actions,
-    ...(g.actionsDropped ? { actionsDropped: true } : {}),
-    ...keep,
+    code: g.room.code, players: g.room.players, hostId: g.room.hostId,
+    seed: g.room.seed, rng: g.room.rng, journal: g.room.journal,
+    ...(g.room.journalDropped ? { journalDropped: true } : {}),
   };
-  Object.assign(g, fresh, carried, { version: g.version });
+  const revision = g.room.revision;
+  Object.assign(fresh.state, keep);
+  Object.assign(g.room, fresh.room, carried, { revision });
+  g.state = fresh.state;
   logEvent(g, 'log.newGame', {});
 }
 
 /** Back to the lobby after a completed game, with the same table. */
 /** @param {GameContext} g @param {string} playerId @param {() => { fresh: GameContext, keep: Record<string, unknown> }} prepare */
 export function resetToLobby(g, playerId, prepare) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase === 'over', 'gameInProgress');
+  require_(playerId === g.room.hostId, 'hostOnly');
+  require_(g.state.phase === 'over', 'gameInProgress');
   rebuildLobby(g, prepare);
 }
 
 /** Let the host abandon an active game and immediately return to its lobby. */
 /** @param {GameContext} g @param {string} playerId @param {() => { fresh: GameContext, keep: Record<string, unknown> }} prepare */
 export function restartToLobby(g, playerId, prepare) {
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.phase !== 'lobby' && g.phase !== 'over', 'wrongPhase');
+  require_(playerId === g.room.hostId, 'hostOnly');
+  require_(g.state.phase !== 'lobby' && g.state.phase !== 'over', 'wrongPhase');
   rebuildLobby(g, prepare);
 }
 
@@ -209,12 +210,12 @@ export function restartToLobby(g, playerId, prepare) {
 export function baseView(g, viewerId) {
   const me = playerById(g, viewerId);
   return {
-    code: g.code,
-    gameId: g.gameId,
-    phase: g.phase,
-    version: g.version,
-    hostId: g.hostId,
+    code: g.room.code,
+    gameId: g.room.game.id,
+    phase: g.state.phase,
+    version: g.room.revision,
+    hostId: g.room.hostId,
     me: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
-    log: g.log.slice(-40),
+    log: g.room.log.slice(-40),
   };
 }

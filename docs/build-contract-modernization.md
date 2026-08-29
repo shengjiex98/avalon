@@ -280,7 +280,7 @@ only when a stop condition fires, not for routine implementation choices.
 | 0 | Baseline and prove Node-native TypeScript | Complete |
 | 1 | Model exact public views | Complete |
 | 2 | Replace structural validators with schemas | Complete |
-| 3 | Convert server and tests to native TypeScript | Not started |
+| 3 | Convert server and tests to native TypeScript | In progress (3a complete) |
 | 4 | Make the browser boundary explicit | Not started |
 | 5 | Convert browser modules and add minimal emit | Not started |
 | 6 | Cut over packaging and remove superseded contracts | Not started |

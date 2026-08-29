@@ -25,13 +25,13 @@ test('Avalon state stays plain JSON data throughout a game', () => {
   serializable(game, 'lobby');
 
   avalon.startGame(game, 'p0', { shuffle: (list) => list });
-  for (const player of game.players) avalon.confirmRole(game, player.id);
+  for (const player of game.room.players) avalon.confirmRole(game, player.id);
   serializable(game, 'mid-game');
 
-  while (game.phase !== 'over') {
-    const leader = game.players[game.leaderIndex].id;
-    avalon.proposeTeam(game, leader, game.players.slice(0, avalon.currentTeamSize(game)).map((p) => p.id));
-    for (const player of game.players) avalon.castVote(game, player.id, false);
+  while (game.state.phase !== 'over') {
+    const leader = game.room.players[game.state.leaderIndex].id;
+    avalon.proposeTeam(game, leader, game.room.players.slice(0, avalon.currentTeamSize(game)).map((p) => p.id));
+    for (const player of game.room.players) avalon.castVote(game, player.id, false);
   }
   serializable(game, 'over');
 });
@@ -46,7 +46,7 @@ test('ONUW state stays plain JSON data throughout a game', () => {
   serializable(game, 'lobby');
 
   onuw.startGame(game, 'p0', { shuffle: (list) => list, now });
-  for (const player of game.players) onuw.confirmRole(game, player.id, { now });
+  for (const player of game.room.players) onuw.confirmRole(game, player.id, { now });
   serializable(game, 'mid-game');
 
   clock += 10 * 60_000;

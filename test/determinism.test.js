@@ -8,9 +8,9 @@ function deal(seed) {
   const rooms = new Rooms({ now: () => 1234 });
   const code = rooms.create('avalon', { code: 'SEED', seed });
   for (let i = 0; i < 7; i++) {
-    rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: `p${i}`, name: `Player ${i}` }));
+    rooms.apply(code, (g) => gameFor(g.room.game.id).addPlayer(g, { id: `p${i}`, name: `Player ${i}` }));
   }
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
   const room = rooms.get(code);
   return { ...room.game.state, players: room.players };
 }

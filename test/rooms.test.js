@@ -14,30 +14,30 @@ function startedGame(rooms) {
   const room = rooms.get(code);
   ['Ann', 'Bo', 'Cai'].forEach((name, i) =>
     rooms.apply(code, (g) => require_addPlayer(g, i, name)));
-  rooms.apply(code, (g) => { g.hostId = 'p0'; });
+  rooms.apply(code, (g) => { g.room.hostId = 'p0'; });
   return { code, room };
 }
 
 // The room layer exposes games only through the registry, so reach for it the
 // same way the server does.
 import { gameFor } from '../src/games/index.js';
-const require_addPlayer = (g, i, name) => gameFor(g.gameId).addPlayer(g, { id: `p${i}`, name });
+const require_addPlayer = (g, i, name) => gameFor(g.room.game.id).addPlayer(g, { id: `p${i}`, name });
 const readyEveryone = (rooms, code, room) => {
-  for (const p of room.players) rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, p.id));
+  for (const p of room.players) rooms.apply(code, (g) => gameFor(g.room.game.id).actions.confirm(g, p.id));
 };
 
 test('starting deals roles but schedules no timer until everyone is ready', () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
 
   assert.equal(room.game.state.phase, 'reveal');
   assert.equal(room.timer, null);
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p0'));
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p1'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.confirm(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.confirm(g, 'p1'));
   assert.equal(room.timer, null, 'a partial table must not start the clock');
 
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.confirm(g, 'p2'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.confirm(g, 'p2'));
   assert.equal(room.game.state.phase, 'night');
   assert.ok(room.timer, 'the final ready schedules the first step');
 });
@@ -45,13 +45,13 @@ test('starting deals roles but schedules no timer until everyone is ready', () =
 test('a night advances on the room\'s own clock, with nobody pressing anything', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
   readyEveryone(rooms, code, room);
   assert.equal(room.game.state.phase, 'night');
   assert.equal(room.game.state.step, 0);
 
   // Bring the first deadline forward instead of waiting six real seconds.
-  rooms.apply(code, (g) => { g.stepEndsAt = Date.now() + 40; });
+  rooms.apply(code, (g) => { g.state.stepEndsAt = Date.now() + 40; });
   await sleep(160);
   assert.ok(room.game.state.step > 0, 'the night moved on by itself');
 });
@@ -59,14 +59,14 @@ test('a night advances on the room\'s own clock, with nobody pressing anything',
 test('subscribers are pushed the new step without asking', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
   readyEveryone(rooms, code, room);
 
   const seen = [];
   rooms.subscribe(code, 'p1', (view) => seen.push(view.night?.key ?? view.phase));
   assert.deepEqual(seen, ['nightfall']);
 
-  rooms.apply(code, (g) => { g.stepEndsAt = Date.now() + 40; });
+  rooms.apply(code, (g) => { g.state.stepEndsAt = Date.now() + 40; });
   await sleep(160);
   assert.ok(seen.length > 1, 'the step change was broadcast');
   assert.equal(seen.at(-1), room.game.state.script[1].key);
@@ -75,7 +75,7 @@ test('subscribers are pushed the new step without asking', async () => {
 test('a swept room takes its timer with it', async () => {
   const rooms = new Rooms();
   const { code, room } = startedGame(rooms);
-  rooms.apply(code, (g) => gameFor(g.gameId).actions.start(g, 'p0'));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
   readyEveryone(rooms, code, room);
   assert.ok(room.timer, 'a night schedules a wake-up');
 
@@ -88,7 +88,7 @@ test('a swept room takes its timer with it', async () => {
 test('a game with no clock schedules nothing', () => {
   const rooms = new Rooms();
   const code = rooms.create('avalon');
-  rooms.apply(code, (g) => gameFor(g.gameId).addPlayer(g, { id: 'p0', name: 'Ann' }));
+  rooms.apply(code, (g) => gameFor(g.room.game.id).addPlayer(g, { id: 'p0', name: 'Ann' }));
   assert.equal(rooms.get(code).timer, null);
 });
 
@@ -122,10 +122,10 @@ test('dispatch records successful player input in order but never exposes it', (
 test('the replay record is dropped whole rather than kept partially on overflow', () => {
   const game = avalon.createGame('CAP', { seed: 1 });
   for (let i = 0; i <= 2000; i++) record(game, 'p0', { type: 'vote', approve: true }, i);
-  assert.deepEqual(game.actions, []);
-  assert.equal(game.actionsDropped, true);
+  assert.deepEqual(game.room.journal, []);
+  assert.equal(game.room.journalDropped, true);
   record(game, 'p0', { type: 'vote', approve: false }, 2001);
-  assert.deepEqual(game.actions, []);
+  assert.deepEqual(game.room.journal, []);
 });
 
 test('the persistence hook runs only after registry mutations', () => {

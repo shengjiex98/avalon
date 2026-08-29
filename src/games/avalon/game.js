@@ -15,8 +15,8 @@ import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobb
 
 /** @param {string} code @param {{ now?: () => number, seed?: number }} [options] @returns {AvalonContext} */
 export function createGame(code, { now = Date.now, seed } = {}) {
-  return /** @type {AvalonContext} */ ({
-    ...lobby.baseState(code, 'avalon', { now, ...(seed === undefined ? {} : { seed }) }),
+  const state = {
+    phase: /** @type {const} */ ('lobby'),
     options: Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, false])),
     optionsTouched: false,  // manual choices last only until the table size changes
     houseRules: { ...HOUSE_RULES },    // variants, as a new table plays them
@@ -32,13 +32,15 @@ export function createGame(code, { now = Date.now, seed } = {}) {
     assassinTarget: null,
     winner: null,           // 'good' | 'evil'
     winReason: null,
-  });
+  };
+  const room = lobby.baseRoom(code, 'avalon', state, { now, ...(seed === undefined ? {} : { seed }) });
+  return /** @type {AvalonContext} */ ({ room, state });
 }
 
 /** @param {AvalonContext} g */
-const leader = (g) => /** @type {import('../../../types/contracts.js').Player} */ (g.players[g.leaderIndex]);
+const leader = (g) => /** @type {import('../../../types/contracts.js').Player} */ (g.room.players[g.state.leaderIndex]);
 /** @param {AvalonContext} g */
-const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'evil');
+const evilPlayers = (g) => g.room.players.filter((p) => sideOf(g.state.roles[p.id]) === 'evil');
 
 /**
  * The deck the lobby is currently describing. Once the cards are out, it is
@@ -46,7 +48,7 @@ const evilPlayers = (g) => g.players.filter((p) => sideOf(g.roles[p.id]) === 'ev
  */
 /** @param {AvalonContext} g */
 const liveOptions = (g) =>
-  (g.phase !== 'lobby' || g.optionsTouched ? g.options : defaultOptions(g.players.length));
+  (g.state.phase !== 'lobby' || g.state.optionsTouched ? g.state.options : defaultOptions(g.room.players.length));
 
 /** @param {AvalonContext} g */
 const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
@@ -55,70 +57,70 @@ const houseRulesOf = (g) => lobby.houseRulesInForce(g, HOUSE_RULE_KEYS);
 
 /** @param {AvalonContext} g */
 function resetOptionsForPlayerCount(g) {
-  g.options = defaultOptions(g.players.length);
-  g.optionsTouched = false;
+  g.state.options = defaultOptions(g.room.players.length);
+  g.state.optionsTouched = false;
 }
 
 /** @param {AvalonContext} g @param {{ id: string, name?: string, avatar?: string }} player */
 export function addPlayer(g, player) {
-  const count = g.players.length;
+  const count = g.room.players.length;
   const joined = lobby.addPlayer(g, player, { maxPlayers: MAX_PLAYERS });
-  if (g.players.length !== count) resetOptionsForPlayerCount(g);
+  if (g.room.players.length !== count) resetOptionsForPlayerCount(g);
   return joined;
 }
 
 /** @param {AvalonContext} g @param {string} playerId */
 export function removePlayer(g, playerId) {
-  const count = g.players.length;
+  const count = g.room.players.length;
   lobby.removePlayer(g, playerId);
-  if (g.players.length !== count) resetOptionsForPlayerCount(g);
+  if (g.room.players.length !== count) resetOptionsForPlayerCount(g);
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {Record<string, any>} options */
 export function setOptions(g, playerId, options) {
-  require_(g.phase === 'lobby', 'gameAlreadyStarted');
-  require_(playerId === g.hostId, 'hostOnly');
+  require_(g.state.phase === 'lobby', 'gameAlreadyStarted');
+  require_(playerId === g.room.hostId, 'hostOnly');
   if (options.houseRules) lobby.setHouseRules(g, options.houseRules, HOUSE_RULE_KEYS);
   const next = { ...liveOptions(g) };
-  let touched = g.optionsTouched;
+  let touched = g.state.optionsTouched;
   for (const r of OPTIONAL_ROLES) {
     if (r in options) { next[r] = Boolean(options[r]); touched = true; }
   }
-  g.options = next;
-  g.optionsTouched = touched;
+  g.state.options = next;
+  g.state.optionsTouched = touched;
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {{ shuffle?: <T>(list: T[]) => T[] }} [options] */
 export function startGame(g, playerId, { shuffle = (list) => shuffleWith(g, list) } = {}) {
-  require_(g.phase === 'lobby', 'gameAlreadyStarted');
-  require_(playerId === g.hostId, 'hostOnly');
-  require_(g.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
+  require_(g.state.phase === 'lobby', 'gameAlreadyStarted');
+  require_(playerId === g.room.hostId, 'hostOnly');
+  require_(g.room.players.length >= MIN_PLAYERS, 'needMorePlayers', { min: MIN_PLAYERS });
 
   const options = liveOptions(g);
   const randomLeader = houseRulesOf(g).randomLeader;
-  const roleList = shuffle(buildRoleList(g.players.length, options));
+  const roleList = shuffle(buildRoleList(g.room.players.length, options));
   // Roles come off a shuffled deck either way; only the seating and the first
   // leader are what this house rule decides.
-  const seats = randomLeader ? shuffle(g.players.slice()) : g.players.slice();
-  g.options = options;
-  g.players = seats;
-  g.roles = Object.fromEntries(seats.map((p, i) => [p.id, /** @type {string} */ (roleList[i])]));
+  const seats = randomLeader ? shuffle(g.room.players.slice()) : g.room.players.slice();
+  g.state.options = options;
+  g.room.players = seats;
+  g.state.roles = Object.fromEntries(seats.map((p, i) => [p.id, /** @type {string} */ (roleList[i])]));
 
-  g.phase = 'reveal';
-  g.ready = {};
-  g.leaderIndex = randomLeader ? randInt(g, g.players.length) : 0;
-  logEvent(g, 'log.gameStarted', { count: g.players.length });
+  g.state.phase = 'reveal';
+  g.state.ready = {};
+  g.state.leaderIndex = randomLeader ? randInt(g, g.room.players.length) : 0;
+  logEvent(g, 'log.gameStarted', { count: g.room.players.length });
 }
 
 /** Every player confirms they have read their role; then the first leader proposes. */
 /** @param {AvalonContext} g @param {string} playerId */
 export function confirmRole(g, playerId) {
-  require_(g.phase === 'reveal', 'wrongPhase');
+  require_(g.state.phase === 'reveal', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
-  const ready = g.ready ??= {};
+  const ready = g.state.ready ??= {};
   ready[playerId] = true;
-  if (g.players.every((p) => ready[p.id])) {
-    g.phase = 'team';
+  if (g.room.players.every((p) => ready[p.id])) {
+    g.state.phase = 'team';
     logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
   }
 }
@@ -126,22 +128,22 @@ export function confirmRole(g, playerId) {
 // ---------------------------------------------------------------- quests
 
 /** @param {AvalonContext} g */
-export const currentTeamSize = (g) => teamSize(g.players.length, g.round);
+export const currentTeamSize = (g) => teamSize(g.room.players.length, g.state.round);
 /** @param {AvalonContext} g */
-export const currentFailsRequired = (g) => failsRequired(g.players.length, g.round);
+export const currentFailsRequired = (g) => failsRequired(g.room.players.length, g.state.round);
 
 /** @param {AvalonContext} g @param {string} playerId @param {string[]} memberIds */
 export function proposeTeam(g, playerId, memberIds) {
-  require_(g.phase === 'team', 'wrongPhase');
+  require_(g.state.phase === 'team', 'wrongPhase');
   require_(playerId === leader(g).id, 'notLeader');
   const unique = [...new Set(memberIds)];
   require_(unique.length === memberIds.length, 'duplicateMember');
   require_(unique.every((id) => playerById(g, id)), 'unknownMember');
   require_(unique.length === currentTeamSize(g), 'wrongTeamSize', { size: currentTeamSize(g) });
 
-  g.team = unique;
-  g.votes = {};
-  g.phase = 'vote';
+  g.state.team = unique;
+  g.state.votes = {};
+  g.state.phase = 'vote';
   logEvent(g, 'log.teamProposed', {
     name: leader(g).name,
     members: unique.map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)).name),
@@ -150,72 +152,72 @@ export function proposeTeam(g, playerId, memberIds) {
 
 /** @param {AvalonContext} g @param {string} playerId @param {boolean} approve */
 export function castVote(g, playerId, approve) {
-  require_(g.phase === 'vote', 'wrongPhase');
+  require_(g.state.phase === 'vote', 'wrongPhase');
   require_(playerById(g, playerId), 'notInGame');
-  require_(!(playerId in g.votes), 'alreadyVoted');
-  g.votes[playerId] = Boolean(approve);
-  if (Object.keys(g.votes).length === g.players.length) resolveVote(g);
+  require_(!(playerId in g.state.votes), 'alreadyVoted');
+  g.state.votes[playerId] = Boolean(approve);
+  if (Object.keys(g.state.votes).length === g.room.players.length) resolveVote(g);
 }
 
 /** @param {AvalonContext} g */
 function resolveVote(g) {
-  const approvals = g.players.filter((p) => g.votes[p.id]).length;
-  const approved = approvals * 2 > g.players.length;
-  g.lastVote = {
-    round: g.round,
-    attempt: g.rejects + 1,
-    team: g.team.slice(),
-    votes: { ...g.votes },
+  const approvals = g.room.players.filter((p) => g.state.votes[p.id]).length;
+  const approved = approvals * 2 > g.room.players.length;
+  g.state.lastVote = {
+    round: g.state.round,
+    attempt: g.state.rejects + 1,
+    team: g.state.team.slice(),
+    votes: { ...g.state.votes },
     approved,
   };
   logEvent(g, approved ? 'log.voteApproved' : 'log.voteRejected', {
     yes: approvals,
-    no: g.players.length - approvals,
+    no: g.room.players.length - approvals,
   });
 
   if (approved) {
     // With the switch off, rejections accumulate across quests until the fifth
     // hands evil the game. An approved team clears them only when requested.
-    if (houseRulesOf(g).resetRejects) g.rejects = 0;
-    g.cards = {};
-    g.phase = 'quest';
+    if (houseRulesOf(g).resetRejects) g.state.rejects = 0;
+    g.state.cards = {};
+    g.state.phase = 'quest';
     return;
   }
 
-  g.rejects += 1;
-  if (g.rejects >= MAX_REJECTS) {
+  g.state.rejects += 1;
+  if (g.state.rejects >= MAX_REJECTS) {
     finish(g, 'evil', 'win.hammer');
     return;
   }
   nextLeader(g);
-  g.team = [];
-  g.phase = 'team';
+  g.state.team = [];
+  g.state.phase = 'team';
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
 }
 
 /** @param {AvalonContext} g */
 function nextLeader(g) {
-  g.leaderIndex = (g.leaderIndex + 1) % g.players.length;
+  g.state.leaderIndex = (g.state.leaderIndex + 1) % g.room.players.length;
 }
 
 /** @param {AvalonContext} g @param {string} playerId @param {boolean} success */
 export function playCard(g, playerId, success) {
-  require_(g.phase === 'quest', 'wrongPhase');
-  require_(g.team.includes(playerId), 'notOnTeam');
-  require_(!(playerId in g.cards), 'alreadyPlayed');
+  require_(g.state.phase === 'quest', 'wrongPhase');
+  require_(g.state.team.includes(playerId), 'notOnTeam');
+  require_(!(playerId in g.state.cards), 'alreadyPlayed');
   const wantsFail = success === false;
-  require_(!(wantsFail && sideOf(g.roles[playerId]) === 'good'), 'goodMustSucceed');
-  g.cards[playerId] = !wantsFail;
-  if (g.team.every((id) => id in g.cards)) resolveQuest(g);
+  require_(!(wantsFail && sideOf(g.state.roles[playerId]) === 'good'), 'goodMustSucceed');
+  g.state.cards[playerId] = !wantsFail;
+  if (g.state.team.every((id) => id in g.state.cards)) resolveQuest(g);
 }
 
 /** @param {AvalonContext} g */
 function resolveQuest(g) {
-  const fails = g.team.filter((id) => g.cards[id] === false).length;
+  const fails = g.state.team.filter((id) => g.state.cards[id] === false).length;
   const success = fails < currentFailsRequired(g);
-  g.quests.push({ round: g.round, team: g.team.slice(), fails, success });
+  g.state.quests.push({ round: g.state.round, team: g.state.team.slice(), fails, success });
   logEvent(g, success ? 'log.questSucceeded' : 'log.questFailed', {
-    round: g.round + 1,
+    round: g.state.round + 1,
     fails,
   });
   afterQuest(g);
@@ -224,22 +226,22 @@ function resolveQuest(g) {
 /** Where a settled quest leaves the game. */
 /** @param {AvalonContext} g */
 function afterQuest(g) {
-  const successes = g.quests.filter((q) => q.success).length;
-  const failures = g.quests.length - successes;
+  const successes = g.state.quests.filter((q) => q.success).length;
+  const failures = g.state.quests.length - successes;
 
   if (failures >= 3) return finish(g, 'evil', 'win.threeFails');
   if (successes >= 3) {
-    g.phase = 'assassin';
-    g.team = [];
+    g.state.phase = 'assassin';
+    g.state.team = [];
     logEvent(g, 'log.assassinTurn', {});
     return;
   }
 
-  g.round += 1;
-  g.team = [];
-  g.cards = {};
+  g.state.round += 1;
+  g.state.team = [];
+  g.state.cards = {};
   nextLeader(g);
-  g.phase = 'team';
+  g.state.phase = 'team';
   logEvent(g, 'log.leaderTurn', { name: leader(g).name, size: currentTeamSize(g) });
 }
 
@@ -252,38 +254,38 @@ function afterQuest(g) {
  */
 /** @param {AvalonContext} g @param {string} playerId @param {string} targetId */
 export function assassinate(g, playerId, targetId) {
-  require_(g.phase === 'assassin', 'wrongPhase');
-  require_(g.roles[playerId] === 'assassin', 'assassinOnly');
+  require_(g.state.phase === 'assassin', 'wrongPhase');
+  require_(g.state.roles[playerId] === 'assassin', 'assassinOnly');
   const target = playerById(g, targetId);
   require_(target, 'unknownMember');
   require_(targetId !== playerId, 'cannotTargetSelf');
 
-  g.assassinTarget = targetId;
-  const hit = g.roles[targetId] === 'merlin';
+  g.state.assassinTarget = targetId;
+  const hit = g.state.roles[targetId] === 'merlin';
   logEvent(g, hit ? 'log.assassinHit' : 'log.assassinMiss', { name: target.name });
   finish(g, hit ? 'evil' : 'good', hit ? 'win.merlinSlain' : 'win.threeSuccesses');
 }
 
 /** @param {AvalonContext} g @param {'good' | 'evil'} winner @param {string} reason */
 function finish(g, winner, reason) {
-  g.phase = 'over';
-  g.winner = winner;
-  g.winReason = reason;
+  g.state.phase = 'over';
+  g.state.winner = winner;
+  g.state.winReason = reason;
   logEvent(g, 'log.gameOver', { winner });
 }
 
 /** What this table agreed to before the cards came out, and keeps. */
 /** @param {AvalonContext} g */
 const lobbyKeeps = (g) => ({
-  options: g.options,
-  optionsTouched: Boolean(g.optionsTouched),
+  options: g.state.options,
+  optionsTouched: Boolean(g.state.optionsTouched),
   houseRules: houseRulesOf(g),
 });
 
 /** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function resetToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.resetToLobby(g, playerId, () => ({
-    fresh: createGame(g.code, { now, seed: g.seed }),
+    fresh: createGame(g.room.code, { now, seed: g.room.seed }),
     keep: lobbyKeeps(g),
   }));
 }
@@ -291,7 +293,7 @@ export function resetToLobby(g, playerId, { now = Date.now } = {}) {
 /** @param {AvalonContext} g @param {string} playerId @param {{ now?: () => number }} [options] */
 export function restartToLobby(g, playerId, { now = Date.now } = {}) {
   lobby.restartToLobby(g, playerId, () => ({
-    fresh: createGame(g.code, { now, seed: g.seed }),
+    fresh: createGame(g.room.code, { now, seed: g.room.seed }),
     keep: lobbyKeeps(g),
   }));
 }
@@ -307,7 +309,7 @@ export function restartToLobby(g, playerId, { now = Date.now } = {}) {
  */
 export function viewFor(g, viewerId) {
   const me = playerById(g, viewerId);
-  const myRole = g.roles[viewerId] ?? null;
+  const myRole = g.state.roles[viewerId] ?? null;
   const common = {
     ...lobby.baseView(g, viewerId),
     setup: {
@@ -321,14 +323,14 @@ export function viewFor(g, viewerId) {
     id: me.id, name: me.name, avatar: me.avatar ?? null,
     role: myRole, side: myRole ? sideOf(myRole) : null,
   } : null;
-  const players = g.players.map((p, i) => ({
+  const players = g.room.players.map((p, i) => ({
       id: p.id,
       name: p.name,
       avatar: p.avatar ?? null,
       seat: i,
     }));
 
-  if (g.phase === 'lobby') return {
+  if (g.state.phase === 'lobby') return {
     ...common, phase: 'lobby',
     you: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
     players,
@@ -340,63 +342,63 @@ export function viewFor(g, viewerId) {
   const inGame = {
     ...common, you,
     houseRules: houseRulesOf(g),
-    roleCounts: countRoles(buildRoleList(g.players.length, g.options)),
-    round: g.round,
-    rejects: g.rejects,
+    roleCounts: countRoles(buildRoleList(g.room.players.length, g.state.options)),
+    round: g.state.round,
+    rejects: g.state.rejects,
     maxRejects: MAX_REJECTS,
     boardSizes: [0, 1, 2, 3, 4].map((r) => ({
-      size: teamSize(g.players.length, r),
-      twoFails: failsRequired(g.players.length, r) === 2,
+      size: teamSize(g.room.players.length, r),
+      twoFails: failsRequired(g.room.players.length, r) === 2,
     })),
-    quests: g.quests.map((q) => ({
+    quests: g.state.quests.map((q) => ({
       round: q.round, success: q.success, fails: q.fails, team: q.team,
     })),
     // Under hidden votes the per-player ballot never leaves the server: the
     // table gets the tally, which is what decides the mission, and nothing
     // else. Withholding the whole field rather than emptying it keeps a client
     // that predates the rule from drawing everyone as a rejection.
-    lastVote: houseRulesOf(g).hiddenVotes ? null : g.lastVote,
+    lastVote: houseRulesOf(g).hiddenVotes ? null : g.state.lastVote,
     voteTally: voteTally(g),
-    knowledge: myRole ? knowledgeFor(viewerId, g.roles) : [],
+    knowledge: myRole ? knowledgeFor(viewerId, g.state.roles) : [],
     evilCount: evilPlayers(g).length,
   };
 
   const waiting = () => ({ waitingFor: waitingFor(g).map((p) => p.id) });
-  if (g.phase === 'reveal') return {
+  if (g.state.phase === 'reveal') return {
     ...inGame, phase: 'reveal',
-    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, ready: Boolean(g.ready?.[p.id]) })),
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.state.leaderIndex, ready: Boolean(g.state.ready?.[p.id]) })),
     ...waiting(),
   };
-  if (g.phase === 'team') return {
-    ...inGame, phase: 'team', team: g.team.slice(), teamSize: currentTeamSize(g),
-    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id) })),
+  if (g.state.phase === 'team') return {
+    ...inGame, phase: 'team', team: g.state.team.slice(), teamSize: currentTeamSize(g),
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.state.leaderIndex, onTeam: g.state.team.includes(p.id) })),
     failsRequired: currentFailsRequired(g), ...waiting(),
   };
-  if (g.phase === 'vote') return {
-    ...inGame, phase: 'vote', team: g.team.slice(), teamSize: currentTeamSize(g), ...waiting(),
+  if (g.state.phase === 'vote') return {
+    ...inGame, phase: 'vote', team: g.state.team.slice(), teamSize: currentTeamSize(g), ...waiting(),
     players: players.map((p, i) => ({
-      ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id), hasVoted: p.id in g.votes,
+      ...p, isLeader: i === g.state.leaderIndex, onTeam: g.state.team.includes(p.id), hasVoted: p.id in g.state.votes,
     })),
   };
-  if (g.phase === 'quest') return {
-    ...inGame, phase: 'quest', team: g.team.slice(), failsRequired: currentFailsRequired(g), ...waiting(),
+  if (g.state.phase === 'quest') return {
+    ...inGame, phase: 'quest', team: g.state.team.slice(), failsRequired: currentFailsRequired(g), ...waiting(),
     players: players.map((p, i) => ({
-      ...p, isLeader: i === g.leaderIndex, onTeam: g.team.includes(p.id),
-      ...(g.team.includes(p.id) ? { hasPlayed: p.id in g.cards } : {}),
+      ...p, isLeader: i === g.state.leaderIndex, onTeam: g.state.team.includes(p.id),
+      ...(g.state.team.includes(p.id) ? { hasPlayed: p.id in g.state.cards } : {}),
     })),
   };
-  if (g.phase === 'assassin') return {
-    ...inGame, phase: 'assassin', assassinTarget: g.assassinTarget, ...waiting(),
-    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex })),
+  if (g.state.phase === 'assassin') return {
+    ...inGame, phase: 'assassin', assassinTarget: g.state.assassinTarget, ...waiting(),
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.state.leaderIndex })),
   };
-  if (g.phase === 'over') return {
+  if (g.state.phase === 'over') return {
     ...inGame, phase: 'over',
-    players: players.map((p, i) => ({ ...p, isLeader: i === g.leaderIndex, role: g.roles[p.id] })),
-    assassinTarget: g.assassinTarget,
-    winner: g.winner,
-    winReason: g.winReason,
+    players: players.map((p, i) => ({ ...p, isLeader: i === g.state.leaderIndex, role: g.state.roles[p.id] })),
+    assassinTarget: g.state.assassinTarget,
+    winner: g.state.winner,
+    winReason: g.state.winReason,
   };
-  throw new Error(`unknown Avalon phase: ${g.phase}`);
+  throw new Error(`unknown Avalon phase: ${g.state.phase}`);
 }
 
 /** @param {string[]} roles */
@@ -411,7 +413,7 @@ function countRoles(roles) {
 /** @param {AvalonContext} g */
 function safeRoleCounts(g) {
   try {
-    return countRoles(buildRoleList(g.players.length, liveOptions(g)));
+    return countRoles(buildRoleList(g.room.players.length, liveOptions(g)));
   } catch {
     return null;
   }
@@ -420,13 +422,13 @@ function safeRoleCounts(g) {
 /** How the last vote went, without saying who made it go that way. */
 /** @param {AvalonContext} g */
 function voteTally(g) {
-  if (!g.lastVote) return null;
-  const ballots = Object.values(g.lastVote.votes);
+  if (!g.state.lastVote) return null;
+  const ballots = Object.values(g.state.lastVote.votes);
   const yes = ballots.filter(Boolean).length;
   return {
-    round: g.lastVote.round,
-    attempt: g.lastVote.attempt,
-    approved: g.lastVote.approved,
+    round: g.state.lastVote.round,
+    attempt: g.state.lastVote.attempt,
+    approved: g.state.lastVote.approved,
     yes,
     no: ballots.length - yes,
   };
@@ -434,14 +436,14 @@ function voteTally(g) {
 
 /** @param {AvalonContext} g */
 function waitingFor(g) {
-  switch (g.phase) {
-    case 'reveal': return g.players.filter((p) => !g.ready?.[p.id]);
+  switch (g.state.phase) {
+    case 'reveal': return g.room.players.filter((p) => !g.state.ready?.[p.id]);
     case 'team':   return [leader(g)];
-    case 'vote':   return g.players.filter((p) => !(p.id in g.votes));
-    case 'quest':  return g.team
+    case 'vote':   return g.room.players.filter((p) => !(p.id in g.state.votes));
+    case 'quest':  return g.state.team
       .map((id) => /** @type {import('../../../types/contracts.js').Player} */ (playerById(g, id)))
-      .filter((p) => !(p.id in g.cards));
-    case 'assassin': return g.players.filter((p) => g.roles[p.id] === 'assassin');
+      .filter((p) => !(p.id in g.state.cards));
+    case 'assassin': return g.room.players.filter((p) => g.state.roles[p.id] === 'assassin');
     default: return [];
   }
 }
