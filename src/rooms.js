@@ -1,10 +1,18 @@
 // Room registry: owns shared session state, runtime resources and persistence
 // notifications. Engines own only the member at room.game.state.
 
+// @ts-check
+
 import { randomInt } from 'node:crypto';
 
 import { GameError, logEvent, record, require_ } from './lobby.js';
 import { DEFAULT_GAME, gameContext, gameFor } from './games/index.js';
+
+/** @typedef {import('../types/contracts.js').GameId} GameId */
+/** @typedef {import('../types/contracts.js').PersistedRoom} PersistedRoom */
+/** @typedef {import('../types/contracts.js').PublicView} PublicView */
+/** @typedef {import('../types/contracts.js').RoomCommand} RoomCommand */
+/** @typedef {import('../types/contracts.js').RuntimeRoom} RuntimeRoom */
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 4;
@@ -15,13 +23,22 @@ const OVER_GRACE_MS = 3 * 60 * 1000;
 const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
 
 export class Rooms {
+  /**
+   * @param {{
+   *   now?: () => number,
+   *   onMutate?: () => void,
+   *   newCode?: () => string,
+   * }} [options]
+   */
   constructor({ now = Date.now, onMutate, newCode = randomCode } = {}) {
     this.now = now;
     this.onMutate = onMutate;
     this.newCode = newCode;
+    /** @type {Map<string, RuntimeRoom>} */
     this.rooms = new Map();
   }
 
+  /** @returns {string} */
   allocateCode() {
     if (this.rooms.size >= CODE_SPACE) throw new GameError('roomsFull');
     for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
@@ -31,23 +48,34 @@ export class Rooms {
     throw new GameError('roomsFull');
   }
 
+  /**
+   * @param {GameId} [gameId]
+   * @param {{ code?: string, seed?: number }} [options]
+   * @returns {string}
+   */
   create(gameId = DEFAULT_GAME, { code: requestedCode, seed } = {}) {
     const code = requestedCode ? String(requestedCode).toUpperCase() : this.allocateCode();
     if (!CODE_PATTERN.test(code) || this.rooms.has(code)) throw new GameError('badRequest');
-    const persisted = gameFor(gameId).create(code, { now: this.now, seed });
-    this.rooms.set(code, this.runtimeRoom({ ...persisted, touchedAt: this.now() }));
+    const persisted = gameFor(gameId).create(code, {
+      now: this.now,
+      ...(seed === undefined ? {} : { seed }),
+    });
+    this.rooms.set(code, this.runtimeRoom(/** @type {PersistedRoom} */ ({ ...persisted, touchedAt: this.now() })));
     this.onMutate?.();
     return code;
   }
 
+  /** @param {PersistedRoom} room @returns {RuntimeRoom} */
   runtimeRoom(room) {
     return { ...room, subscribers: new Set(), timer: null };
   }
 
+  /** @param {string} code @param {string} playerId @param {GameId} gameId */
   setGame(code, playerId, gameId) {
     return this.dispatch(code, playerId, { type: 'setGame', game: gameId });
   }
 
+  /** @param {string} code @param {string} playerId @param {string} avatar */
   updatePlayerAvatar(code, playerId, avatar) {
     const room = this.peek(code);
     const player = room?.players.find((candidate) => candidate.id === playerId);
@@ -56,6 +84,7 @@ export class Rooms {
     return true;
   }
 
+  /** @param {RuntimeRoom} room @param {string} playerId @param {GameId} gameId */
   replaceGame(room, playerId, gameId) {
     require_(gameContext(room).phase === 'lobby', 'gameAlreadyStarted');
     require_(playerId === room.hostId, 'hostOnly');
@@ -66,6 +95,7 @@ export class Rooms {
   }
 
   /** Player input enters through one successful-mutation boundary. */
+  /** @param {string} code @param {string} playerId @param {RoomCommand} body */
   dispatch(code, playerId, body) {
     return this.mutate(code, (room) => {
       if (!room.players.some((player) => player.id === playerId) && body.type !== 'join') {
@@ -74,11 +104,11 @@ export class Rooms {
       const at = this.now();
       let result;
       if (body.type === 'setGame') {
-        result = this.replaceGame(room, playerId, body.game);
+        result = this.replaceGame(room, playerId, /** @type {GameId} */ (body.game));
       } else if (body.type === 'join' || body.type === 'leave') {
         result = gameFor(room.game.id).rosterChange(room, body.type, {
           id: body.id ?? playerId,
-          name: body.name,
+          ...(body.name === undefined ? {} : { name: body.name }),
         });
       } else {
         result = gameFor(room.game.id).command(room, playerId, body, { now: () => at });
@@ -88,6 +118,7 @@ export class Rooms {
     });
   }
 
+  /** @param {unknown} code @returns {RuntimeRoom} */
   get(code) {
     const room = this.rooms.get(String(code || '').toUpperCase());
     if (!room) throw new GameError('noSuchRoom', { code });
@@ -95,10 +126,12 @@ export class Rooms {
     return room;
   }
 
+  /** @param {unknown} code */
   has(code) {
     return this.rooms.has(String(code || '').toUpperCase());
   }
 
+  /** @param {unknown} code @returns {RuntimeRoom | undefined} */
   peek(code) {
     return this.rooms.get(String(code || '').toUpperCase());
   }
@@ -114,6 +147,7 @@ export class Rooms {
     return count;
   }
 
+  /** @param {string} code @param {string} playerId @param {(view: PublicView) => void} send */
   subscribe(code, playerId, send) {
     const room = this.get(code);
     const sub = { playerId, send };
@@ -126,10 +160,12 @@ export class Rooms {
    * Compatibility seam for focused tests and non-player jobs. The callback
    * receives the temporary flat game facade, but the stored state stays split.
    */
+  /** @param {string} code @param {(context: import('../types/contracts.js').GameContext) => unknown} fn */
   apply(code, fn) {
     return this.mutate(code, (room) => fn(gameContext(room)));
   }
 
+  /** @param {string} code @param {(room: RuntimeRoom) => unknown} fn */
   mutate(code, fn) {
     const room = this.get(code);
     const result = fn(room);
@@ -140,10 +176,11 @@ export class Rooms {
     return result;
   }
 
+  /** @param {string} code */
   scheduleTick(code) {
     const room = this.rooms.get(code);
     if (!room) return;
-    clearTimeout(room.timer);
+    if (room.timer) clearTimeout(room.timer);
     room.timer = null;
     const engine = gameFor(room.game.id);
     const at = engine.deadline(room);
@@ -162,6 +199,7 @@ export class Rooms {
     room.timer.unref?.();
   }
 
+  /** @param {RuntimeRoom} room */
   broadcast(room) {
     const engine = gameFor(room.game.id);
     for (const sub of room.subscribers) {
@@ -178,7 +216,7 @@ export class Rooms {
     let deleted = false;
     for (const [code, room] of this.rooms) {
       if (room.touchedAt < cutoff && room.subscribers.size === 0) {
-        clearTimeout(room.timer);
+        if (room.timer) clearTimeout(room.timer);
         this.rooms.delete(code);
         deleted = true;
       }
@@ -187,15 +225,20 @@ export class Rooms {
   }
 
   snapshot() {
-    return [...this.rooms.values()].map(({ subscribers: _subscribers, timer: _timer, ...room }) => room);
+    return /** @type {PersistedRoom[]} */ (
+      [...this.rooms.values()].map(({ subscribers: _subscribers, timer: _timer, ...room }) => room)
+    );
   }
 
   /** Validate the whole snapshot before installing any room. */
+  /** @param {unknown} entries */
   restore(entries) {
     if (!Array.isArray(entries)) return false;
     const codes = new Set();
-    for (const room of entries) {
-      if (!validRoomEnvelope(room) || codes.has(room.code) || this.rooms.has(room.code)) return false;
+    for (const candidate of entries) {
+      if (!validRoomEnvelope(candidate)) return false;
+      const room = /** @type {PersistedRoom} */ (candidate);
+      if (codes.has(room.code) || this.rooms.has(room.code)) return false;
       codes.add(room.code);
       let engine;
       try { engine = gameFor(room.game.id); }
@@ -203,7 +246,8 @@ export class Rooms {
       if (!engine.validateRestore(room)) return false;
     }
 
-    for (const entry of entries) {
+    for (const candidate of entries) {
+      const entry = /** @type {PersistedRoom} */ (candidate);
       const room = this.runtimeRoom(entry);
       this.rooms.set(room.code, room);
       this.scheduleTick(room.code);
@@ -212,6 +256,7 @@ export class Rooms {
   }
 }
 
+/** @param {any} room */
 function validRoomEnvelope(room) {
   if (!plainRecord(room) || !CODE_PATTERN.test(room.code)) return false;
   if (!Number.isFinite(room.createdAt) || !Number.isFinite(room.touchedAt)) return false;
@@ -234,20 +279,27 @@ function validRoomEnvelope(room) {
   return forbidden.every((key) => !(key in room.game.state));
 }
 
+/** @param {unknown} value @returns {value is Record<string, any>} */
 const plainRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+/** @param {Record<string, any>} value @param {string[]} required @param {string[]} [optional] */
 const exactKeys = (value, required, optional = []) => {
   const keys = Object.keys(value);
   return required.every((key) => keys.includes(key))
     && keys.every((key) => required.includes(key) || optional.includes(key));
 };
-const uint32 = (value) => Number.isInteger(value) && value >= 0 && value <= 0xffffffff;
+/** @param {unknown} value */
+const uint32 = (value) => Number.isInteger(value) && /** @type {number} */ (value) >= 0
+  && /** @type {number} */ (value) <= 0xffffffff;
+/** @param {any} player */
 const validPlayer = (player) => plainRecord(player)
   && exactKeys(player, ['id', 'name'], ['avatar'])
   && typeof player.id === 'string' && player.id.length > 0
   && typeof player.name === 'string' && player.name.length > 0 && player.name.length <= 24
   && (player.avatar === undefined || typeof player.avatar === 'string');
+/** @param {any} entry */
 const validLog = (entry) => plainRecord(entry)
   && typeof entry.key === 'string' && plainRecord(entry.params) && Number.isFinite(entry.at);
+/** @param {any} entry */
 const validJournal = (entry) => plainRecord(entry)
   && typeof entry.t === 'string' && typeof entry.p === 'string'
   && plainRecord(entry.b) && Number.isFinite(entry.at);
