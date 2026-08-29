@@ -1,7 +1,9 @@
 {
   "compilerOptions": {
     "allowJs": true,
+    "allowImportingTsExtensions": true,
     "checkJs": false,
+    "erasableSyntaxOnly": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
     "module": "nodenext",
@@ -11,11 +13,13 @@
     "noUncheckedIndexedAccess": true,
     "strict": true,
     "strictNullChecks": true,
-    "types": ["node"]
+    "types": ["node"],
+    "verbatimModuleSyntax": true
   },
   "include": [
     "public/**/*.js",
     "src/**/*.js",
-    "types/**/*.d.ts"
+    "types/**/*.d.ts",
+    "types/**/*.ts"
   ]
 }

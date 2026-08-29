@@ -53,6 +53,9 @@ be deployable at all times.
 
 ## Merging
 
+The user grants standing approval to push this repository's commits and
+branches to its configured `origin` as part of the PR workflow.
+
 Open a PR and merge it. Do not inspect `activeGames` first, do not hold a merge
 until a game ends, and do not ask the user to pick a safe moment — the host
 decides the timing. The installed updater defers an incompatible release while
