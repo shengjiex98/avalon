@@ -1,4 +1,4 @@
-import { GameError } from '../../lobby.js';
+import { GameError } from '../../lobby.ts';
 
 // Static rules of The Resistance: Avalon. No state, no I/O.
 
@@ -6,7 +6,8 @@ import { GameError } from '../../lobby.js';
  * Per player-count setup: evil count and the team size of each of the 5 quests.
  * Quest 4 needs two fail cards in games of 7 or more players.
  */
-export const SETUPS = {
+type Setup = { evil: number; teamSizes: number[] };
+export const SETUPS: Record<number, Setup> = {
   5:  { evil: 2, teamSizes: [2, 3, 2, 3, 3] },
   6:  { evil: 2, teamSizes: [2, 3, 4, 3, 4] },
   7:  { evil: 3, teamSizes: [2, 3, 3, 4, 4] },
@@ -29,11 +30,21 @@ export const ROLES = {
   mordred:    { side: 'evil', optional: true,  unique: true },
   oberon:     { side: 'evil', optional: true,  unique: true },
   minion:     { side: 'evil', optional: false, unique: false },
-};
+} as const;
 
-export const OPTIONAL_ROLES = Object.keys(ROLES).filter((r) => ROLES[r].optional);
+export type AvalonRole = keyof typeof ROLES;
+export type AvalonSide = (typeof ROLES)[AvalonRole]['side'];
+export type OptionalAvalonRole = {
+  [Role in AvalonRole]: (typeof ROLES)[Role]['optional'] extends true ? Role : never
+}[AvalonRole];
+export type AvalonOptions = Record<OptionalAvalonRole, boolean>;
+const ROLE_KEYS = Object.keys(ROLES) as AvalonRole[];
 
-export const sideOf = (role) => ROLES[role].side;
+export const OPTIONAL_ROLES = ROLE_KEYS.filter(
+  (role): role is OptionalAvalonRole => ROLES[role].optional,
+);
+
+export const sideOf = (role: AvalonRole): AvalonSide => ROLES[role].side;
 
 /**
  * The deck a table of this size plays unless the host says otherwise: the
@@ -41,7 +52,7 @@ export const sideOf = (role) => ROLES[role].side;
  * Mordred joining as the evil side gains seats. Nothing here is a rule — it is
  * what a table would have picked anyway, so nobody has to pick it.
  */
-const DEFAULT_OPTIONS = {
+const DEFAULT_OPTIONS: Record<number, AvalonRole[]> = {
   5:  ['percival', 'morgana'],
   6:  ['percival', 'morgana'],
   7:  ['percival', 'morgana', 'oberon'],
@@ -51,9 +62,9 @@ const DEFAULT_OPTIONS = {
 };
 
 /** The optional roles a table of this size starts with. */
-export function defaultOptions(playerCount) {
+export function defaultOptions(playerCount: number): AvalonOptions {
   const wanted = DEFAULT_OPTIONS[playerCount] ?? [];
-  return Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, wanted.includes(r)]));
+  return Object.fromEntries(OPTIONAL_ROLES.map((r) => [r, wanted.includes(r)])) as AvalonOptions;
 }
 
 /**
@@ -80,12 +91,12 @@ export const HOUSE_RULES = { randomLeader: false, hiddenVotes: false, resetRejec
 export const HOUSE_RULE_KEYS = Object.keys(HOUSE_RULES);
 
 /** How many fail cards this quest needs to fail. */
-export function failsRequired(playerCount, round) {
+export function failsRequired(playerCount: number, round: number): number {
   return playerCount >= 7 && round === 3 ? 2 : 1;
 }
 
-export function teamSize(playerCount, round) {
-  return SETUPS[playerCount].teamSizes[round];
+export function teamSize(playerCount: number, round: number): number | undefined {
+  return SETUPS[playerCount]?.teamSizes[round];
 }
 
 /**
@@ -93,10 +104,10 @@ export function teamSize(playerCount, round) {
  * Returns [{ playerId, hint }] where `hint` is an i18n key suffix, so the
  * server never has to know what language a client renders in.
  */
-export function knowledgeFor(viewerId, roles) {
+export function knowledgeFor(viewerId: string, roles: Record<string, AvalonRole>) {
   const role = roles[viewerId];
   const entries = Object.entries(roles).filter(([id]) => id !== viewerId);
-  const out = [];
+  const out: Array<{ playerId: string; hint: string }> = [];
 
   if (role === 'merlin') {
     // Merlin sees evil, but Mordred hides from him.
@@ -108,7 +119,7 @@ export function knowledgeFor(viewerId, roles) {
     for (const [id, r] of entries) {
       if (r === 'merlin' || r === 'morgana') out.push({ playerId: id, hint: 'merlinOrMorgana' });
     }
-  } else if (sideOf(role) === 'evil' && role !== 'oberon') {
+  } else if (role && sideOf(role) === 'evil' && role !== 'oberon') {
     // Evil recognise each other; Oberon is alone on both sides of that.
     for (const [id, r] of entries) {
       if (sideOf(r) === 'evil' && r !== 'oberon') out.push({ playerId: id, hint: 'evil' });
@@ -121,18 +132,21 @@ export function knowledgeFor(viewerId, roles) {
  * Build the role list for a game. Throws if the requested optional roles do
  * not fit the player count.
  */
-export function buildRoleList(playerCount, options = {}) {
+export function buildRoleList(
+  playerCount: number,
+  options: Partial<Record<AvalonRole, boolean>> = {},
+): AvalonRole[] {
   const setup = SETUPS[playerCount];
   if (!setup) throw new GameError('badPlayerCount', { min: MIN_PLAYERS, max: MAX_PLAYERS });
 
   const evilCount = setup.evil;
   const goodCount = playerCount - evilCount;
 
-  const good = ['merlin'];
+  const good: AvalonRole[] = ['merlin'];
   if (options.percival) good.push('percival');
 
-  const evil = ['assassin'];
-  for (const r of ['morgana', 'mordred', 'oberon']) if (options[r]) evil.push(r);
+  const evil: AvalonRole[] = ['assassin'];
+  for (const role of ['morgana', 'mordred', 'oberon'] as const) if (options[role]) evil.push(role);
 
   if (good.length > goodCount) throw new GameError('tooManyGoodRoles', { max: goodCount });
   if (evil.length > evilCount) throw new GameError('tooManyEvilRoles', { max: evilCount });

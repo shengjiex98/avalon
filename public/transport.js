@@ -2,9 +2,9 @@
 // HTTP and EventSource ownership. Replacing or leaving a room always closes
 // the stream owned here before another one can be installed.
 
-/** @typedef {import('../types/contracts.js').CreateRoomCommand} CreateRoomCommand */
-/** @typedef {import('../types/contracts.js').JoinCommand} JoinCommand */
-/** @typedef {import('../types/contracts.js').ValidatedAction} ValidatedAction */
+/** @typedef {import('../src/contracts/types.ts').CreateRoomCommand} CreateRoomCommand */
+/** @typedef {import('../src/contracts/types.ts').JoinCommand} JoinCommand */
+/** @typedef {import('../src/contracts/types.ts').ValidatedAction} ValidatedAction */
 
 // Every body this client is allowed to put on the wire. Naming the union here
 // is what makes a request the compiler can check against the server's own

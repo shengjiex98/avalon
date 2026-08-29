@@ -4,41 +4,44 @@
 // This is shared code, not a framework. Each game keeps its own state machine
 // and simply calls these for the parts that are genuinely identical.
 
-// @ts-check
-
 import { randomInt } from 'node:crypto';
-
-/** @typedef {import('../types/contracts.js').GameContext} GameContext */
-/** @typedef {import('../types/contracts.js').GameId} GameId */
-/** @typedef {import('../types/contracts.js').Player} Player */
-/** @typedef {import('../types/contracts.js').RoomCommand} RoomCommand */
+import type {
+  AvalonContext, AvalonState, CreatedRoom, CreatedRoomFor, GameContext, GameId, OnuwContext,
+  OnuwState, Player, RoomCommand, SharedViewFor,
+} from './contracts/types.ts';
 
 export class GameError extends Error {
-  /** @param {string} key @param {Record<string, unknown>} [params] */
-  constructor(key, params = {}) {
+  key: string;
+  params: Record<string, unknown>;
+
+  constructor(key: string, params: Record<string, unknown> = {}) {
     super(key);
     this.key = key;
     this.params = params;
   }
 }
 
-/** @param {unknown} cond @param {string} key @param {Record<string, unknown>} [params] @returns {asserts cond} */
-export function require_(cond, key, params) {
+export function require_(cond: unknown, key: string, params?: Record<string, unknown>): asserts cond {
   if (!cond) throw new GameError(key, params);
 }
 
+type CreateOptions = { now?: () => number; seed?: number };
 /** The shared room fields every game starts with. */
-/**
- * @param {string} code
- * @param {GameId} gameId
- * @param {import('../types/contracts.js').AvalonState | import('../types/contracts.js').OnuwState} state
- * @param {{ now?: () => number, seed?: number }} [options]
- * @returns {import('../types/contracts.js').CreatedRoom}
- */
-export function baseRoom(code, gameId, state, { now = Date.now, seed = randomInt(0, 0x100000000) } = {}) {
+export function baseRoom(
+  code: string, gameId: 'avalon', state: AvalonState, options?: CreateOptions,
+): CreatedRoomFor<'avalon'>;
+export function baseRoom(
+  code: string, gameId: 'onuw', state: OnuwState, options?: CreateOptions,
+): CreatedRoomFor<'onuw'>;
+export function baseRoom(
+  code: string,
+  gameId: GameId,
+  state: AvalonState | OnuwState,
+  { now = Date.now, seed: suppliedSeed = randomInt(0, 0x100000000) }: CreateOptions = {},
+): CreatedRoom {
+  let seed = suppliedSeed;
   seed >>>= 0;
-  return /** @type {import('../types/contracts.js').CreatedRoom} */ (/** @type {unknown} */ ({
-    code,
+  const shared = {
     seed,
     rng: seed,
     createdAt: now(),
@@ -47,13 +50,17 @@ export function baseRoom(code, gameId, state, { now = Date.now, seed = randomInt
     log: [],
     journal: [],
     revision: 0,
-    game: { id: gameId, state },
-  }));
+  };
+  if (gameId === 'avalon') {
+    if (!('roles' in state)) throw new GameError('noSuchGame', { game: gameId });
+    return { code, ...shared, game: { id: gameId, state } };
+  }
+  if ('roles' in state) throw new GameError('noSuchGame', { game: gameId });
+  return { code, ...shared, game: { id: gameId, state } };
 }
 
 /** Append one successful player input without retaining transport-only fields. */
-/** @param {GameContext} g @param {string} playerId @param {RoomCommand} body @param {number} at */
-export function record(g, playerId, body, at) {
+export function record(g: GameContext, playerId: string, body: RoomCommand, at: number): void {
   if (g.room.journalDropped) return;
   if (g.room.journal.length >= 2000) {
     g.room.journal = [];
@@ -65,8 +72,7 @@ export function record(g, playerId, body, at) {
 }
 
 /** Mulberry32. The room's uint32 state lets a snapshot resume the exact stream. */
-/** @param {GameContext} g */
-function nextRand(g) {
+function nextRand(g: GameContext): number {
   g.room.rng = (g.room.rng + 0x6d2b79f5) >>> 0;
   let t = g.room.rng;
   t = Math.imul(t ^ (t >>> 15), t | 1);
@@ -74,28 +80,29 @@ function nextRand(g) {
   return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
 }
 
-/** @param {GameContext} g @param {number} n */
-export const randInt = (g, n) => Math.floor(nextRand(g) * n);
+export const randInt = (g: GameContext, n: number): number => Math.floor(nextRand(g) * n);
 
 /** Fisher-Yates backed by the random stream stored in game state. */
-/** @template T @param {GameContext} g @param {T[]} list @returns {T[]} */
-export function shuffleWith(g, list) {
+export function shuffleWith<T>(g: GameContext, list: T[]): T[] {
   const a = list.slice();
   for (let i = a.length - 1; i > 0; i--) {
     const j = randInt(g, i + 1);
-    const left = /** @type {T} */ (a[i]);
-    const right = /** @type {T} */ (a[j]);
+    const left = a[i]!;
+    const right = a[j]!;
     a[i] = right;
     a[j] = left;
   }
   return a;
 }
 
-/** @param {GameContext} g @param {string} id */
-export const playerById = (g, id) => g.room.players.find((p) => p.id === id);
+export const playerById = (g: GameContext, id: string): Player | undefined =>
+  g.room.players.find((player) => player.id === id);
 
-/** @param {GameContext} g @param {string} key @param {Record<string, unknown>} [params] */
-export function logEvent(g, key, params = {}) {
+export function logEvent(
+  g: GameContext,
+  key: string,
+  params: Record<string, unknown> = {},
+): void {
   g.room.log.push({ key, params, at: g.room.log.length });
 }
 
@@ -105,7 +112,11 @@ export function logEvent(g, key, params = {}) {
  * @param {{ maxPlayers: number }} limits
  * @returns {Player}
  */
-export function addPlayer(g, { id, name, avatar }, { maxPlayers }) {
+export function addPlayer(
+  g: GameContext,
+  { id, name, avatar }: { id: string; name?: string; avatar?: string },
+  { maxPlayers }: { maxPlayers: number },
+): Player {
   const existing = playerById(g, id);
   if (existing) {                       // reconnect keeps the seat and the role
     if (name && name !== existing.name) existing.name = name;
@@ -125,8 +136,7 @@ export function addPlayer(g, { id, name, avatar }, { maxPlayers }) {
   return player;
 }
 
-/** @param {GameContext} g @param {string} id */
-export function removePlayer(g, id) {
+export function removePlayer(g: GameContext, id: string): void {
   require_(g.state.phase === 'lobby', 'cannotLeaveMidGame');
   const player = playerById(g, id);
   if (!player) return;
@@ -143,20 +153,34 @@ export function removePlayer(g, id) {
  * the game it started under, even when the server it is restored onto now
  * offers one.
  */
-/** @param {GameContext} g @param {string[]} keys */
-export const houseRulesInForce = (g, keys) => ({
-  ...Object.fromEntries(keys.map((rule) => [rule, false])),
-  ...g.state.houseRules,
-});
+export function houseRulesInForce(
+  g: AvalonContext,
+  keys: string[],
+): AvalonState['houseRules'];
+export function houseRulesInForce(
+  g: OnuwContext,
+  keys: string[],
+): OnuwState['houseRules'];
+export function houseRulesInForce(g: GameContext, keys: string[]): Record<string, boolean>;
+export function houseRulesInForce(g: GameContext, keys: string[]): Record<string, boolean> {
+  return {
+    ...Object.fromEntries(keys.map((rule) => [rule, false])),
+    ...g.state.houseRules,
+  };
+}
 
 /** Switch the rules the host named, leaving keys this game does not offer alone. */
-/** @param {GameContext} g @param {Record<string, unknown>} requested @param {string[]} keys */
-export function setHouseRules(g, requested, keys) {
+export function setHouseRules(
+  g: GameContext,
+  requested: Record<string, unknown>,
+  keys: string[],
+): void {
   const rules = houseRulesInForce(g, keys);
+  const mutable: Record<string, boolean> = rules;
   for (const rule of keys) {
-    if (rule in requested) rules[rule] = Boolean(requested[rule]);
+    if (rule in requested) mutable[rule] = Boolean(requested[rule]);
   }
-  g.state.houseRules = rules;
+  Object.assign(g.state.houseRules, rules);
 }
 
 // ------------------------------------------------------- back to the lobby
@@ -170,7 +194,10 @@ export function setHouseRules(g, requested, keys) {
  * @param {GameContext} g
  * @param {() => { fresh: GameContext, keep: Record<string, unknown> }} prepare
  */
-function rebuildLobby(g, prepare) {
+function rebuildLobby<C extends GameContext>(
+  g: C,
+  prepare: () => { fresh: C; keep: Partial<C['state']> },
+): void {
   const { fresh, keep } = prepare();
   const carried = {
     code: g.room.code, players: g.room.players, hostId: g.room.hostId,
@@ -186,7 +213,11 @@ function rebuildLobby(g, prepare) {
 
 /** Back to the lobby after a completed game, with the same table. */
 /** @param {GameContext} g @param {string} playerId @param {() => { fresh: GameContext, keep: Record<string, unknown> }} prepare */
-export function resetToLobby(g, playerId, prepare) {
+export function resetToLobby<C extends GameContext>(
+  g: C,
+  playerId: string,
+  prepare: () => { fresh: C; keep: Partial<C['state']> },
+): void {
   require_(playerId === g.room.hostId, 'hostOnly');
   require_(g.state.phase === 'over', 'gameInProgress');
   rebuildLobby(g, prepare);
@@ -194,7 +225,11 @@ export function resetToLobby(g, playerId, prepare) {
 
 /** Let the host abandon an active game and immediately return to its lobby. */
 /** @param {GameContext} g @param {string} playerId @param {() => { fresh: GameContext, keep: Record<string, unknown> }} prepare */
-export function restartToLobby(g, playerId, prepare) {
+export function restartToLobby<C extends GameContext>(
+  g: C,
+  playerId: string,
+  prepare: () => { fresh: C; keep: Partial<C['state']> },
+): void {
   require_(playerId === g.room.hostId, 'hostOnly');
   require_(g.state.phase !== 'lobby' && g.state.phase !== 'over', 'wrongPhase');
   rebuildLobby(g, prepare);
@@ -205,17 +240,26 @@ export function restartToLobby(g, playerId, prepare) {
  * @template {GameContext} C
  * @param {C} g
  * @param {string} viewerId
- * @returns {import('../types/contracts.js').SharedViewFor<C>}
+ * @returns {import('./contracts/types.ts').SharedViewFor<C>}
  */
-export function baseView(g, viewerId) {
+export function baseView(g: AvalonContext, viewerId: string): SharedViewFor<AvalonContext>;
+export function baseView(g: OnuwContext, viewerId: string): SharedViewFor<OnuwContext>;
+export function baseView(
+  g: GameContext,
+  viewerId: string,
+): SharedViewFor<AvalonContext> | SharedViewFor<OnuwContext> {
   const me = playerById(g, viewerId);
-  return {
+  const shared = {
     code: g.room.code,
-    gameId: g.room.game.id,
-    phase: g.state.phase,
     version: g.room.revision,
     hostId: g.room.hostId,
     me: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
     log: g.room.log.slice(-40),
   };
+  if (g.room.game.id === 'avalon') {
+    if (!('roles' in g.state)) throw new GameError('noSuchGame', { game: g.room.game.id });
+    return { ...shared, gameId: g.room.game.id, phase: g.state.phase };
+  }
+  if ('roles' in g.state) throw new GameError('noSuchGame', { game: g.room.game.id });
+  return { ...shared, gameId: g.room.game.id, phase: g.state.phase };
 }

@@ -9,7 +9,21 @@ import {
   AVATAR_STYLE_PROMPT,
   AVATAR_SUBJECT_PROMPT,
   Avatars,
-} from '../src/avatars.js';
+} from '../src/avatars.ts';
+import type { AiBody, AvatarFetch } from '../src/avatars.ts';
+
+type AiRequest = {
+  chat_template_kwargs?: unknown;
+  max_tokens?: number;
+  messages?: Array<{ content: string }>;
+  temperature?: number;
+  prompt?: string;
+  steps?: number;
+  image?: unknown;
+};
+type RequestRecord = { url: string; body: AiRequest };
+
+const requestBody = (options?: RequestInit): AiRequest => JSON.parse(String(options?.body));
 
 const png = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
@@ -22,18 +36,20 @@ test('an uploaded avatar is validated, content-addressed, and persisted', async 
   const avatars = new Avatars({ directory, apiToken: null });
   const url = await avatars.resolve({ name: 'Ann', upload: `data:image/png;base64,${png.toString('base64')}` });
 
+  assert.ok(url);
   assert.match(url, /^\/api\/avatars\/u-[a-f0-9]{64}\.png$/);
-  const file = url.split('/').pop();
+  const file = url.split('/').pop()!;
   const restarted = new Avatars({ directory, apiToken: null });
   const stored = await restarted.read(file);
+  assert.ok(stored);
   assert.equal(stored.mime, 'image/png');
   assert.deepEqual(stored.bytes, png);
 });
 
 test('a name generates one cached low-cost portrait in the player style', async () => {
-  const requests = [];
-  const fetchImpl = async (url, options) => {
-    requests.push({ url, options, body: JSON.parse(options.body) });
+  const requests: RequestRecord[] = [];
+  const fetchImpl: AvatarFetch = async (url, options) => {
+    requests.push({ url, body: requestBody(options) });
     if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
       return {
         ok: true,
@@ -62,42 +78,43 @@ test('a name generates one cached low-cost portrait in the player style', async 
   const second = await avatars.resolve({ name: '蓝莓骑士' });
 
   assert.equal(first, second, 'the normalized name reuses its generated portrait');
+  assert.ok(first);
   assert.match(first, /^\/api\/avatars\/g-[a-f0-9]{64}\.jpeg$/);
-  assert.equal((await avatars.read(first.split('/').pop())).mime, 'image/jpeg');
+  assert.equal((await avatars.read(first.split('/').pop()!))?.mime, 'image/jpeg');
   assert.equal(requests.length, 2);
   assert.equal(
-    requests[0].url,
+    requests[0]!.url,
     'https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/qwen/qwen3-30b-a3b-fp8',
   );
-  assert.deepEqual(Object.keys(requests[0].body).sort(), [
+  assert.deepEqual(Object.keys(requests[0]!.body).sort(), [
     'chat_template_kwargs', 'max_tokens', 'messages', 'temperature',
   ]);
-  assert.match(requests[0].body.messages[1].content, /蓝莓骑士/);
+  assert.match(requests[0]!.body.messages![1]!.content, /蓝莓骑士/);
   assert.match(AVATAR_SUBJECT_PROMPT, /小白 means a small friendly white creature mascot/);
   assert.match(AVATAR_SUBJECT_PROMPT, /大白 means a large friendly white creature mascot/);
   assert.equal(
-    requests[1].url,
+    requests[1]!.url,
     'https://api.cloudflare.com/client/v4/accounts/test-account/ai/run/@cf/black-forest-labs/flux-1-schnell',
   );
-  assert.deepEqual(Object.keys(requests[1].body).sort(), ['prompt', 'steps']);
-  assert.equal(requests[1].body.steps, 4);
+  assert.deepEqual(Object.keys(requests[1]!.body).sort(), ['prompt', 'steps']);
+  assert.equal(requests[1]!.body.steps, 4);
   assert.equal(
-    requests[1].body.prompt,
+    requests[1]!.body.prompt,
     'Create a square JRPG manga-style avatar. Make blueberry knight the obvious main subject. No text or letters.',
   );
-  assert.ok(!('image' in requests[1].body), 'the image API receives no reference image');
-  assert.ok(requests[1].body.prompt.length <= 2048, 'the full prompt fits the model limit');
-  assert.equal(requests[1].body.prompt.match(/\./g).length, 3);
+  assert.ok(!('image' in requests[1]!.body), 'the image API receives no reference image');
+  assert.ok(requests[1]!.body.prompt!.length <= 2048, 'the full prompt fits the model limit');
+  assert.equal(requests[1]!.body.prompt!.match(/\./g)!.length, 3);
   assert.equal(AVATAR_STYLE_PROMPT, 'Create a square JRPG manga-style avatar.');
 });
 
 test('a provider-filtered subject is safely rewritten and retried', async () => {
-  const requests = [];
-  const fetchImpl = async (url, options) => {
-    const body = JSON.parse(options.body);
+  const requests: RequestRecord[] = [];
+  const fetchImpl: AvatarFetch = async (url, options) => {
+    const body = requestBody(options);
     requests.push({ url, body });
     if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
-      const retry = body.messages[0].content === AVATAR_SAFE_SUBJECT_PROMPT;
+      const retry = body.messages![0]!.content === AVATAR_SAFE_SUBJECT_PROMPT;
       return {
         ok: true, status: 200, headers: { get: () => null },
         json: async () => ({
@@ -127,12 +144,12 @@ test('a provider-filtered subject is safely rewritten and retried', async () => 
 
   assert.ok(await avatars.resolve({ name: '拜登' }));
   assert.equal(requests.length, 4);
-  assert.match(requests[1].body.prompt, /Joe Biden/);
-  assert.equal(requests[2].body.messages[0].content, AVATAR_SAFE_SUBJECT_PROMPT);
-  assert.match(requests[2].body.messages[1].content, /拜登/);
-  assert.match(requests[2].body.messages[1].content, /Joe Biden/);
-  assert.match(requests[3].body.prompt, /friendly silver-haired gentleman in a blue suit/);
-  assert.deepEqual(Object.keys(requests[3].body).sort(), ['prompt', 'steps']);
+  assert.match(requests[1]!.body.prompt!, /Joe Biden/);
+  assert.equal(requests[2]!.body.messages![0]!.content, AVATAR_SAFE_SUBJECT_PROMPT);
+  assert.match(requests[2]!.body.messages![1]!.content, /拜登/);
+  assert.match(requests[2]!.body.messages![1]!.content, /Joe Biden/);
+  assert.match(requests[3]!.body.prompt!, /friendly silver-haired gentleman in a blue suit/);
+  assert.deepEqual(Object.keys(requests[3]!.body).sort(), ['prompt', 'steps']);
 });
 
 test('missing credentials and generation ceilings fall back without blocking a seat', async () => {
@@ -148,7 +165,7 @@ test('missing credentials and generation ceilings fall back without blocking a s
     generationLimit: -1,
     dailyGenerationLimit: 1,
     minGenerationInterval: 0,
-    fetchImpl: async (url) => {
+    fetchImpl: async (url): Promise<{ ok: true; status: number; headers: { get: () => null }; json: () => Promise<AiBody> }> => {
       calls += 1;
       if (url.endsWith('/@cf/qwen/qwen3-30b-a3b-fp8')) {
         return {
@@ -177,11 +194,11 @@ test('the memory cache is bounded, refreshes on read, and falls back to disk', a
   for (const key of keys) await avatars.save(key, png, 'image/png');
 
   assert.deepEqual([...avatars.memory.keys()], keys.slice(1), 'the least recently used entry is evicted');
-  assert.ok(await avatars.read(keys[0]), 'an evicted avatar is still served from disk');
+  assert.ok(await avatars.read(keys[0]!), 'an evicted avatar is still served from disk');
   assert.deepEqual([...avatars.memory.keys()], [keys[2], keys[0]]);
 
-  await avatars.read(keys[2]);
-  await avatars.save(keys[1], png, 'image/png');
+  await avatars.read(keys[2]!);
+  await avatars.save(keys[1]!, png, 'image/png');
   assert.deepEqual([...avatars.memory.keys()], [keys[2], keys[1]], 'a read refreshes recency');
 });
 

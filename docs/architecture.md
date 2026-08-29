@@ -22,16 +22,16 @@ browser
   └── public/games/* (constructed renderers)
           │ JSON + SSE
           ▼
-src/server.js
+src/server.js (compatibility launcher) ──> src/server.ts
           ▼
-src/rooms.js ──> src/persistence.js
+src/rooms.ts ──> src/persistence.ts
           │
           └──> src/games/*
 ```
 
-The game registry is [`src/games/index.js`](../src/games/index.js). Shared room
-behavior is in [`src/lobby.js`](../src/lobby.js) and
-[`src/rooms.js`](../src/rooms.js); each server game module has a matching
+The game registry is [`src/games/index.ts`](../src/games/index.ts). Shared room
+behavior is in [`src/lobby.ts`](../src/lobby.ts) and
+[`src/rooms.ts`](../src/rooms.ts); each server game module has a matching
 browser module under [`public/games/`](../public/games/).
 
 The browser entrypoint composes owners for durable storage, HTTP and stream
@@ -47,7 +47,7 @@ room, and successful player inputs are recorded with the room. A snapshot is
 validated as one unit before any room is restored, so malformed state or broken
 roster references cannot leave a partial registry. Snapshots can resume the
 same stream and timers after a restart. Persistence and restore rules are in
-[`src/persistence.js`](../src/persistence.js).
+[`src/persistence.ts`](../src/persistence.ts).
 
 Game state is never broadcast directly. Each engine derives a filtered view
 for the requesting seat, so hidden roles and actions remain server-side. The
@@ -59,7 +59,7 @@ privacy boundary.
 The Node-hosted client and server move together. The optional GitHub Pages
 client moves only after the server, so it checks the server's API protocol
 before joining a room. Compatibility constants and checks live in
-[`src/api-protocol.js`](../src/api-protocol.js) and
+[`src/api-protocol.ts`](../src/api-protocol.ts) and
 [`public/app.js`](../public/app.js).
 
 ## Deployment boundary

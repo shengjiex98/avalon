@@ -1,18 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { gameFor } from '../src/games/index.js';
-import { Rooms } from '../src/rooms.js';
+import { Rooms } from '../src/rooms.ts';
+import type { AvalonState, Player } from '../src/contracts/types.ts';
 
-function deal(seed) {
+function deal(seed: number): AvalonState & { players: Player[] } {
   const rooms = new Rooms({ now: () => 1234 });
   const code = rooms.create('avalon', { code: 'SEED', seed });
   for (let i = 0; i < 7; i++) {
-    rooms.apply(code, (g) => gameFor(g.room.game.id).addPlayer(g, { id: `p${i}`, name: `Player ${i}` }));
+    rooms.dispatch(code, `p${i}`, { type: 'join', id: `p${i}`, name: `Player ${i}` });
   }
-  rooms.apply(code, (g) => gameFor(g.room.game.id).actions.start(g, 'p0'));
+  rooms.dispatch(code, 'p0', { type: 'start' });
   const room = rooms.get(code);
-  return { ...room.game.state, players: room.players };
+  const state = room.game.state;
+  if (!('roles' in state)) throw new Error('expected Avalon state');
+  return { ...state, players: room.players };
 }
 
 test('the same seed produces the same deal, seats, and first leader', () => {

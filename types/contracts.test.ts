@@ -1,7 +1,7 @@
 import type {
   AvalonLobbyView, AvalonQuestView, AvalonTeamView, AvalonView,
   OnuwLobbyView, OnuwNightView, OnuwOverView, OnuwView,
-} from './contracts.js';
+} from '../src/contracts/types.ts';
 import type { AvalonAction, OnuwAction } from '../src/contracts/actions.ts';
 
 declare const avalonLobby: AvalonLobbyView;

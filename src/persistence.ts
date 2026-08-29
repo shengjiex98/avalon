@@ -1,14 +1,12 @@
-// @ts-check
-
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import { snapshotFileSchema } from './contracts/persistence.ts';
-import { STATE_VERSION } from './state-version.js';
+import { STATE_VERSION } from './state-version.ts';
+import type { RoomRegistry, SnapshotFile } from './contracts/types.ts';
 
-/** @typedef {import('../types/contracts.js').RoomRegistry} RoomRegistry */
-/** @typedef {import('../types/contracts.js').SnapshotFile} SnapshotFile */
+type LoadResult = { restored: number; reason: string | null };
 
 /**
  * The XDG state path, or AVALON_STATE_FILE. Deliberately not systemd's
@@ -17,16 +15,15 @@ import { STATE_VERSION } from './state-version.js';
  * backs up and restores.
  */
 /** @returns {string} */
-export function defaultStateFile() {
+export function defaultStateFile(): string {
   const dir = join(process.env.XDG_STATE_HOME ?? join(homedir(), '.local', 'state'), 'avalon');
   return process.env.AVALON_STATE_FILE ?? join(dir, 'rooms.json');
 }
 
 /** Atomically replace the last complete room snapshot. */
 /** @param {RoomRegistry} rooms @param {string} file */
-export function save(rooms, file) {
-  /** @type {SnapshotFile} */
-  const snapshot = {
+export function save(rooms: RoomRegistry, file: string): void {
+  const snapshot: SnapshotFile = {
     stateVersion: STATE_VERSION,
     savedAt: Date.now(),
     rooms: rooms.snapshot(),
@@ -40,8 +37,8 @@ export function save(rooms, file) {
 
 /** Restore a compatible snapshot, or leave the registry empty on any bad input. */
 /** @param {RoomRegistry} rooms @param {string} file */
-export function load(rooms, file) {
-  let input;
+export function load(rooms: RoomRegistry, file: string): LoadResult {
+  let input: unknown;
   try {
     input = JSON.parse(readFileSync(file, 'utf8'));
   } catch (err) {

@@ -35,8 +35,8 @@ implementation detail — follow the approved modernization phase or raise it
 rather than assuming it.
 
 **Two compatibility numbers gate deployment.** `STATE_VERSION`
-(`src/state-version.js`) covers persisted room state; `API_PROTOCOL`
-(`src/api-protocol.js` and `public/app.js`, which must agree) covers views and
+(`src/state-version.ts`) covers persisted room state; `API_PROTOCOL`
+(`src/api-protocol.ts` and `public/app.js`, which must agree) covers views and
 actions. Renaming or re-typing persisted state bumps the first. Changing a view
 or action so an old client cannot handle it bumps the second. Within either
 version, stay backward compatible — releases land during live games, not just

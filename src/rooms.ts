@@ -1,21 +1,16 @@
 // Room registry: owns shared session state, runtime resources and persistence
 // notifications. Engines own only the member at room.game.state.
 
-// @ts-check
-
 import { randomInt } from 'node:crypto';
 
-import { persistedRoomsSchema } from './contracts/persistence.ts';
+import { persistedRoomSchema, persistedRoomsSchema } from './contracts/persistence.ts';
 import { validateRestoreInvariants } from './contracts/restore-invariants.ts';
-import { GameError, logEvent, record, require_ } from './lobby.js';
-import { DEFAULT_GAME, gameFor } from './games/index.js';
-
-/** @typedef {import('../types/contracts.js').GameId} GameId */
-/** @typedef {import('../types/contracts.js').GameContext} GameContext */
-/** @typedef {import('../types/contracts.js').PersistedRoom} PersistedRoom */
-/** @typedef {import('../types/contracts.js').PublicView} PublicView */
-/** @typedef {import('../types/contracts.js').RoomCommand} RoomCommand */
-/** @typedef {import('../types/contracts.js').RuntimeRoom} RuntimeRoom */
+import { GameError, logEvent, record, require_ } from './lobby.ts';
+import { DEFAULT_GAME, GAMES, gameFor } from './games/index.ts';
+import type {
+  CreatedRoom, GameContext, GameId, PersistedRoom, PublicView, RoomCommand, RuntimeRoom,
+  RuntimeRoomFor,
+} from './contracts/types.ts';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 4;
@@ -24,8 +19,61 @@ const CODE_ATTEMPTS = 1000;
 const IDLE_MS = 6 * 60 * 60 * 1000;
 const OVER_GRACE_MS = 3 * 60 * 1000;
 const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
+type RoomsOptions = { now?: () => number; onMutate?: () => void; newCode?: () => string };
+
+const isAvalonRoom = (room: RuntimeRoom): room is RuntimeRoomFor<'avalon'> =>
+  room.game.id === 'avalon';
+const isAvalonPersistedRoom = (
+  room: PersistedRoom,
+): room is Extract<PersistedRoom, { game: { id: 'avalon' } }> => room.game.id === 'avalon';
+function withTouchedAt(room: CreatedRoom, touchedAt: number): PersistedRoom {
+  return persistedRoomSchema.parse({ ...room, touchedAt });
+}
+const contextFor = (room: RuntimeRoom): GameContext => {
+  if (isAvalonRoom(room)) return { room, state: room.game.state };
+  return { room, state: room.game.state };
+};
+
+function rosterChangeFor(
+  room: RuntimeRoom,
+  type: 'join' | 'leave',
+  player: { id: string; name?: string; avatar?: string },
+): unknown {
+  if (isAvalonRoom(room)) return GAMES.avalon.rosterChange(room, type, player);
+  return GAMES.onuw.rosterChange(room, type, player);
+}
+
+function commandFor(
+  room: RuntimeRoom,
+  playerId: string,
+  body: RoomCommand,
+  now: () => number,
+): unknown {
+  if (isAvalonRoom(room)) return GAMES.avalon.command(room, playerId, body, { now });
+  return GAMES.onuw.command(room, playerId, body, { now });
+}
+
+function viewFor(room: RuntimeRoom, playerId: string, now: number): PublicView {
+  if (isAvalonRoom(room)) return GAMES.avalon.view(room, playerId, now);
+  return GAMES.onuw.view(room, playerId, now);
+}
+
+function deadlineFor(room: RuntimeRoom): number | null {
+  if (isAvalonRoom(room)) return GAMES.avalon.deadline(room);
+  return GAMES.onuw.deadline(room);
+}
+
+function tickFor(room: RuntimeRoom, now: number): boolean {
+  if (isAvalonRoom(room)) return GAMES.avalon.tick(room, now);
+  return GAMES.onuw.tick(room, now);
+}
 
 export class Rooms {
+  now: () => number;
+  onMutate: (() => void) | undefined;
+  newCode: () => string;
+  rooms: Map<string, RuntimeRoom>;
+
   /**
    * @param {{
    *   now?: () => number,
@@ -33,16 +81,14 @@ export class Rooms {
    *   newCode?: () => string,
    * }} [options]
    */
-  constructor({ now = Date.now, onMutate, newCode = randomCode } = {}) {
+  constructor({ now = Date.now, onMutate, newCode = randomCode }: RoomsOptions = {}) {
     this.now = now;
     this.onMutate = onMutate;
     this.newCode = newCode;
-    /** @type {Map<string, RuntimeRoom>} */
     this.rooms = new Map();
   }
 
-  /** @returns {string} */
-  allocateCode() {
+  allocateCode(): string {
     if (this.rooms.size >= CODE_SPACE) throw new GameError('roomsFull');
     for (let attempt = 0; attempt < CODE_ATTEMPTS; attempt++) {
       const code = this.newCode();
@@ -56,30 +102,34 @@ export class Rooms {
    * @param {{ code?: string, seed?: number }} [options]
    * @returns {string}
    */
-  create(gameId = DEFAULT_GAME, { code: requestedCode, seed } = {}) {
+  create(
+    gameId: GameId = DEFAULT_GAME,
+    { code: requestedCode, seed }: { code?: string; seed?: number } = {},
+  ): string {
     const code = requestedCode ? String(requestedCode).toUpperCase() : this.allocateCode();
     if (!CODE_PATTERN.test(code) || this.rooms.has(code)) throw new GameError('badRequest');
     const persisted = gameFor(gameId).create(code, {
       now: this.now,
       ...(seed === undefined ? {} : { seed }),
     });
-    this.rooms.set(code, this.runtimeRoom(/** @type {PersistedRoom} */ ({ ...persisted, touchedAt: this.now() })));
+    this.rooms.set(code, this.runtimeRoom(withTouchedAt(persisted, this.now())));
     this.onMutate?.();
     return code;
   }
 
   /** @param {PersistedRoom} room @returns {RuntimeRoom} */
-  runtimeRoom(room) {
+  runtimeRoom(room: PersistedRoom): RuntimeRoom {
+    if (isAvalonPersistedRoom(room)) return { ...room, subscribers: new Set(), timer: null };
     return { ...room, subscribers: new Set(), timer: null };
   }
 
   /** @param {string} code @param {string} playerId @param {GameId} gameId */
-  setGame(code, playerId, gameId) {
+  setGame(code: string, playerId: string, gameId: GameId): unknown {
     return this.dispatch(code, playerId, { type: 'setGame', game: gameId });
   }
 
   /** @param {string} code @param {string} playerId @param {string} avatar */
-  updatePlayerAvatar(code, playerId, avatar) {
+  updatePlayerAvatar(code: string, playerId: string, avatar: string): boolean {
     const room = this.peek(code);
     const player = room?.players.find((candidate) => candidate.id === playerId);
     if (!player || player.avatar === avatar) return false;
@@ -88,18 +138,18 @@ export class Rooms {
   }
 
   /** @param {RuntimeRoom} room @param {string} playerId @param {GameId} gameId */
-  replaceGame(room, playerId, gameId) {
+  replaceGame(room: RuntimeRoom, playerId: string, gameId: GameId): void {
     require_(room.game.state.phase === 'lobby', 'gameAlreadyStarted');
     require_(playerId === room.hostId, 'hostOnly');
     if (room.game.id === gameId) return;
     const next = gameFor(gameId).create(room.code, { now: this.now, seed: room.seed });
     room.game = next.game;
-    logEvent(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state })), 'log.gameSwitched', { game: gameId });
+    logEvent(contextFor(room), 'log.gameSwitched', { game: gameId });
   }
 
   /** Player input enters through one successful-mutation boundary. */
   /** @param {string} code @param {string} playerId @param {RoomCommand} body */
-  dispatch(code, playerId, body) {
+  dispatch(code: string, playerId: string, body: RoomCommand): unknown {
     return this.mutate(code, (room) => {
       if (!room.players.some((player) => player.id === playerId) && body.type !== 'join') {
         throw new GameError('notInGame');
@@ -107,24 +157,24 @@ export class Rooms {
       const at = this.now();
       let result;
       if (body.type === 'setGame') {
-        result = this.replaceGame(room, playerId, /** @type {GameId} */ (body.game));
+        result = this.replaceGame(room, playerId, gameFor(body.game).id);
       } else if (body.type === 'join') {
-        result = gameFor(room.game.id).rosterChange(room, 'join', {
+        result = rosterChangeFor(room, 'join', {
           id: body.id ?? playerId,
           name: body.name,
         });
       } else if (body.type === 'leave') {
-        result = gameFor(room.game.id).rosterChange(room, 'leave', { id: playerId });
+        result = rosterChangeFor(room, 'leave', { id: playerId });
       } else {
-        result = gameFor(room.game.id).command(room, playerId, body, { now: () => at });
+        result = commandFor(room, playerId, body, () => at);
       }
-      record(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state })), playerId, body, at);
+      record(contextFor(room), playerId, body, at);
       return result;
     });
   }
 
   /** @param {unknown} code @returns {RuntimeRoom} */
-  get(code) {
+  get(code: unknown): RuntimeRoom {
     const room = this.rooms.get(String(code || '').toUpperCase());
     if (!room) throw new GameError('noSuchRoom', { code });
     room.touchedAt = this.now();
@@ -132,16 +182,16 @@ export class Rooms {
   }
 
   /** @param {unknown} code */
-  has(code) {
+  has(code: unknown): boolean {
     return this.rooms.has(String(code || '').toUpperCase());
   }
 
   /** @param {unknown} code @returns {RuntimeRoom | undefined} */
-  peek(code) {
+  peek(code: unknown): RuntimeRoom | undefined {
     return this.rooms.get(String(code || '').toUpperCase());
   }
 
-  activeGameCount() {
+  activeGameCount(): number {
     let count = 0;
     for (const room of this.rooms.values()) {
       const phase = room.game.state.phase;
@@ -153,22 +203,22 @@ export class Rooms {
   }
 
   /** @param {string} code @param {string} playerId @param {(view: PublicView) => void} send */
-  subscribe(code, playerId, send) {
+  subscribe(code: string, playerId: string, send: (view: PublicView) => void): () => boolean {
     const room = this.get(code);
     const sub = { playerId, send };
     room.subscribers.add(sub);
-    send(gameFor(room.game.id).view(room, playerId, this.now()));
+    send(viewFor(room, playerId, this.now()));
     return () => room.subscribers.delete(sub);
   }
 
   /** Compatibility seam for focused tests and non-player jobs. */
-  /** @param {string} code @param {(context: import('../types/contracts.js').GameContext) => unknown} fn */
-  apply(code, fn) {
-    return this.mutate(code, (room) => fn(/** @type {GameContext} */ (/** @type {unknown} */ ({ room, state: room.game.state }))));
+  /** @param {string} code @param {(context: import('./contracts/types.ts').GameContext) => unknown} fn */
+  apply<T>(code: string, fn: (context: GameContext) => T): T {
+    return this.mutate(code, (room) => fn(contextFor(room)));
   }
 
   /** @param {string} code @param {(room: RuntimeRoom) => unknown} fn */
-  mutate(code, fn) {
+  mutate<T>(code: string, fn: (room: RuntimeRoom) => T): T {
     const room = this.get(code);
     const result = fn(room);
     room.revision += 1;
@@ -179,19 +229,18 @@ export class Rooms {
   }
 
   /** @param {string} code */
-  scheduleTick(code) {
+  scheduleTick(code: string): void {
     const room = this.rooms.get(code);
     if (!room) return;
     if (room.timer) clearTimeout(room.timer);
     room.timer = null;
-    const engine = gameFor(room.game.id);
-    const at = engine.deadline(room);
+    const at = deadlineFor(room);
     if (at == null) return;
 
     room.timer = setTimeout(() => {
       room.timer = null;
       if (!this.rooms.has(code)) return;
-      if (engine.tick(room, this.now())) {
+      if (tickFor(room, this.now())) {
         room.revision += 1;
         this.broadcast(room);
         this.onMutate?.();
@@ -202,18 +251,17 @@ export class Rooms {
   }
 
   /** @param {RuntimeRoom} room */
-  broadcast(room) {
-    const engine = gameFor(room.game.id);
+  broadcast(room: RuntimeRoom): void {
     for (const sub of room.subscribers) {
       try {
-        sub.send(engine.view(room, sub.playerId, this.now()));
+        sub.send(viewFor(room, sub.playerId, this.now()));
       } catch {
         room.subscribers.delete(sub);
       }
     }
   }
 
-  sweep() {
+  sweep(): void {
     const cutoff = this.now() - IDLE_MS;
     let deleted = false;
     for (const [code, room] of this.rooms) {
@@ -226,15 +274,16 @@ export class Rooms {
     if (deleted) this.onMutate?.();
   }
 
-  snapshot() {
-    return /** @type {PersistedRoom[]} */ (
-      [...this.rooms.values()].map(({ subscribers: _subscribers, timer: _timer, ...room }) => room)
+  snapshot(): PersistedRoom[] {
+    const snapshot = [...this.rooms.values()].map(
+      ({ subscribers: _subscribers, timer: _timer, ...room }) => room,
     );
+    return persistedRoomsSchema.parse(snapshot);
   }
 
   /** Validate the whole snapshot before installing any room. */
   /** @param {unknown} entries */
-  restore(entries) {
+  restore(entries: unknown): boolean {
     const parsed = persistedRoomsSchema.safeParse(entries);
     if (!parsed.success) return false;
     const codes = new Set();
@@ -253,8 +302,8 @@ export class Rooms {
   }
 }
 
-export function randomCode(length = CODE_LENGTH) {
+export function randomCode(length = CODE_LENGTH): string {
   let out = '';
-  for (let i = 0; i < length; i++) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  for (let i = 0; i < length; i++) out += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)]!;
   return out;
 }

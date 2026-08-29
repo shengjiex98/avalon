@@ -4,10 +4,10 @@
 import { toast } from './ui.js';
 import { ApiError } from './transport.js';
 
-/** @typedef {import('../types/contracts.js').JoinCommand} JoinCommand */
-/** @typedef {import('../types/contracts.js').PublicView} PublicView */
-/** @typedef {import('../types/contracts.js').StoredSeat} StoredSeat */
-/** @typedef {import('../types/contracts.js').ValidatedAction} ValidatedAction */
+/** @typedef {import('../src/contracts/types.ts').JoinCommand} JoinCommand */
+/** @typedef {import('../src/contracts/types.ts').PublicView} PublicView */
+/** @typedef {import('../src/contracts/types.ts').StoredSeat} StoredSeat */
+/** @typedef {import('../src/contracts/types.ts').ValidatedAction} ValidatedAction */
 
 /**
  * What a session needs from the client's app state. app.js owns the object;

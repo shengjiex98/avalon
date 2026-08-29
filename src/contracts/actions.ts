@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { GameError } from '../lobby.js';
+import { GameError } from '../lobby.ts';
 
 const nonEmptyString = z.string().min(1);
 const playerAction = { playerId: nonEmptyString };
@@ -120,6 +120,7 @@ export const parseJoin = (value: unknown): JoinCommand => parse(joinSchema, valu
 
 export function parseAction(gameId: 'avalon', value: unknown): AvalonAction;
 export function parseAction(gameId: 'onuw', value: unknown): OnuwAction;
+export function parseAction(gameId: GameId, value: unknown): ValidatedAction;
 export function parseAction(gameId: GameId, value: unknown): ValidatedAction {
   const envelope = parse(actionEnvelopeSchema, value);
   if (!actionTypes[gameId].has(envelope.type)) {
