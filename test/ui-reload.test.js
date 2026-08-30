@@ -112,6 +112,32 @@ test('a server that is still restarting does not cost the player their seat', as
   assert.match(dom.fixtures.view.text, /Play a card/);
 });
 
+test('a bare reload can re-enter its remembered room while the server is unreachable', async () => {
+  app.source?.close();
+  app.code = null; app.view = null; app.playerId = null; app.connected = false;
+  app.everConnected = false; app.retry = 0; app.heldSeat = null;
+  dom.location.hash = '';
+  dom.storage.set('avalon.room', 'WXYZ');
+  dom.storage.set('avalon.player.WXYZ', 'me');
+  dom.state.offline = true;
+
+  await client.main();
+
+  assert.equal(app.serverStatus, 'unreachable');
+  assert.deepEqual(app.heldSeat, { code: 'WXYZ', playerId: 'me' });
+  assert.ok(dom.fixtures.view.byId('rejoinSeat'), 'the remembered seat stays actionable');
+
+  dom.fixtures.view.byId('rejoinSeat').dispatch('click');
+  await tick();
+
+  assert.equal(app.code, 'WXYZ');
+  assert.equal(app.playerId, 'me');
+  assert.equal(dom.location.hash, '#/WXYZ', 'rejoining restores the routing fragment');
+  assert.equal(dom.localStorage.getItem('avalon.player.WXYZ'), 'me');
+  assert.match(dom.fixtures.view.text, /Rejoining room WXYZ/);
+  dom.state.offline = false;
+});
+
 test('a room the server no longer has ends cleanly', async () => {
   app.source?.close();
   app.code = null; app.view = null; app.playerId = null; app.connected = false;

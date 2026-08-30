@@ -283,9 +283,13 @@ export function createRoomSession({
       if (code) store.room = null;
       return;
     }
+    // The local seat is enough to offer a way back. Waiting for the server to
+    // confirm it first strands a bare-URL reload on the server picker during
+    // the exact outage that made the player reload in the first place.
+    app.heldSeat = { code, playerId };
+    if (app.serverStatus !== 'ready') return;
     const status = await transport.roomStatus(code, playerId).catch(() => null);
-    if (status?.seated) app.heldSeat = { code, playerId };
-    else if (status && (!status.exists || !status.seated)) forgetSeat(code);
+    if (status && (!status.exists || !status.seated)) forgetSeat(code);
   }
 
   /** @param {string} code */

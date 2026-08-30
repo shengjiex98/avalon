@@ -117,7 +117,7 @@ function watchServer() {
     if (app.serverStatus !== 'unreachable') return;
     if (await probeServer() === 'ready') {
       if (app.code && !app.connected) void recover();
-      else if (!app.code && !app.heldSeat) await offerHeldSeat();
+      else if (!app.code) await offerHeldSeat();
     }
     safeRender();
     watchServer();
@@ -313,7 +313,10 @@ function screenHome() {
   if (app.serverStatus === 'checking') {
     return [h('div', { class: 'card' }, h('p', { class: 'muted', text: T('server.checking') }))];
   }
-  if (app.serverStatus !== 'ready') return [paneServer()];
+  if (app.serverStatus !== 'ready') {
+    return [app.serverStatus === 'unreachable' && app.heldSeat ? paneHeldSeat() : null, paneServer()]
+      .filter(Boolean);
+  }
 
   // A shared link carries the room code, so someone arriving that way should
   // only have to give a name.
@@ -448,7 +451,10 @@ function paneServer() {
     store.server = value;
     render();
     await probeServer();
-    if (app.serverStatus === 'ready' && app.code && !app.connected) void recover();
+    if (app.serverStatus === 'ready') {
+      if (app.code && !app.connected) void recover();
+      else if (!app.code) await offerHeldSeat();
+    }
     watchServer();
     render();
   };
@@ -626,7 +632,7 @@ export async function main() {
   const code = roomFromHash();
   const playerId = code && store.playerFor(code);
   if (app.serverStatus !== 'incompatible' && code && playerId) await enterRoom(code, playerId);
-  else if (app.serverStatus === 'ready') await offerHeldSeat();
+  else await offerHeldSeat();
   render();
 }
 
