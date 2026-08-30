@@ -88,7 +88,8 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
   const commit = 'd'.repeat(40);
   for (const name of [
-    'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts', 'public/index.html',
+    'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
+    'build/public/index.html', 'build/public/bootstrap.js', 'build/public/app.js',
   ]) {
     await mkdir(dirname(join(dir, name)), { recursive: true });
     await writeFile(join(dir, name), name);

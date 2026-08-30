@@ -1,8 +1,9 @@
 # Deployment
 
-`npm start` runs a single Node process that serves both the browser client and
-API. Production adds an immutable-release updater and, optionally, a GitHub
-Pages client.
+`npm start` compiles the browser client, then runs a single Node process that
+serves the emitted client and API. Production releases already contain that
+output, so the host still installs nothing and runs no compiler. Production
+adds an immutable-release updater and, optionally, a GitHub Pages client.
 
 ## Runtime state
 

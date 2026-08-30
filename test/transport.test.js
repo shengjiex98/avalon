@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { ApiError, createTransport } from '../public/transport.js';
+import { ApiError, createTransport } from '../public/transport.ts';
 
 const response = (body, ok = true) => ({ ok, json: async () => body });
 

@@ -280,9 +280,9 @@ only when a stop condition fires, not for routine implementation choices.
 | 0 | Baseline and prove Node-native TypeScript | Complete |
 | 1 | Model exact public views | Complete |
 | 2 | Replace structural validators with schemas | Complete |
-| 3 | Convert server and tests to native TypeScript | In progress (3a complete) |
-| 4 | Make the browser boundary explicit | Not started |
-| 5 | Convert browser modules and add minimal emit | Not started |
+| 3 | Convert server and tests to native TypeScript | Complete |
+| 4 | Make the browser boundary explicit | Complete |
+| 5 | Convert browser modules and add minimal emit | Complete |
 | 6 | Cut over packaging and remove superseded contracts | Not started |
 | 7 | Reassess enhanced browser tooling | Not started |
 
@@ -454,7 +454,7 @@ Tasks:
 - Define the transport result and error types, including reconnect and protocol
   mismatch outcomes.
 - Check the network envelope and game/phase discriminants at
-  `public/transport.js`, then convert to the shared view union at one named
+  `public/transport.ts`, then convert to the shared view union at one named
   trust boundary. Renderers receive typed domain values rather than `unknown`,
   `any`, or raw response objects.
 - Make game renderers exhaustive over the discriminated view unions. Use a
@@ -534,6 +534,16 @@ concrete duplication listed.
 If plain `tsc` cannot emit the current module graph with browser-loadable
 relative URLs, the same stop rule applies: report the failing source import and
 emitted output before selecting another compiler or bundler.
+
+Implementation result: plain TypeScript emit produces 15 standards-based
+modules (167,645 bytes before compression) under the untracked `build/public/`
+tree, and `rewriteRelativeImportExtensions` makes the nested source imports
+browser-loadable without a custom graph rewriter. The existing stamper now
+operates only on that emitted Pages tree. Vite was not adopted: the module
+count and compile-then-start loop are small, there are no browser package or
+asset-resolution needs, and it would delete `bootstrap.js` and the stamper but
+not a third project-specific packaging mechanism. None of the Phase 7 adoption
+triggers is therefore present yet.
 
 ## Phase 6 — Package the tested output
 

@@ -9,7 +9,7 @@ import { parseCreateRoom, parseJoin } from '../src/contracts/actions.ts';
 const dom = installDom();
 // A game this build no longer knows, left behind by an older one.
 dom.storage.set('avalon.game', 'werewolf');
-const client = await import('../public/app.js');
+const client = await import('../public/app.ts');
 await client.ready;
 
 const { app, render } = client;
@@ -299,8 +299,8 @@ test('a remembered game this build does not know falls back instead of failing',
 });
 
 test('an unknown game id is never drawn as some other game', async () => {
-  const { gameFor, knownGame } = await import('../public/games/index.js');
+  const { gameFor, knownGame } = await import('../public/games/index.ts');
   assert.equal(knownGame('werewolf'), false);
   assert.throws(() => gameFor('werewolf'), /unknown game: werewolf/);
-  assert.equal(gameFor('onuw'), (await import('../public/games/onuw.js')));
+  assert.equal(gameFor('onuw'), (await import('../public/games/onuw.ts')));
 });

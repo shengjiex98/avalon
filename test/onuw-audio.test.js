@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { installDom } from './dom-shim.js';
 
 const dom = installDom();
-const onuw = await import('../public/games/onuw.js');
+const onuw = await import('../public/games/onuw.ts');
 
 const app = {
   lang: 'zh', muted: false, clockStep: null, stepEndsAt: 0,

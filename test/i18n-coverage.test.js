@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 
-import { STRINGS } from '../public/i18n.js';
+import { STRINGS } from '../public/i18n.ts';
 import { ROLES } from '../src/games/avalon/rules.ts';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
@@ -22,9 +22,9 @@ async function serverSources() {
 async function clientSources() {
   const dir = new URL('../public/', import.meta.url);
   const files = await readdir(dir, { recursive: true });
-  const js = files.filter((f) => f.endsWith('.js') && !f.endsWith('config.js')).sort();
-  assert.ok(js.length >= 4, `expected to find the client sources, found ${js.length}`);
-  return Promise.all(js.map((f) => readFile(new URL(f, dir), 'utf8')));
+  const modules = files.filter((file) => file.endsWith('.ts') && !file.endsWith('config.ts')).sort();
+  assert.ok(modules.length >= 4, `expected to find the client sources, found ${modules.length}`);
+  return Promise.all(modules.map((file) => readFile(new URL(file, dir), 'utf8')));
 }
 
 test('every literal key the client renders exists in both languages', async () => {
@@ -36,7 +36,7 @@ test('every literal key the client renders exists in both languages', async () =
 
   for (const key of [...keys].sort()) {
     for (const lang of Object.keys(STRINGS)) {
-      assert.ok(key in STRINGS[lang], `${lang} is missing "${key}" (used in app.js)`);
+      assert.ok(key in STRINGS[lang], `${lang} is missing "${key}" (used in app.ts)`);
     }
   }
 });

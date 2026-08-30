@@ -11,7 +11,7 @@ import { installDom } from './dom-shim.js';
 import * as g from '../src/games/avalon/game.ts';
 
 const dom = installDom();
-const client = await import('../public/app.js');
+const client = await import('../public/app.ts');
 await client.ready;
 const { app, render } = client;
 

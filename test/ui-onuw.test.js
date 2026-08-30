@@ -11,7 +11,7 @@ let clock = 1_700_000_000_000;
 const now = () => clock;
 
 const dom = installDom();
-const client = await import('../public/app.js');
+const client = await import('../public/app.ts');
 await client.ready;
 const { app, render, gameRendererForTests } = client;
 

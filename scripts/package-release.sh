@@ -39,7 +39,9 @@ mkdir "$release"
 git -C "$root" archive --format=tar "$commit" >"$stage/source.tar"
 tar -xf "$stage/source.tar" -C "$release"
 rm -f "$stage/source.tar"
-npm ci --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$release"
+npm ci --ignore-scripts --no-audit --no-fund --prefix "$release"
+npm run build:browser --prefix "$release"
+npm prune --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$release"
 node "$release/scripts/write-release-manifest.mjs" "$commit" "$release/release.json"
 
 timestamp=$(git -C "$root" show -s --format=%ct "$commit")

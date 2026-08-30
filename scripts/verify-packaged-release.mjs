@@ -30,7 +30,8 @@ try {
     }
 
     for (const name of [
-      'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts', 'public/index.html',
+      'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
+      'build/public/index.html', 'build/public/bootstrap.js', 'build/public/app.js',
     ]) {
       try {
         await access(join(releaseDir, name));

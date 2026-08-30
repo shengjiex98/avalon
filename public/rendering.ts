@@ -1,18 +1,17 @@
-// @ts-check
 // Shared room rendering and scroll ownership. Game renderers receive only the
 // player-list function; journal formatting remains private to this owner.
 
-import { h, playerAvatar } from './ui.js';
+import { h, playerAvatar } from './ui.ts';
+import type { LogEntry } from '../src/contracts/persistence.ts';
+import type {
+  PlayerListOptions, SharedRenderingContext,
+} from '../types/browser-renderers.d.ts';
 
-/** @typedef {import('../types/browser-renderers.d.ts').PlayerListOptions} PlayerListOptions */
-/** @typedef {import('../types/browser-renderers.d.ts').SharedRenderingContext} SharedRenderingContext */
+type ResultPlayer = { name: string; side: string };
 
-/** @param {SharedRenderingContext} deps */
-export function createSharedRendering({ app, T, currentGame, joinNames }) {
-  /** @type {Map<string, number>} */
-  let scrollTops = new Map();
-  /** @type {Array<[string, HTMLElement]>} */
-  let scrollPanes = [];
+export function createSharedRendering({ app, T, currentGame, joinNames }: SharedRenderingContext) {
+  let scrollTops = new Map<string, number>();
+  let scrollPanes: Array<[string, HTMLElement]> = [];
 
   function view() {
     if (!app.view) throw new Error('shared renderer requires a room view');
@@ -23,8 +22,7 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     scrollPanes = [];
   }
 
-  /** @param {string} key @param {Record<string, unknown>} props @param {...unknown} children */
-  function scrollPane(key, props, ...children) {
+  function scrollPane(key: string, props: Record<string, unknown>, ...children: unknown[]): HTMLElement {
     const node = h('div', { ...props, onscroll: () => scrollTops.set(key, node.scrollTop) }, ...children);
     scrollPanes.push([key, node]);
     return node;
@@ -41,8 +39,9 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     scrollPanes = [];
   }
 
-  /** @param {PlayerListOptions} [options] */
-  function playerList({ selectable = false, selected = [], onpick, tags, only, exclude = [] } = {}) {
+  function playerList({
+    selectable = false, selected = [], onpick, tags, only, exclude = [],
+  }: PlayerListOptions = {}) {
     const current = view();
     const rows = current.players
       .filter((player) => !only || only.includes(player.id))
@@ -74,7 +73,7 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     const entries = view().log.slice().reverse();
     return h('details', {
       class: 'card journal', open: app.logOpen,
-      ontoggle: (/** @type {Event} */ event) => {
+      ontoggle: (event: Event) => {
         app.logOpen = Boolean(event.target && 'open' in event.target && event.target.open);
       },
     },
@@ -87,8 +86,7 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     );
   }
 
-  /** @param {import('../src/contracts/persistence.ts').LogEntry} entry */
-  function renderLogEntry(entry) {
+  function renderLogEntry(entry: LogEntry) {
     if (entry.key !== 'log.gameResult') return h('div', {
       text: T(entry.key, formatParams(entry.params, entry.key)),
     });
@@ -98,8 +96,7 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     );
   }
 
-  /** @param {string} label @param {unknown} value */
-  function resultRow(label, value) {
+  function resultRow(label: string, value: unknown) {
     const players = Array.isArray(value) ? value.filter(resultPlayer) : [];
     const names = players.length
       ? players.flatMap((player, index) => [
@@ -115,27 +112,23 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     return h('div', { class: 'result-row' }, h('span', { text: T(label) }), names);
   }
 
-  /** @param {unknown} value */
-  function resultPlayer(value) {
+  function resultPlayer(value: unknown): value is ResultPlayer {
     return Boolean(value && typeof value === 'object'
       && 'name' in value && typeof value.name === 'string'
       && 'side' in value && typeof value.side === 'string');
   }
 
-  /** @param {string} side */
-  function resultSideClass(side) {
+  function resultSideClass(side: string) {
     if (side === 'good' || side === 'village') return 'good';
     if (side === 'evil' || side === 'werewolf') return 'evil';
     return 'tanner';
   }
 
-  /** @param {string} side */
-  function resultSideLabel(side) {
+  function resultSideLabel(side: string) {
     return T(side === 'good' || side === 'evil' ? `side.${side}` : `onuw.team.${side}`);
   }
 
-  /** @param {Record<string, unknown>} params @param {string} entryKey */
-  function formatParams(params, entryKey) {
+  function formatParams(params: Record<string, unknown>, entryKey: string) {
     const out = { ...params };
     for (const [key, value] of Object.entries(out)) if (Array.isArray(value)) out[key] = joinNames(value);
     if (out.game) out.game = T(`game.${String(out.game)}`);

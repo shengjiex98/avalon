@@ -3,7 +3,7 @@
 
 export const LANGS = { en: 'English', zh: '中文' };
 
-const STRINGS = {
+const STRINGS: Record<'en' | 'zh', Record<string, string>> = {
   en: {
     'app.title': 'Avalon',
     'app.tagline': 'The Resistance: Avalon — play with 5 to 10 friends',
@@ -817,23 +817,23 @@ The lobby picks the standard deck for the number of players who have joined, and
 
 const FALLBACK = 'en';
 
-export function t(lang, key, params = {}) {
-  const table = STRINGS[lang] ?? STRINGS[FALLBACK];
+export function t(lang: string, key: string, params: Record<string, unknown> = {}): string {
+  const table = lang === 'zh' ? STRINGS.zh : STRINGS[FALLBACK];
   const raw = table[key] ?? STRINGS[FALLBACK][key] ?? key;
   return raw.replace(/\{(\w+)\}/g, (match, name) => (name in params ? String(params[name]) : match));
 }
 
-export function detectLang() {
+export function detectLang(): string {
   const saved = localStorage.getItem('avalon.lang');
   if (saved && saved in STRINGS) return saved;
   return (navigator.language || '').toLowerCase().startsWith('zh') ? 'zh' : 'en';
 }
 
 /** Keys present in one language but not the other — the tests assert this is empty. */
-export function missingKeys() {
-  const langs = Object.keys(STRINGS);
-  const all = new Set(langs.flatMap((l) => Object.keys(STRINGS[l])));
-  const gaps = [];
+export function missingKeys(): string[] {
+  const langs: Array<keyof typeof STRINGS> = ['en', 'zh'];
+  const all = new Set(langs.flatMap((lang) => Object.keys(STRINGS[lang])));
+  const gaps: string[] = [];
   for (const lang of langs) {
     for (const key of all) if (!(key in STRINGS[lang])) gaps.push(`${lang}:${key}`);
   }

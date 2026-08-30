@@ -1,26 +1,23 @@
-// @ts-check
 // Avalon's screens. The shell hands over a context so these read the same as
-// they did when they lived in app.js.
+// they did when they lived in app.ts.
 
-import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
-import { assertNever } from '../assert-never.js';
+import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.ts';
+import { assertNever } from '../assert-never.ts';
+import type { AvalonView } from '../../src/contracts/views.ts';
+import type { AvalonRendererContext } from '../../types/browser-renderers.d.ts';
 
-/** @typedef {import('../../src/contracts/views.ts').AvalonView} AvalonView */
-/** @typedef {import('../../types/browser-renderers.d.ts').AvalonRendererContext} AvalonRendererContext */
 
-export const id = 'avalon';
+export const id: 'avalon' = 'avalon';
 export const rulesKey = 'rules.body';
 export const taglineKey = 'app.tagline';
 
 /** Construct one renderer with an explicit, immutable shell context. */
-/** @param {AvalonRendererContext} ctx */
-export function createRenderer(ctx) {
+export function createRenderer(ctx: AvalonRendererContext) {
 const { T, send, app, nameOf, namesOf, waitingNames, playerList, render } = ctx;
-/** @param {{ name: string, avatar: string | null, seat?: number } | undefined} player */
-const avatarOf = (player) => playerAvatar(player, app.server ?? undefined);
+const avatarOf = (player: { name: string; avatar: string | null; seat?: number } | undefined) =>
+  playerAvatar(player, app.server ?? undefined);
 
-/** @returns {AvalonView} */
-function view() {
+function view(): AvalonView {
   const current = app.view;
   if (!current || current.gameId !== 'avalon') throw new Error('Avalon renderer received another game');
   return current;
@@ -39,10 +36,9 @@ function paneKey() {
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const houseRuleName = (/** @type {string} */ rule) => T(`avalon.house.${rule}`);
+const houseRuleName = (rule: string) => T(`avalon.house.${rule}`);
 
-/** @param {Event} event */
-function checked(event) {
+function checked(event: Event) {
   const target = event.target;
   return Boolean(target && 'checked' in target && target.checked);
 }
@@ -52,9 +48,9 @@ function lobbyOptions() {
   const v = view();
   if (v.phase !== 'lobby') throw new Error('expected lobby view');
   const isHost = v.you?.id === v.hostId;
-  const optionRow = (/** @type {string} */ key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
+  const optionRow = (key: string) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', { type: 'checkbox', checked: v.options[key], disabled: !isHost,
-      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { [key]: checked(e) } }) }),
+      onchange: (event: Event) => send({ type: 'options', options: { [key]: checked(event) } }) }),
     rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
       h('span', { class: 'role-option-name', text: T(`role.${key}`) }),
@@ -62,10 +58,12 @@ function lobbyOptions() {
     ),
   );
 
-  const houseToggle = (/** @type {string} */ rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+  const houseToggle = (rule: string) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
-      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { houseRules: { [rule]: checked(e) } } }),
+      onchange: (event: Event) => send({
+        type: 'options', options: { houseRules: { [rule]: checked(event) } },
+      }),
     }),
     h('span', { class: 'house-rule-copy' },
       h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
@@ -447,7 +445,7 @@ function paneOver() {
 }
 
 const EVIL_ROLES = new Set(['assassin', 'morgana', 'mordred', 'oberon', 'minion']);
-const sideOfRole = (/** @type {string} */ role) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
+const sideOfRole = (role: string) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
 
 function selectedPlayer() {
   const selected = app.selection[0];

@@ -39,7 +39,7 @@ builders in the individual game modules are the authoritative contracts.
 A reconnecting browser first asks whether its room and seat still exist. It
 then reopens the event stream, retakes a missing seat, or returns home. This
 distinction is what lets clients recover cleanly after a deployment restart.
-See [`public/app.js`](../public/app.js) and
+See [`public/app.ts`](../public/app.ts) and
 [`test/ui-reconnect.test.js`](../test/ui-reconnect.test.js).
 
 ## Compatibility
@@ -49,7 +49,7 @@ The browser and server share `API_PROTOCOL`; the persistence layer uses
 or action contract, and change the state version when old snapshots cannot be
 restored safely. The canonical values live in
 [`src/api-protocol.ts`](../src/api-protocol.ts),
-[`public/app.js`](../public/app.js), and
+[`public/app.ts`](../public/app.ts), and
 [`src/state-version.ts`](../src/state-version.ts).
 
 The updater may restart through a live game only when both compatibility values

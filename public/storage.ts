@@ -1,11 +1,9 @@
-// @ts-check
 // The browser's durable session keys. Keeping every key here makes storage a
 // boundary instead of ambient state spread through rendering and transport.
 
-/** @typedef {{ id: string, name: string }} StoredSeat */
+export type StoredSeat = { id: string; name: string };
 
-/** @param {Storage} storage */
-export function createStore(storage = localStorage) {
+export function createStore(storage: Storage = localStorage) {
   const store = {
     get name() { return storage.getItem('avalon.name') ?? ''; },
     set name(value) { storage.setItem('avalon.name', value); },
@@ -15,24 +13,24 @@ export function createStore(storage = localStorage) {
       else storage.removeItem('avalon.server');
     },
     /** @param {string} code @returns {StoredSeat[]} */
-    seatsFor(code) {
+    seatsFor(code: string): StoredSeat[] {
       try { return JSON.parse(storage.getItem(`avalon.seats.${code}`) ?? '[]') ?? []; }
       catch { return []; }
     },
     /** @param {string} code @param {string | null} playerId */
-    nameFor(code, playerId) {
+    nameFor(code: string, playerId: string | null): string {
       return store.seatsFor(code).find((seat) => seat.id === playerId)?.name ?? store.name;
     },
     /** @param {string} code @param {StoredSeat[]} seats */
-    setSeats: (code, seats) => storage.setItem(`avalon.seats.${code}`, JSON.stringify(seats)),
+    setSeats: (code: string, seats: StoredSeat[]) => storage.setItem(`avalon.seats.${code}`, JSON.stringify(seats)),
     /** @param {string} code */
-    clearSeats: (code) => storage.removeItem(`avalon.seats.${code}`),
+    clearSeats: (code: string) => storage.removeItem(`avalon.seats.${code}`),
     /** @param {string} code @returns {string | null} */
-    playerFor: (code) => storage.getItem(`avalon.player.${code}`),
+    playerFor: (code: string) => storage.getItem(`avalon.player.${code}`),
     /** @param {string} code @param {string} id */
-    setPlayer: (code, id) => storage.setItem(`avalon.player.${code}`, id),
+    setPlayer: (code: string, id: string) => storage.setItem(`avalon.player.${code}`, id),
     /** @param {string} code */
-    clearPlayer: (code) => storage.removeItem(`avalon.player.${code}`),
+    clearPlayer: (code: string) => storage.removeItem(`avalon.player.${code}`),
     get room() { return storage.getItem('avalon.room'); },
     set room(code) {
       if (code) storage.setItem('avalon.room', code);
@@ -48,7 +46,7 @@ export function createStore(storage = localStorage) {
     get testMode() { return Boolean(storage.getItem('avalon.test')); },
     set testMode(value) { storage.setItem('avalon.test', value ? '1' : ''); },
     /** @param {string} value */
-    set lang(value) { storage.setItem('avalon.lang', value); },
+    set lang(value: string) { storage.setItem('avalon.lang', value); },
   };
   return store;
 }

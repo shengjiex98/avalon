@@ -6,12 +6,12 @@ Run the complete gate with:
 npm test
 ```
 
-The project uses Node's built-in test runner, needs no dependency installation,
-network access, or browser, and discovers `test/**/*.test.js`. CI and release
-packaging run the same gate on Node 24.
+The project uses Node's built-in test runner, needs no network access or
+browser after `npm ci`, and discovers JavaScript and TypeScript tests under
+`test/`. The gate first builds the browser into `build/public/`, so HTTP and
+emitted-entry tests exercise the same module shape a browser receives.
 
-Development also checks the JavaScript boundary contracts after installing the
-locked development tools:
+Development also checks the TypeScript contracts with the locked tools:
 
 ```bash
 npm ci
@@ -19,9 +19,10 @@ npm run typecheck
 ```
 
 The no-emit checker covers validated commands, room and engine state,
-snapshots, phase-specific views, and the game registry. It does not build or
-change the shipped modules, and it does not replace `npm test`. CI runs both;
-see [`package.json`](../package.json),
+snapshots, phase-specific views, the browser client, and the game registry.
+Use `npm run build:browser` when only the emitted client is needed, or
+`npm start` to rebuild it before starting the local server. CI runs the full
+test and typecheck gates; see [`package.json`](../package.json),
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), and
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 

@@ -1,30 +1,26 @@
-// @ts-check
 // One Night Werewolf's screens.
 
-import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
-import { assertNever } from '../assert-never.js';
+import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.ts';
+import { assertNever } from '../assert-never.ts';
+import type { OnuwNightAction } from '../../src/contracts/actions.ts';
+import type { GameEvent } from '../../src/contracts/persistence.ts';
+import type { OnuwNightView, OnuwView } from '../../src/contracts/views.ts';
+import type { OnuwRendererContext } from '../../types/browser-renderers.d.ts';
 
-/** @typedef {import('../../src/contracts/actions.ts').OnuwNightAction} OnuwNightAction */
-/** @typedef {import('../../src/contracts/persistence.ts').GameEvent} GameEvent */
-/** @typedef {import('../../src/contracts/views.ts').OnuwNightView} OnuwNightView */
-/** @typedef {import('../../src/contracts/views.ts').OnuwView} OnuwView */
-/** @typedef {OnuwView['players'][number]} OnuwPlayer */
-/** @typedef {import('../../types/browser-renderers.d.ts').OnuwRendererContext} OnuwRendererContext */
+type OnuwPlayer = OnuwView['players'][number];
 
-export const id = 'onuw';
+export const id: 'onuw' = 'onuw';
 export const rulesKey = 'onuw.rules.body';
 export const taglineKey = 'onuw.tagline';
 
 /** Audio, clocks, and rendering belong to this renderer instance. */
-/** @param {OnuwRendererContext} ctx */
-export function createRenderer(ctx) {
+export function createRenderer(ctx: OnuwRendererContext) {
 const { T, send, app, joinNames, render } = ctx;
-const setMuted = ctx.setMuted ?? ((value) => { app.muted = value; });
-/** @param {{ name: string, avatar: string | null, seat?: number } | undefined} player */
-const avatarOf = (player) => playerAvatar(player, app.server ?? undefined);
+const setMuted = ctx.setMuted ?? ((value: boolean) => { app.muted = value; });
+const avatarOf = (player: { name: string; avatar: string | null; seat?: number } | undefined) =>
+  playerAvatar(player, app.server ?? undefined);
 
-/** @returns {OnuwView} */
-function view() {
+function view(): OnuwView {
   const current = app.view;
   if (!current || current.gameId !== 'onuw') throw new Error('One Night renderer received another game');
   return current;
@@ -37,14 +33,10 @@ function view() {
  * locally from there and re-sync on the next message. That keeps everyone on
  * the same clock without trusting any two devices to agree on the time.
  */
-/** @type {ReturnType<typeof setInterval> | null} */
-let clockTimer = null;
-/** @type {number | null} */
-let spokenStep = null;
-/** @type {HTMLAudioElement | null} */
-let announcementAudio = null;
-/** @type {string[]} */
-let announcementQueue = [];
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+let spokenStep: number | null = null;
+let announcementAudio: HTMLAudioElement | null = null;
+let announcementQueue: string[] = [];
 let announcementGeneration = 0;
 
 const AUDIO_ROOT = new URL('../audio/onuw/', import.meta.url);
@@ -85,7 +77,7 @@ function playNextAnnouncement(generation = announcementGeneration) {
   });
 }
 
-const announcementUrl = (/** @type {string} */ lang, /** @type {string} */ phase, /** @type {string} */ key) =>
+const announcementUrl = (lang: string, phase: string, key: string) =>
   new URL(`${lang}/${phase}-${key}.mp3`, AUDIO_ROOT).href;
 
 /**
@@ -149,8 +141,7 @@ const clockFraction = () => {
  * including the roles nobody was dealt — that is what stops the table reading
  * the deck off what does and does not get called.
  */
-/** @param {NonNullable<OnuwNightView['night']>} night */
-function announce(night) {
+function announce(night: NonNullable<OnuwNightView['night']>) {
   if (spokenStep === night.index) return;
   const previous = spokenStep;
   spokenStep = night.index;
@@ -189,11 +180,11 @@ function onView() {
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const roleName = (/** @type {unknown} */ role) => T(`onuw.role.${String(role)}`);
-const nightStepName = (/** @type {string} */ key) => key === 'nightfall'
+const roleName = (role: unknown) => T(`onuw.role.${String(role)}`);
+const nightStepName = (key: string) => key === 'nightfall'
   ? T('onuw.ref.nightfall')
   : key === 'dawn' ? T('onuw.wake.dawn') : roleName(key);
-const houseRuleName = (/** @type {string} */ rule) => T(`onuw.house.${rule}`);
+const houseRuleName = (rule: string) => T(`onuw.house.${rule}`);
 
 /**
  * How a card is coloured: red for the werewolf side, gold for the tanner, blue
@@ -201,7 +192,7 @@ const houseRuleName = (/** @type {string} */ rule) => T(`onuw.house.${rule}`);
  * same way Avalon's client knows which of its own roles are evil.
  */
 const WOLF_ROLES = new Set(['werewolf', 'minion']);
-const teamTag = (/** @type {string} */ role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
+const teamTag = (role: string) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
 
 /**
  * Centre cards are lettered rather than numbered, so "centre card 2" can never
@@ -209,13 +200,12 @@ const teamTag = (/** @type {string} */ role) => (WOLF_ROLES.has(role) ? 'evil' :
  * presentation, exactly like role names, so a game already in flight — and a
  * snapshot restored from before this — reads as A, B, C too.
  */
-const centreLabel = (/** @type {unknown} */ n) => (
+const centreLabel = (n: unknown) => (
   typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 26 ? String.fromCharCode(64 + n) : String(n)
 );
 
 /** Which of an entry's params hold a centre card rather than a player name. */
-/** @type {Record<string, string[]>} */
-const CENTRE_PARAMS = {
+const CENTRE_PARAMS: Record<string, string[]> = {
   'onuw.info.sawCentre': ['index'],
   'onuw.info.sawTwoCentre': ['a', 'b'],
   'onuw.info.drunk': ['index'],
@@ -223,8 +213,7 @@ const CENTRE_PARAMS = {
 };
 
 /** Role keys arrive raw from the server so each client can name them itself. */
-/** @param {Record<string, unknown>} params @param {string} key */
-function formatParams(params, key) {
+function formatParams(params: Record<string, unknown>, key: string) {
   const out = { ...params };
   for (const k of ['role', 'roleA', 'roleB']) if (out[k]) out[k] = roleName(out[k]);
   for (const k of CENTRE_PARAMS[key] ?? []) out[k] = centreLabel(out[k]);
@@ -232,11 +221,10 @@ function formatParams(params, key) {
   return out;
 }
 
-const line = (/** @type {GameEvent} */ entry) => T(entry.key, formatParams(entry.params, entry.key));
+const line = (entry: GameEvent) => T(entry.key, formatParams(entry.params, entry.key));
 
 /** A role shown as an actual card, rather than reducing the reveal to prose. */
-/** @param {unknown} role @param {unknown} [caption] */
-function cardFront(role, caption) {
+function cardFront(role: unknown, caption?: unknown) {
   return h('span', { class: 'role-card-front' },
     caption ? h('span', { class: 'role-card-caption', text: caption }) : null,
     rolePortrait(role),
@@ -245,11 +233,9 @@ function cardFront(role, caption) {
 }
 
 /** Turn knowledge gained by looking at a card into the card(s) that were seen. */
-/** @param {GameEvent} entry */
-function finding(entry) {
+function finding(entry: GameEvent) {
   const p = entry.params;
-  /** @type {HTMLElement[]} */
-  let cards = [];
+  let cards: HTMLElement[] = [];
   if (entry.key === 'onuw.info.sawCentre') {
     cards = [cardFront(p.role, T('onuw.centreCard', { n: centreLabel(p.index) }))];
   } else if (entry.key === 'onuw.info.sawPlayer') {
@@ -271,8 +257,7 @@ function finding(entry) {
 
 // ---------------------------------------------------------------- lobby
 
-/** @param {Event} event */
-function checked(event) {
+function checked(event: Event) {
   const target = event.target;
   return Boolean(target && 'checked' in target && target.checked);
 }
@@ -282,10 +267,10 @@ function lobbyOptions() {
   if (v.phase !== 'lobby') throw new Error('expected lobby view');
   const isHost = v.you?.id === v.hostId;
 
-  const toggle = (/** @type {string} */ key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
+  const toggle = (key: string) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.options[key], disabled: !isHost,
-      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { [key]: checked(e) } }),
+      onchange: (event: Event) => send({ type: 'options', options: { [key]: checked(event) } }),
     }),
     rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
@@ -294,10 +279,12 @@ function lobbyOptions() {
     ),
   );
 
-  const houseToggle = (/** @type {string} */ rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+  const houseToggle = (rule: string) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
-      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { houseRules: { [rule]: checked(e) } } }),
+      onchange: (event: Event) => send({
+        type: 'options', options: { houseRules: { [rule]: checked(event) } },
+      }),
     }),
     h('span', { class: 'house-rule-copy' },
       h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
@@ -367,11 +354,10 @@ function cardContent() {
   );
 }
 
-/**
- * Three face-down cards, or their faces once the game is over.
- * @param {{ pickable?: boolean, picked?: number[], onpick?: (index: number) => void }} [options]
- */
-function centreRow({ pickable = false, picked = [], onpick } = {}) {
+/** Three face-down cards, or their faces once the game is over. */
+function centreRow({
+  pickable = false, picked = [], onpick,
+}: { pickable?: boolean; picked?: number[]; onpick?: (index: number) => void } = {}) {
   const v = view();
   if (v.phase === 'lobby') throw new Error('centre cards are not available in the lobby');
   const count = v.centreCount ?? 3;
@@ -388,8 +374,14 @@ function centreRow({ pickable = false, picked = [], onpick } = {}) {
   }));
 }
 
-/** @param {{ picked?: string[], onpick?: ((player: OnuwPlayer) => void) | null, exclude?: string[], tags?: (player: OnuwPlayer) => HTMLElement[] }} [options] */
-function pickList({ picked = [], onpick, exclude = [], tags } = {}) {
+function pickList({
+  picked = [], onpick, exclude = [], tags,
+}: {
+  picked?: string[];
+  onpick?: ((player: OnuwPlayer) => void) | null;
+  exclude?: string[];
+  tags?: (player: OnuwPlayer) => HTMLElement[];
+} = {}) {
   const v = view();
   return h('div', { class: 'players' }, v.players.map((p) => {
     const isYou = p.id === v.you?.id;
@@ -568,8 +560,9 @@ function paneNight() {
   )];
 }
 
-/** @param {NonNullable<NonNullable<OnuwNightView['you']>['action']>} kind */
-function actionBody(kind) {
+type NightActionKind = NonNullable<NonNullable<OnuwNightView['you']>['action']>;
+
+function actionBody(kind: NightActionKind) {
   const current = view();
   if (current.phase !== 'night' || current.you?.acted) {
     return [h('p', { class: 'muted', text: T('onuw.night.hint') })];
@@ -579,7 +572,7 @@ function actionBody(kind) {
   return [h('p', { text: T(`onuw.act.${kind}`) }), ...body(), h('p', { class: 'muted', text: T('onuw.night.hint') })];
 }
 
-const submit = (/** @type {OnuwNightAction} */ action) => send({ type: 'night', action });
+const submit = (action: OnuwNightAction) => send({ type: 'night', action });
 
 function actLoneWolf() {
   return [
@@ -596,7 +589,12 @@ function actLoneWolf() {
 
 function actSeer() {
   const mode = app.seerMode ?? 'player';
-  const setMode = (/** @type {'player' | 'centre'} */ m) => { app.seerMode = m; app.selection = []; app.centres = []; render(); };
+  const setMode = (mode: 'player' | 'centre') => {
+    app.seerMode = mode;
+    app.selection = [];
+    app.centres = [];
+    render();
+  };
 
   return [
     h('div', { class: 'row' },
@@ -685,8 +683,7 @@ function selectedPlayer() {
   return selected;
 }
 
-/** @returns {[string, string]} */
-function selectedPlayers() {
+function selectedPlayers(): [string, string] {
   const first = app.selection[0];
   const second = app.selection[1];
   if (!first || !second) throw new Error('expected two selected players');
@@ -699,8 +696,7 @@ function selectedCentre() {
   return selected;
 }
 
-/** @returns {[number, number]} */
-function selectedCentres() {
+function selectedCentres(): [number, number] {
   const first = app.centres[0];
   const second = app.centres[1];
   if (first === undefined || second === undefined) throw new Error('expected two selected centre cards');

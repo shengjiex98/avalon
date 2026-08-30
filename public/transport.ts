@@ -1,61 +1,63 @@
-// @ts-check
 // HTTP and EventSource ownership. Replacing or leaving a room always closes
 // the stream owned here before another one can be installed.
 
-/** @typedef {import('../src/contracts/actions.ts').ClientAction} ClientAction */
-/** @typedef {import('../src/contracts/actions.ts').CreateRoomCommand} CreateRoomCommand */
-/** @typedef {import('../src/contracts/actions.ts').JoinCommand} JoinCommand */
-/** @typedef {import('../src/contracts/actions.ts').ValidatedAction} ValidatedAction */
-/** @typedef {import('../src/contracts/views.ts').PublicView} PublicView */
+import type {
+  ClientAction, CreateRoomCommand, JoinCommand, ValidatedAction,
+} from '../src/contracts/actions.ts';
+import type { PublicView } from '../src/contracts/views.ts';
 
-/** @typedef {{ code: string }} CreateRoomResult */
-/** @typedef {{ code: string, playerId: string }} JoinRoomResult */
-/** @typedef {{ exists: boolean, seated: boolean }} RoomStatusResult */
-/** @typedef {{ ok: true }} ActionResult */
-/** @typedef {{ kind: 'ready', avatarGeneration: boolean } | { kind: 'protocolMismatch', expected: number, actual: number, avatarGeneration: boolean }} ProtocolResult */
-/** @typedef {{ kind: 'reconnect' } | { kind: 'invalidResponse' }} StreamFailure */
-/** @typedef {{ server: string | null, source: EventSource | null }} TransportApp */
+type CreateRoomResult = { code: string };
+type JoinRoomResult = { code: string; playerId: string };
+type RoomStatusResult = { exists: boolean; seated: boolean };
+type ActionResult = { ok: true };
+type ProtocolResult =
+  | { kind: 'ready'; avatarGeneration: boolean }
+  | { kind: 'protocolMismatch'; expected: number; actual: number; avatarGeneration: boolean };
+type StreamFailure = { kind: 'reconnect' } | { kind: 'invalidResponse' };
+type TransportApp = { server: string | null; source: EventSource | null };
+type RequestBody = CreateRoomCommand | JoinCommand | ValidatedAction;
+type Handlers = {
+  onMessage?: (view: PublicView) => void;
+  onError?: (failure: StreamFailure) => void;
+};
 
 export class ApiError extends Error {
-  /** @param {string} key @param {Record<string, unknown>} params */
-  constructor(key, params) {
+  readonly key: string;
+  readonly params: Record<string, unknown>;
+
+  constructor(key: string, params: Record<string, unknown>) {
     super(key);
     this.key = key;
     this.params = params;
   }
 }
 
-/** @param {unknown} value @returns {value is Record<string, unknown>} */
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-const hasString = (/** @type {Record<string, unknown>} */ value, /** @type {string} */ key) =>
+const hasString = (value: Record<string, unknown>, key: string) =>
   typeof value[key] === 'string';
 
-/** @param {unknown} value @returns {CreateRoomResult} */
-function createRoomResult(value) {
+function createRoomResult(value: unknown): CreateRoomResult {
   if (!isRecord(value) || !hasString(value, 'code')) throw new ApiError('invalidResponse', {});
   return { code: String(value.code) };
 }
 
-/** @param {unknown} value @returns {JoinRoomResult} */
-function joinRoomResult(value) {
+function joinRoomResult(value: unknown): JoinRoomResult {
   if (!isRecord(value) || !hasString(value, 'code') || !hasString(value, 'playerId')) {
     throw new ApiError('invalidResponse', {});
   }
   return { code: String(value.code), playerId: String(value.playerId) };
 }
 
-/** @param {unknown} value @returns {RoomStatusResult} */
-function roomStatusResult(value) {
+function roomStatusResult(value: unknown): RoomStatusResult {
   if (!isRecord(value) || typeof value.exists !== 'boolean' || typeof value.seated !== 'boolean') {
     throw new ApiError('invalidResponse', {});
   }
   return { exists: value.exists, seated: value.seated };
 }
 
-/** @param {unknown} value @returns {ActionResult} */
-function actionResult(value) {
+function actionResult(value: unknown): ActionResult {
   if (!isRecord(value) || value.ok !== true) throw new ApiError('invalidResponse', {});
   return { ok: true };
 }
@@ -64,10 +66,8 @@ function actionResult(value) {
  * This is the browser's single trust assertion for a server-built view. The
  * envelope and both discriminants are checked first; renderers own the exact
  * fields of the resulting shared union.
- * @param {unknown} value
- * @returns {PublicView}
  */
-function publicViewResult(value) {
+function publicViewResult(value: unknown): PublicView {
   const response = value;
   if (!isRecord(value)
       || !hasString(value, 'code')
@@ -87,33 +87,23 @@ function publicViewResult(value) {
   if (!phases || typeof value.phase !== 'string' || !phases.includes(value.phase)) {
     throw new ApiError('invalidResponse', {});
   }
-  return /** @type {PublicView} */ (response);
+  return response as PublicView;
 }
 
-/**
- * @param {{
- *   app: TransportApp,
- *   onMessage?: (view: PublicView) => void,
- *   onError?: (failure: StreamFailure) => void,
- * }} deps
- */
-export function createTransport({ app, onMessage, onError }) {
-  /** @type {EventSource | null} */
-  let source = null;
-  let handlers = { onMessage, onError };
+export function createTransport({ app, onMessage, onError }: { app: TransportApp } & Handlers) {
+  let source: EventSource | null = null;
+  let handlers: Handlers = {};
+  if (onMessage) handlers.onMessage = onMessage;
+  if (onError) handlers.onError = onError;
 
-  /**
-   * @template T
-   * @param {string} path
-   * @param {(value: unknown) => T} parse
-   * @param {{ body?: CreateRoomCommand | JoinCommand | ValidatedAction }} [options]
-   * @returns {Promise<T>}
-   */
-  async function request(path, parse, options = {}) {
+  async function request<T>(
+    path: string,
+    parse: (value: unknown) => T,
+    options: { body?: RequestBody } = {},
+  ): Promise<T> {
     let response;
     try {
-      /** @type {RequestInit} */
-      const init = options.body
+      const init: RequestInit = options.body
         ? {
             method: 'POST',
             cache: 'no-store',
@@ -125,8 +115,7 @@ export function createTransport({ app, onMessage, onError }) {
     } catch {
       throw new ApiError('network', {});
     }
-    /** @type {unknown} */
-    const data = await response.json().catch(() => ({}));
+    const data: unknown = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (isRecord(data) && typeof data.error === 'string') {
         const params = isRecord(data.params) ? data.params : {};
@@ -137,21 +126,18 @@ export function createTransport({ app, onMessage, onError }) {
     return parse(data);
   }
 
-  /** @param {CreateRoomCommand} body */
-  const createRoom = (body) => request('/api/rooms', createRoomResult, { body });
-  /** @param {string} code @param {JoinCommand} body */
-  const joinRoom = (code, body) => request(`/api/rooms/${code}/join`, joinRoomResult, { body });
-  /** @param {string} code @param {string} playerId */
-  const roomStatus = (code, playerId) => request(
+  const createRoom = (body: CreateRoomCommand) => request('/api/rooms', createRoomResult, { body });
+  const joinRoom = (code: string, body: JoinCommand) =>
+    request(`/api/rooms/${code}/join`, joinRoomResult, { body });
+  const roomStatus = (code: string, playerId: string) => request(
     `/api/rooms/${code}?playerId=${encodeURIComponent(playerId)}`, roomStatusResult,
   );
-  /** @param {string} code @param {string} playerId @param {ClientAction} action */
-  const action = (code, playerId, action) => request(`/api/rooms/${code}/action`, actionResult, {
+  const action = (code: string, playerId: string, action: ClientAction) =>
+    request(`/api/rooms/${code}/action`, actionResult, {
     body: { ...action, playerId },
   });
 
-  /** @param {number} expected @returns {Promise<ProtocolResult>} */
-  async function probeProtocol(expected) {
+  async function probeProtocol(expected: number): Promise<ProtocolResult> {
     const result = await request('/api/health', (value) => {
       if (!isRecord(value) || value.service !== 'avalon' || typeof value.protocol !== 'number') {
         throw new ApiError('invalidResponse', {});
@@ -169,13 +155,11 @@ export function createTransport({ app, onMessage, onError }) {
         };
   }
 
-  /** @param {string} url @returns {Promise<string | null>} */
-  async function latestVersion(url) {
+  async function latestVersion(url: string): Promise<string | null> {
     try {
       const response = await fetch(url, { cache: 'no-store' });
       if (!response.ok) return null;
-      /** @type {unknown} */
-      const value = await response.json();
+      const value: unknown = await response.json();
       return isRecord(value) && typeof value.version === 'string' && value.version
         ? value.version
         : null;
@@ -184,8 +168,7 @@ export function createTransport({ app, onMessage, onError }) {
     }
   }
 
-  /** @param {string} code @param {string} playerId */
-  function open(code, playerId) {
+  function open(code: string, playerId: string) {
     close();
     const next = new EventSource(`${app.server ?? ''}/api/rooms/${code}/events?playerId=${encodeURIComponent(playerId)}`);
     source = next;
@@ -213,8 +196,7 @@ export function createTransport({ app, onMessage, onError }) {
     app.source = null;
   }
 
-  /** @param {Partial<typeof handlers>} next */
-  function setHandlers(next) {
+  function setHandlers(next: Partial<Handlers>) {
     handlers = { ...handlers, ...next };
   }
 
