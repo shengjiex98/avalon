@@ -12,9 +12,14 @@ what changes how you work.
 npm test
 ```
 
-That is the whole gate. The suite is fast and needs no network or browser, so
-run it after each change rather than once at the end. CI runs the same tests
-from the extracted release archive on Node 24.
+That is the whole gate for changes that can affect code, configuration,
+packaging, or deployment. The suite is fast and needs no network or browser, so
+run it after each such change rather than once at the end. CI runs the same
+tests from the extracted release archive on Node 24.
+
+For a change limited to Markdown documentation, do not run the test suite;
+`git diff --check` is sufficient. A change that also touches any non-Markdown
+file still requires the full gate.
 
 ## Documentation
 
