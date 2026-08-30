@@ -90,3 +90,8 @@ Changes under `deploy/` do not install themselves. They go through CI and the
 normal release rollout like any other change, but a human must then run
 `deploy/install-updater.sh` from the host clone and reload systemd. Application
 releases never execute or overwrite deployment code.
+
+**Updater schema changes require host verification.** After every
+`deployerSchema` bump, install the merged control plane on the host, trigger
+reconciliation, and confirm `/api/health` serves the merged commit and the
+corresponding deployment workflow succeeds. Passing CI alone is not enough.
