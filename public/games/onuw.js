@@ -754,6 +754,12 @@ function paneOver() {
   const v = view();
   if (v.phase !== 'over') throw new Error('expected over view');
   const won = v.youWon;
+  const votesReceived = new Map(v.players.map((p) => [p.id, 0]));
+  for (const p of v.players) {
+    if (p.votedFor && votesReceived.has(p.votedFor)) {
+      votesReceived.set(p.votedFor, votesReceived.get(p.votedFor) + 1);
+    }
+  }
   const winners = v.winners.length
     ? T('onuw.over.winners', { names: joinNames(v.winners.map((w) => T(`onuw.team.${w}`))) })
     : T('onuw.over.nobodyWins');
@@ -784,6 +790,7 @@ function paneOver() {
         const cardLabel = moved ? `${dealt} → ${ended}` : dealt;
         const votedFor = p.votedFor && v.players.find((q) => q.id === p.votedFor)?.name;
         const voteLabel = votedFor && T('onuw.over.votedFor', { name: votedFor });
+        const voteCount = T('onuw.over.votesReceived', { count: votesReceived.get(p.id) ?? 0 });
         const isYou = p.id === v.you?.id;
         return h('div', {
           class: `player ${isYou ? 'is-you' : ''} ${p.dead ? 'dead' : ''}`,
@@ -801,6 +808,7 @@ function paneOver() {
               ? h('span', { class: 'tag', role: 'img', title: voteLabel, 'aria-label': voteLabel },
                   h('span', { class: 'arrow', 'aria-hidden': 'true', text: '☞' }), votedFor)
               : null,
+            h('span', { class: 'tag vote-count', text: voteCount }),
             p.dead
               ? h('span', {
                   class: 'tag evil', text: '☠', role: 'img',
