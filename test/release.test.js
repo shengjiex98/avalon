@@ -2,8 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -87,9 +86,14 @@ test('an invalid release identity is rejected rather than reported', async () =>
 test('the trusted workflow verifier checks the packaged manifest and required files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
   const commit = 'd'.repeat(40);
+  await mkdir(join(dir, 'build'), { recursive: true });
+  await cp(join(root, 'build/public'), join(dir, 'build/public'), { recursive: true });
+  await cp(join(root, 'package.json'), join(dir, 'package.json'));
+  await cp(join(root, 'package-lock.json'), join(dir, 'package-lock.json'));
   for (const name of [
-    'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
-    'build/public/index.html', 'build/public/bootstrap.js', 'build/public/app.js',
+    'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
+    'deploy/updater.sh', 'deploy/avalon.service',
+    'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
   ]) {
     await mkdir(dirname(join(dir, name)), { recursive: true });
     await writeFile(join(dir, name), name);
@@ -105,6 +109,17 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   const verifier = join(root, 'scripts/verify-packaged-release.mjs');
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 0);
   assert.equal((await run(process.execPath, [verifier, dir, 'e'.repeat(40)])).code, 65);
+  await rm(join(dir, 'build/public/app.js'));
+  assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
+    'a missing emitted module must fail before publication');
+  await cp(join(root, 'build/public/app.js'), join(dir, 'build/public/app.js'));
+  await rm(join(dir, 'build/public/art/card-back.webp'));
+  assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
+    'a missing static asset must fail before publication');
+  await cp(join(root, 'build/public/art/card-back.webp'), join(dir, 'build/public/art/card-back.webp'));
+  await rm(join(dir, 'node_modules/zod'), { recursive: true });
+  assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
+    'a missing production package must fail before publication');
 });
 
 // A release must carry the application and the files used to package, install,
@@ -119,6 +134,7 @@ const CONTROL_PLANE = [
   'deploy/avalon-listen.service',
   'deploy/avalon-update.service',
   'deploy/avalon-update.timer',
+  'scripts/verify-browser-artifact.mjs',
   'scripts/verify-packaged-release.mjs',
 ];
 
@@ -128,17 +144,7 @@ async function inCheckout() {
 }
 
 test('the packaged release carries the control plane that deploys it', async (t) => {
-  // This suite runs in two places, and the honest check differs between them.
-  // In a checkout, packaging is what can silently drop a file, so package and
-  // look inside the tarball. On the host the suite already runs from the
-  // extracted artifact -- there is no checkout to package, and the tree under
-  // test *is* the release, so inspect it directly.
-  if (!await inCheckout()) {
-    for (const file of CONTROL_PLANE) {
-      assert.ok(existsSync(join(root, file)), `this release must ship ${file}`);
-    }
-    return;
-  }
+  if (!await inCheckout()) return t.skip('no checkout to package');
 
   if (!await packagingSupported()) {
     return t.skip('this tar cannot build reproducible archives; CI packages the release');
@@ -163,12 +169,19 @@ test('the packaged release carries the control plane that deploys it', async (t)
     assert.ok(files.has(file), `the artifact must ship ${file}`);
   }
   assert.ok(files.has('node_modules/zod/package.json'), 'the artifact must ship its runtime schema package');
+  assert.ok(![...files].some((file) => file.startsWith('test/')), 'the artifact must omit the test suite');
+  assert.ok(![...files].some((file) => file.startsWith('public/')), 'the artifact must omit authored browser source');
+  assert.ok(!files.has('node_modules/typescript/package.json'), 'the artifact must omit the browser compiler');
+  assert.ok(!files.has('node_modules/@types/node/package.json'), 'the artifact must omit development types');
 
   const extracted = await mkdtemp(join(tmpdir(), 'avalon-production-deps-'));
   const unpacked = await run('tar', ['-xzf', archive, '--strip-components=1', '-C', extracted]);
   assert.equal(unpacked.code, 0, unpacked.stderr);
   const imported = await run(process.execPath, ['--input-type=module', '-e', "await import('zod')"], { cwd: extracted });
   assert.equal(imported.code, 0, imported.stderr);
+  const commit = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+  const verified = await run(process.execPath, [join(root, 'scripts/verify-packaged-release.mjs'), extracted, commit]);
+  assert.equal(verified.code, 0, verified.stderr);
 });
 
 // A pipeline reports only its last stage, which is how a failed extraction

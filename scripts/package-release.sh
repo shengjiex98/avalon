@@ -7,8 +7,8 @@
 # --mtime and from gzip -n; a tar without them cannot produce this artifact.
 set -eu
 
-if [ "$#" -gt 2 ]; then
-  echo 'Usage: package-release.sh [commit] [output-directory]' >&2
+if [ "$#" -gt 4 ]; then
+  echo 'Usage: package-release.sh [commit] [output-directory] [browser-directory] [node-modules-directory]' >&2
   exit 64
 fi
 
@@ -23,8 +23,20 @@ fi
 root=$(git rev-parse --show-toplevel)
 commit=$(git -C "$root" rev-parse "${1:-HEAD}^{commit}")
 output=${2:-"$root/dist"}
+browser=${3:-"$root/build/public"}
+modules=${4:-"$root/node_modules"}
+if [ ! -d "$browser" ]; then
+  echo "package-release.sh: missing tested browser output: $browser" >&2
+  exit 66
+fi
+if [ ! -d "$modules" ]; then
+  echo "package-release.sh: missing installed dependencies: $modules" >&2
+  exit 66
+fi
 mkdir -p "$output"
 output=$(cd "$output" && pwd)
+browser=$(cd "$browser" && pwd)
+modules=$(cd "$modules" && pwd)
 
 archive="$output/avalon-$commit.tar.gz"
 partial="$output/.avalon-$commit.tar.gz.$$"
@@ -36,13 +48,20 @@ trap 'rm -rf "$stage" "$partial"' EXIT HUP INT TERM
 # archive that looked like a successful release.
 release="$stage/avalon-$commit"
 mkdir "$release"
-git -C "$root" archive --format=tar "$commit" >"$stage/source.tar"
+git -C "$root" archive --format=tar "$commit" -- \
+  deploy package.json package-lock.json src >"$stage/source.tar"
 tar -xf "$stage/source.tar" -C "$release"
 rm -f "$stage/source.tar"
-npm ci --ignore-scripts --no-audit --no-fund --prefix "$release"
-npm run build:browser --prefix "$release"
-npm prune --omit=dev --ignore-scripts --no-audit --no-fund --prefix "$release"
+mkdir "$release/scripts"
+cp "$root/scripts/verify-browser-artifact.mjs" "$release/scripts/verify-browser-artifact.mjs"
+cp "$root/scripts/verify-packaged-release.mjs" "$release/scripts/verify-packaged-release.mjs"
+cp "$root/scripts/write-release-manifest.mjs" "$release/scripts/write-release-manifest.mjs"
+mkdir -p "$release/build"
+cp -R "$browser" "$release/build/public"
+cp -R "$modules" "$release/node_modules"
+npm prune --omit=dev --ignore-scripts --no-audit --no-fund --offline --prefix "$release"
 node "$release/scripts/write-release-manifest.mjs" "$commit" "$release/release.json"
+rm "$release/scripts/write-release-manifest.mjs"
 
 timestamp=$(git -C "$root" show -s --format=%ct "$commit")
 tar --sort=name --mtime="@$timestamp" --owner=0 --group=0 --numeric-owner \

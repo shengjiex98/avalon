@@ -1,6 +1,8 @@
 import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
+import { verifyBrowserArtifact } from './verify-browser-artifact.mjs';
+
 const [, , releaseDir, expectedCommit] = process.argv;
 const COMMIT = /^[0-9a-f]{40}$/;
 
@@ -29,9 +31,31 @@ try {
       reject(`release requires Node ${manifest.nodeMajor}, running ${process.versions.node}`);
     }
 
+    const packageJson = JSON.parse(await readFile(join(releaseDir, 'package.json'), 'utf8'));
+    const packageLock = JSON.parse(await readFile(join(releaseDir, 'package-lock.json'), 'utf8'));
+    const dependencies = Object.keys(packageJson.dependencies ?? {});
+    if (!dependencies.length) reject('release manifest has no production dependencies');
+    for (const dependency of dependencies) {
+      if (!(dependency in (packageLock.packages?.['']?.dependencies ?? {}))) {
+        reject(`${dependency} is not locked as a production dependency`);
+      }
+      try {
+        await access(join(releaseDir, 'node_modules', dependency, 'package.json'));
+      } catch {
+        reject(`missing production package ${dependency}`);
+      }
+    }
+
+    for (const dependency of Object.keys(packageJson.devDependencies ?? {})) {
+      if (await exists(join(releaseDir, 'node_modules', dependency, 'package.json'))) {
+        reject(`development package shipped in release: ${dependency}`);
+      }
+    }
+
     for (const name of [
-      'package.json', 'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
-      'build/public/index.html', 'build/public/bootstrap.js', 'build/public/app.js',
+      'package.json', 'package-lock.json', 'src/server.js', 'src/server.ts',
+      'deploy/updater.sh', 'deploy/avalon.service',
+      'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
     ]) {
       try {
         await access(join(releaseDir, name));
@@ -40,9 +64,26 @@ try {
       }
     }
 
+    for (const name of ['public', 'test', 'node_modules/typescript', 'node_modules/@types/node']) {
+      if (await exists(join(releaseDir, name))) reject(`development-only path shipped in release: ${name}`);
+    }
+
+    await verifyBrowserArtifact(join(releaseDir, 'build/public'), {
+      target: 'self-hosted', commit: expectedCommit, apiBase: '',
+    });
+
     process.stdout.write(`${JSON.stringify(manifest)}\n`);
   }
 } catch (error) {
   console.error(`invalid packaged Avalon release: ${error.message}`);
   process.exitCode = 65;
+}
+
+async function exists(path) {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
