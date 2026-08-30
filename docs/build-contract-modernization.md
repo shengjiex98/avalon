@@ -598,9 +598,9 @@ the release. CI extracts the archive and exercises its stable production
 entrypoint through health, static loading, an action/view round trip, and
 snapshot restore. The separately tested Pages tree is carried into the Pages
 job as an artifact, so neither publication path rebuilds or restamps output.
-The archive also carries `public/index.html` as a symlink to the emitted entry
-for compatibility with the statically installed updater; no authored browser
-source is packaged or served.
+The archive also carries `public/index.html` as a byte-for-byte copy of the
+emitted entry for compatibility with the statically installed updater; no
+authored browser source is packaged or served.
 
 ## Phase 7 — Reassess enhanced browser tooling
 

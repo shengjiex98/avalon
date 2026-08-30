@@ -1,4 +1,4 @@
-import { access, lstat, readFile, readlink } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { verifyBrowserArtifact } from './verify-browser-artifact.mjs';
@@ -65,10 +65,10 @@ try {
       }
     }
 
-    const legacyEntry = join(releaseDir, 'public/index.html');
-    if (!(await lstat(legacyEntry)).isSymbolicLink()
-        || await readlink(legacyEntry) !== '../build/public/index.html') {
-      reject('public/index.html must link to the emitted client entry');
+    const legacyEntry = await readFile(join(releaseDir, 'public/index.html'));
+    const emittedEntry = await readFile(join(releaseDir, 'build/public/index.html'));
+    if (!legacyEntry.equals(emittedEntry)) {
+      reject('public/index.html must match the emitted client entry');
     }
 
     for (const name of ['test', 'node_modules/typescript', 'node_modules/@types/node']) {
