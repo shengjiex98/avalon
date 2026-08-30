@@ -67,6 +67,7 @@ const STEP_SECONDS: Partial<Record<OnuwRole, number>> = {
   robber: 20, troublemaker: 22, drunk: 15, insomniac: 12,
 };
 const NIGHTFALL_SECONDS = 8;
+const DAWN_SECONDS = 8;
 
 /**
  * The night, as the table hears it.
@@ -88,6 +89,7 @@ export function nightScript(deck: OnuwRole[]): NightStep[] {
     { key: 'nightfall', seconds: NIGHTFALL_SECONDS },
     ...NIGHT_ORDER.filter((role) => present.has(role))
       .map((role) => ({ key: role, role, seconds: STEP_SECONDS[role] ?? 0 })),
+    { key: 'dawn', seconds: DAWN_SECONDS },
   ];
 }
 

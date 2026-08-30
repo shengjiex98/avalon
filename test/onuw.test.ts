@@ -136,7 +136,7 @@ test('the reveal view shows readiness without leaking anyone else\'s card', () =
 
 test('the script holds the deck\'s waking roles, in the canonical order', () => {
   const full = buildDeck(10, defaultOptions(10));
-  assert.deepEqual(nightScript(full).map((s) => s.key), ['nightfall', ...NIGHT_ORDER]);
+  assert.deepEqual(nightScript(full).map((s) => s.key), ['nightfall', ...NIGHT_ORDER, 'dawn']);
   assert.ok(nightScript(full).every((s) => s.seconds > 0));
 });
 
@@ -145,7 +145,7 @@ test('a role nobody agreed to play is never called', () => {
   // costs the table time.
   const deck: OnuwRole[] = ['werewolf', 'werewolf', 'villager', 'seer', 'robber', 'troublemaker'];
   const called = nightScript(deck).map((s) => s.key);
-  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker']);
+  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker', 'dawn']);
   for (const absent of ['minion', 'mason', 'drunk', 'insomniac']) {
     assert.ok(!called.includes(absent), `${absent} is not in this deck`);
   }
@@ -161,7 +161,23 @@ test('a role whose card sits in the centre is still called', () => {
     clock = game.state.stepEndsAt;
     w.tick(game, clock);
   }
-  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker']);
+  assert.deepEqual(called, ['nightfall', 'werewolf', 'seer', 'robber', 'troublemaker', 'dawn']);
+});
+
+test('dawn is a final timed step before discussion begins', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'dawn');
+
+  const deadline = game.state.stepEndsAt;
+  const view = w.viewFor(game, 'p0', deadline - 1);
+  assertPhase(view, 'night');
+  assert.equal(view.night?.key, 'dawn');
+  assert.ok((view.night?.msLeft ?? 0) > 0);
+
+  w.tick(game, deadline - 1);
+  assert.equal(game.state.phase, 'night');
+  w.tick(game, deadline);
+  assert.equal(game.state.phase, 'day');
 });
 
 test('the pace changes how long the night takes, not what happens in it', () => {

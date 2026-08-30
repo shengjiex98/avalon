@@ -190,6 +190,9 @@ function onView() {
  * switch it cannot actually throw.
  */
 const roleName = (/** @type {unknown} */ role) => T(`onuw.role.${String(role)}`);
+const nightStepName = (/** @type {string} */ key) => key === 'nightfall'
+  ? T('onuw.ref.nightfall')
+  : key === 'dawn' ? T('onuw.wake.dawn') : roleName(key);
 const houseRuleName = (/** @type {string} */ rule) => T(`onuw.house.${rule}`);
 
 /**
@@ -329,7 +332,7 @@ function lobbyOptions() {
     h('p', { class: 'muted', text: T('onuw.deckHint') }),
     h('h3', { text: T('onuw.ref.order') }),
     h('ol', { class: 'order' }, (v.nightScript ?? []).map((key) => h('li', {
-      text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
+      text: nightStepName(key),
     }))),
   );
 }
@@ -473,7 +476,7 @@ function referenceContent() {
       h('h3', { text: T('onuw.ref.order') }),
       h('ol', { class: 'order' }, script.map((key, i) => h('li', {
         class: v.phase === 'night' && v.night?.index === i ? 'now' : '',
-        text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
+        text: nightStepName(key),
       }))),
       h('p', { class: 'muted', text: T('onuw.ref.note') }),
       // The lobby agreed these too, and they decide the vote — so they stay
@@ -551,7 +554,9 @@ function paneNight() {
     h('div', { class: 'bar' },
       h('div', { class: 'bar-fill', id: 'nightBar', style: `width:${clockFraction() * 100}%` })),
 
-    awake
+    night.key === 'dawn'
+      ? null
+      : awake
       ? h('div', { class: 'stack' },
           h('p', { class: 'yourturn', text: T('onuw.night.yourTurn') }),
           ...v.info.map(finding),

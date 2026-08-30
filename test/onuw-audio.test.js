@@ -31,7 +31,7 @@ test('the game module exposes constructed renderers, not mutable bindings', () =
   assert.equal(typeof renderer.onView, 'function');
 });
 
-test('night calls use queued, language-specific recordings', () => {
+test('night calls and dawn use queued, language-specific recordings', () => {
   renderer.onView();
   const audio = dom.AudioStub.instances.at(-1);
   assert.match(audio.src, /audio\/onuw\/zh\/wake-werewolf\.mp3$/);
@@ -42,6 +42,14 @@ test('night calls use queued, language-specific recordings', () => {
 
   audio.finish();
   assert.match(audio.src, /audio\/onuw\/zh\/wake-seer\.mp3$/);
+
+  app.view.night = { index: 2, total: 3, key: 'dawn', msLeft: 8_000, msTotal: 8_000 };
+  app.view.nightScript = ['werewolf', 'seer', 'dawn'];
+  renderer.onView();
+  assert.match(audio.src, /audio\/onuw\/zh\/sleep-seer\.mp3$/);
+
+  audio.finish();
+  assert.match(audio.src, /audio\/onuw\/zh\/wake-dawn\.mp3$/);
 
   app.view.night = null;
   renderer.onView();
