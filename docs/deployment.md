@@ -65,7 +65,8 @@ repository in `~/.config/avalon.env`; consult the unit files and
 
 ```text
 push main
-  -> package and test one immutable archive
+  -> install and build the browser once
+  -> stage and test one immutable archive and one Pages tree
   -> publish archive, then latest.json
   -> send an untrusted "deploy" wake-up
   -> installed updater reconciles the host
@@ -73,9 +74,12 @@ push main
   -> publish the Pages client
 ```
 
-The archive contains application bytes plus `release.json`. `latest.json`
+The archive contains native server source, production packages, the emitted
+self-hosted client, operational files, and `release.json`. `latest.json`
 selects a commit and supplies the archive's SHA-256 digest. Publishing the
-archive before the pointer prevents selection of missing bytes.
+archive before the pointer prevents selection of missing bytes. The Pages job
+downloads the client artifact already tested beside that archive; it performs
+no install, compilation, configuration, or stamping.
 
 A published run then prunes every asset except `latest.json` and the archive it
 names. Nothing else is reachable.
@@ -88,8 +92,10 @@ host would reject.
 The workflow definition is authoritative for publication and ordering:
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
 manifest rules live in [`scripts/package-release.sh`](../scripts/package-release.sh),
+[`scripts/stage-browser-artifacts.mjs`](../scripts/stage-browser-artifacts.mjs),
 [`scripts/write-release-manifest.mjs`](../scripts/write-release-manifest.mjs),
-and [`scripts/verify-packaged-release.mjs`](../scripts/verify-packaged-release.mjs).
+[`scripts/verify-packaged-release.mjs`](../scripts/verify-packaged-release.mjs),
+and [`scripts/test-packaged-release.mjs`](../scripts/test-packaged-release.mjs).
 
 ## Reconciliation and rollback
 

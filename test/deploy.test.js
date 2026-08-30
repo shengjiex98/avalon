@@ -3,14 +3,25 @@
 // pipeline that keeps the two on the same commit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { API_PROTOCOL } from '../src/api-protocol.ts';
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
+
+function run(command, args) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args);
+    let stderr = '';
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('close', (code) => resolve({ code, stderr }));
+  });
+}
 
 test('every page load resolves the current server-hosted version', async () => {
   const bootstrap = await read('../public/bootstrap.ts');
@@ -32,6 +43,23 @@ test('the Pages artifact fingerprints its complete module graph', async () => {
   assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/ui\.js\?v=abc123/);
   assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/games\/index\.js\?v=abc123/);
   assert.match(await readFile(join(dir, 'games/index.js'), 'utf8'), /\.\.\/ui\.js\?v=abc123/);
+});
+
+test('one emitted client becomes independently configured server and Pages artifacts', async () => {
+  const output = await mkdtemp(join(tmpdir(), 'avalon-browser-artifacts-'));
+  const commit = 'c'.repeat(40);
+  const apiBase = 'https://games.example.test';
+  const staged = await run(process.execPath, [
+    fileURLToPath(new URL('../scripts/stage-browser-artifacts.mjs', import.meta.url)),
+    commit, output, `${apiBase}/`,
+  ]);
+  assert.equal(staged.code, 0, staged.stderr);
+
+  const verifier = fileURLToPath(new URL('../scripts/verify-browser-artifact.mjs', import.meta.url));
+  const selfHosted = await run(process.execPath, [verifier, join(output, 'self-hosted-public'), 'self-hosted', commit]);
+  assert.equal(selfHosted.code, 0, selfHosted.stderr);
+  const pages = await run(process.execPath, [verifier, join(output, 'pages'), 'pages', commit, apiBase]);
+  assert.equal(pages.code, 0, pages.stderr);
 });
 
 test('the connection banner lives outside the top bar', async () => {
@@ -130,18 +158,21 @@ test('development checking and browser emit are explicit package contracts', asy
     .filter((file) => file.endsWith('.js')), [], 'converted JavaScript sources are deleted');
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
-  assert.doesNotMatch(deploy, /npm run typecheck/,
-    'deployment executes the checked browser compiler but not a second typecheck gate');
+  assert.equal((deploy.match(/npm ci/g) ?? []).length, 1, 'deployment installs the lockfile once');
+  assert.equal((deploy.match(/npm run build:browser/g) ?? []).length, 1, 'deployment emits the browser once');
+  assert.match(deploy, /npm run build:browser[\s\S]*npm run test:built[\s\S]*npm run typecheck/);
 });
 
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
-  assert.match(workflow, /package-release\.sh "\$GITHUB_SHA" dist/);
+  assert.match(workflow,
+    /package-release\.sh "\$GITHUB_SHA" dist dist\/self-hosted-public node_modules/);
   assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
   assert.match(workflow, /tar -xzf "\$archive" --strip-components=1 -C "\$tree"/);
   assert.match(workflow, /node scripts\/verify-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
+  assert.match(workflow, /node scripts\/test-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
   assert.match(workflow,
-    /cd "\$tree"[\s\S]*node --test "test\/\*\*\/\*\.test\.js" "test\/\*\*\/\*\.test\.ts"/);
+    /node scripts\/verify-browser-artifact\.mjs dist\/pages pages "\$GITHUB_SHA" "\$API_BASE"/);
   assert.doesNotMatch(workflow, /"\$tree\/deploy\/controller\.sh"|NTFY_TOPIC=ci-canary/,
     'CI never executes candidate deployment code');
 
@@ -150,11 +181,15 @@ test('the deploy workflow tests the exact archive with trusted checked-out code'
   assert.doesNotMatch(workflow, /\.tar\.gz\.sha256/);
   assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
-  assert.match(workflow, /npm ci[\s\S]*npm run build:browser/);
-  assert.match(workflow, /writeFileSync\("build\/public\/config\.js"/);
-  assert.match(workflow, /stamp-frontend-version\.mjs build\/public "\$GITHUB_SHA"/);
+  assert.match(workflow, /stage-browser-artifacts\.mjs "\$GITHUB_SHA" dist "\$API_BASE"/);
+  assert.match(workflow, /name: avalon-pages-\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /include-hidden-files: true/);
   assert.match(workflow, /actions\/deploy-pages/);
-  assert.match(workflow, /path:\s*build\/public/);
+  assert.match(workflow, /path:\s*dist\/pages/);
+  const pagesJob = workflow.slice(workflow.indexOf('deploy-pages:'));
+  assert.match(pagesJob, /actions\/download-artifact@v4/);
+  assert.doesNotMatch(pagesJob, /actions\/checkout|setup-node|npm ci|build:browser|stamp-frontend/,
+    'the Pages job must publish the already-tested client without rebuilding it');
   assert.doesNotMatch(workflow, /ALLOW_ORIGIN/);
 });
 

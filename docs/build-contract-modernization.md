@@ -283,7 +283,7 @@ only when a stop condition fires, not for routine implementation choices.
 | 3 | Convert server and tests to native TypeScript | Complete |
 | 4 | Make the browser boundary explicit | Complete |
 | 5 | Convert browser modules and add minimal emit | Complete |
-| 6 | Cut over packaging and remove superseded contracts | Not started |
+| 6 | Cut over packaging and remove superseded contracts | Complete |
 | 7 | Reassess enhanced browser tooling | Not started |
 
 Phase 0 is a preflight performed in the Phase 1 working branch, not a standalone
@@ -588,6 +588,16 @@ Acceptance:
 Named deletion: remove source-tree-as-release assumptions from
 `scripts/package-release.sh` and the workflow. Delete obsolete package/stamp
 steps only when the new artifact test covers their purpose.
+
+Implementation result: deployment installs the lockfile and emits the browser
+once, then derives separately configured self-hosted and Pages trees from that
+canonical output. The server archive is assembled from runtime source,
+production packages, operational files, and the tested self-hosted client; it
+no longer installs dependencies, compiles, or treats the repository tree as
+the release. CI extracts the archive and exercises its stable production
+entrypoint through health, static loading, an action/view round trip, and
+snapshot restore. The separately tested Pages tree is carried into the Pages
+job as an artifact, so neither publication path rebuilds or restamps output.
 
 ## Phase 7 — Reassess enhanced browser tooling
 

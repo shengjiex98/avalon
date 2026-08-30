@@ -32,7 +32,8 @@ The suite covers:
 - rooms, timers, persistence, reconnection, and real HTTP/SSE behavior;
 - browser rendering and interaction through the lightweight DOM shim;
 - translation coverage in English and Chinese; and
-- release packaging, pointer validation, activation, deferral, and rollback.
+- release packaging, extracted-entry startup and snapshot restore, pointer
+  validation, activation, deferral, and rollback.
 
 Test filenames describe their scope. UI tests use
 [`test/dom-shim.js`](../test/dom-shim.js) rather than a browser dependency.
