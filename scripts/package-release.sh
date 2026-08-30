@@ -58,6 +58,8 @@ cp "$root/scripts/verify-packaged-release.mjs" "$release/scripts/verify-packaged
 cp "$root/scripts/write-release-manifest.mjs" "$release/scripts/write-release-manifest.mjs"
 mkdir -p "$release/build"
 cp -R "$browser" "$release/build/public"
+mkdir "$release/public"
+ln -s ../build/public/index.html "$release/public/index.html"
 cp -R "$modules" "$release/node_modules"
 npm prune --omit=dev --ignore-scripts --no-audit --no-fund --offline --prefix "$release"
 node "$release/scripts/write-release-manifest.mjs" "$commit" "$release/release.json"
