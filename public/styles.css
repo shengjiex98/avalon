@@ -601,6 +601,12 @@ input[type=text]:focus { outline-color: var(--gold); }
    drawer cannot hand a height down to the list the way a flex parent would. */
 .journal[open] .log { max-height: min(44dvh, 420px); padding: 0 11px 11px; }
 .journal[open] summary { border-bottom: 1px solid #675637; }
+.game-result { padding: 6px 0; border-bottom: 1px solid rgba(103,86,55,.45); }
+.result-row { line-height: 1.65; }
+.report-player { font-weight: 700; }
+.report-player.good { color: #7ce2ff; }
+.report-player.evil { color: #ff9aa5; }
+.report-player.tanner { color: var(--gold); }
 
 .role-portrait {
   --portrait-x: 0%; --portrait-y: 0%;

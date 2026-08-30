@@ -348,6 +348,34 @@ test('the history reads as sentences, not keys, in both languages', () => {
   assertNoRawKeys(zh, 'Chinese history');
 });
 
+test('the battle report keeps every completed game and colors players by side', () => {
+  const game = newGame();
+  const finishByRejections = () => {
+    for (let i = 0; i < 5; i++) {
+      g.proposeTeam(game, game.room.players[game.state.leaderIndex].id, ['p0', 'p1']);
+      for (const player of game.room.players) g.castVote(game, player.id, false);
+    }
+  };
+
+  finishByRejections();
+  g.resetToLobby(game, 'p0');
+  g.startGame(game, 'p0', { shuffle: (list) => list });
+  for (const player of game.room.players) g.confirmRole(game, player.id);
+  game.state.leaderIndex = 0;
+  finishByRejections();
+  g.resetToLobby(game, 'p0');
+
+  const view = show(game, 'p0', 'zh');
+  const results = view.byClass('game-result');
+  assert.equal(results.length, 2);
+  for (const result of results) {
+    assert.match(result.text, /^获胜：.+失败：.+$/);
+    assert.equal(result.byClass('evil').length, 2);
+    assert.equal(result.byClass('good').length, 3);
+    assert.doesNotMatch(result.text, /梅林|刺客|忠臣|爪牙/);
+  }
+});
+
 // Every click redraws the whole view. These guard the things a redraw used to
 // throw away: where the middle pane was scrolled to, and whether the player
 // had the journal open.
