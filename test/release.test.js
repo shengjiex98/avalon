@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  chmod, cp, lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, symlink, writeFile,
+  chmod, cp, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
@@ -93,7 +93,7 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   await cp(join(root, 'package.json'), join(dir, 'package.json'));
   await cp(join(root, 'package-lock.json'), join(dir, 'package-lock.json'));
   await mkdir(join(dir, 'public'));
-  await symlink('../build/public/index.html', join(dir, 'public/index.html'));
+  await cp(join(root, 'build/public/index.html'), join(dir, 'public/index.html'));
   for (const name of [
     'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
     'deploy/updater.sh', 'deploy/avalon.service',
@@ -116,7 +116,7 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   await rm(join(dir, 'public/index.html'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'the installed updater compatibility entry must fail closed when absent');
-  await symlink('../build/public/index.html', join(dir, 'public/index.html'));
+  await cp(join(root, 'build/public/index.html'), join(dir, 'public/index.html'));
   await rm(join(dir, 'build/public/app.js'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'a missing emitted module must fail before publication');
@@ -191,8 +191,12 @@ test('the packaged release carries the control plane that deploys it', async (t)
   assert.equal(unpacked.code, 0, unpacked.stderr);
   const imported = await run(process.execPath, ['--input-type=module', '-e', "await import('zod')"], { cwd: extracted });
   assert.equal(imported.code, 0, imported.stderr);
-  assert.equal((await lstat(join(extracted, 'public/index.html'))).isSymbolicLink(), true);
-  assert.equal(await readlink(join(extracted, 'public/index.html')), '../build/public/index.html');
+  assert.equal((await lstat(join(extracted, 'public/index.html'))).isFile(), true,
+    'the installed updater rejects compatibility symlinks before extraction');
+  assert.deepEqual(
+    await readFile(join(extracted, 'public/index.html')),
+    await readFile(join(extracted, 'build/public/index.html')),
+  );
   const commit = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
   const verified = await run(process.execPath, [join(root, 'scripts/verify-packaged-release.mjs'), extracted, commit]);
   assert.equal(verified.code, 0, verified.stderr);
