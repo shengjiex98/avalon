@@ -6,8 +6,8 @@ import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { readFileSync, realpathSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { dirname, extname, join, normalize } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { dirname, extname, join, normalize, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { API_PROTOCOL } from '../contracts/api-protocol.ts';
 import { Avatars } from './avatars.ts';
@@ -20,8 +20,12 @@ import { STATE_VERSION } from '../contracts/state-version.ts';
 import type { GameId } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
 
-const ROOT_DIR = fileURLToPath(new URL('../../', import.meta.url));
-const PUBLIC_DIR = fileURLToPath(new URL('../../build/public/', import.meta.url));
+export function runtimePaths(rootDir = process.cwd()): { rootDir: string; publicDir: string } {
+  const root = resolve(rootDir);
+  return { rootDir: root, publicDir: join(root, 'build/public') };
+}
+
+const RUNTIME_PATHS = runtimePaths();
 
 /**
  * The commit this process is serving, read from the checkout rather than from
@@ -30,7 +34,7 @@ const PUBLIC_DIR = fileURLToPath(new URL('../../build/public/', import.meta.url)
  * pipeline needs to hear -- a working tree moved underneath a running process
  * has not been deployed until the restart.
  */
-export function readDeployedCommit(rootDir = ROOT_DIR): string | null {
+export function readDeployedCommit(rootDir = RUNTIME_PATHS.rootDir): string | null {
   const sha = /^[0-9a-f]{40}$/;
   try {
     const manifest: unknown = JSON.parse(readFileSync(join(rootDir, 'release.json'), 'utf8'));
@@ -88,7 +92,16 @@ export function createApp({
   rooms = new Rooms(),
   avatars = new Avatars(),
   clientOrigin = CLIENT_ORIGIN,
-}: { rooms?: Rooms; avatars?: AvatarService; clientOrigin?: string } = {}) {
+  publicDir = RUNTIME_PATHS.publicDir,
+  deployedCommit = DEPLOYED_COMMIT,
+}: {
+  rooms?: Rooms;
+  avatars?: AvatarService;
+  clientOrigin?: string;
+  publicDir?: string;
+  deployedCommit?: string | null;
+} = {}) {
+  const staticDir = resolve(publicDir);
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     try {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -103,10 +116,10 @@ export function createApp({
           res.end();
           return;
         }
-        await api(rooms, avatars, req, res, url);
+        await api(rooms, avatars, deployedCommit, req, res, url);
         return;
       }
-      await serveStatic(req, res, url);
+      await serveStatic(staticDir, req, res, url);
     } catch (err) {
       if (err instanceof GameError) {
         if (res.headersSent) { res.end(); return; }
@@ -140,6 +153,7 @@ function allowClient(req: IncomingMessage, res: ServerResponse, clientOrigin: st
 async function api(
   rooms: Rooms,
   avatars: AvatarService,
+  deployedCommit: string | null,
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
@@ -163,7 +177,7 @@ async function api(
       activeGames,
       updateSafe,
       avatarGeneration: avatars.canGenerate,
-      commit: DEPLOYED_COMMIT,
+      commit: deployedCommit,
     });
     return;
   }
@@ -307,15 +321,15 @@ function stream(
   req.on('error', close);
 }
 
-async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+async function serveStatic(publicDir: string, req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     json(res, 405, { error: 'notFound' });
     return;
   }
-  if (url.pathname === '/version.json') return serveLocalVersion(req, res);
+  if (url.pathname === '/version.json') return serveLocalVersion(publicDir, req, res);
   const rel = url.pathname === '/' ? 'index.html' : normalize(url.pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]+/, '');
-  const path = join(PUBLIC_DIR, rel);
-  if (!path.startsWith(PUBLIC_DIR)) return json(res, 403, { error: 'notFound' });
+  const path = join(publicDir, rel);
+  if (!path.startsWith(publicDir)) return json(res, 403, { error: 'notFound' });
   try {
     const info = await stat(path);
     if (!info.isFile()) throw new Error('not a file');
@@ -333,9 +347,16 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL):
 }
 
 /** Local development has no build SHA, so use the newest emitted-file mtime. */
-async function serveLocalVersion(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const modified = await newestMtime(PUBLIC_DIR);
-  const body = Buffer.from(JSON.stringify({ version: `local-${Math.floor(modified).toString(36)}` }));
+async function serveLocalVersion(publicDir: string, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  let body;
+  try {
+    body = await readFile(join(publicDir, 'version.json'));
+    const version = String(JSON.parse(body.toString()).version ?? '');
+    if (!/^[a-zA-Z0-9._-]{1,128}$/.test(version)) throw new Error('invalid staged version');
+  } catch {
+    const modified = await newestMtime(publicDir);
+    body = Buffer.from(JSON.stringify({ version: `local-${Math.floor(modified).toString(36)}` }));
+  }
   res.writeHead(200, {
     'content-type': MIME['.json'],
     'content-length': body.length,
