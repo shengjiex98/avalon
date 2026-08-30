@@ -1,13 +1,66 @@
-import { LANGS, detectLang, t } from './i18n.js';
-import { API_BASE } from './config.js';
-import { el, h, playerAvatar, toast } from './ui.js';
-import { DEFAULT_GAME, GAME_IDS, gameFor, knownGame } from './games/index.js';
-import { createStore } from './storage.js';
-import { ApiError, createTransport } from './transport.js';
-import { createSharedRendering } from './rendering.js';
-import { createTestSeats } from './test-seats.js';
-import { createRoomSession } from './room-session.js';
-import { resetAction, startAction, switchGameAction } from './client-actions.js';
+import { LANGS, detectLang, t } from './i18n.ts';
+import { API_BASE } from './config.ts';
+import { el, h, playerAvatar, toast } from './ui.ts';
+import { DEFAULT_GAME, GAME_IDS, gameFor, knownGame } from './games/index.ts';
+import { createStore } from './storage.ts';
+import { ApiError, createTransport } from './transport.ts';
+import { createSharedRendering } from './rendering.ts';
+import { createTestSeats } from './test-seats.ts';
+import { createRoomSession } from './room-session.ts';
+import { resetAction, startAction, switchGameAction } from './client-actions.ts';
+import type { ClientAction, GameId } from '../src/contracts/actions.ts';
+import type { PublicView } from '../src/contracts/views.ts';
+import type { PlayerListOptions } from '../types/browser-renderers.d.ts';
+import type { StoredSeat } from './storage.ts';
+
+type ServerStatus = 'checking' | 'ready' | 'incompatible' | 'unreachable';
+type AppState = {
+  lang: string;
+  server: string | null;
+  serverStatus: ServerStatus;
+  serverProtocol: number | null;
+  avatarGeneration: boolean;
+  avatarUpload: string | null;
+  code: string | null;
+  playerId: string | null;
+  view: PublicView | null;
+  connected: boolean;
+  gameId: GameId;
+  selection: string[];
+  centres: number[];
+  seerMode: 'player' | 'centre';
+  muted: boolean;
+  everConnected: boolean;
+  rejoining: boolean;
+  testMode: boolean;
+  seats: StoredSeat[];
+  heldSeat: { code: string; playerId: string } | null;
+  stepEndsAt: number;
+  clockStep: number | null;
+  infoPopup: string | null;
+  logOpen: boolean;
+  source: EventSource | null;
+  retry: number;
+  latestVersion: string;
+  updateAvailable: boolean;
+};
+type GameRenderer = {
+  id: GameId;
+  paneKey?: () => string;
+  header_: () => unknown[];
+  panes: () => unknown[];
+  lobbyOptions: () => HTMLElement;
+  onView?: () => void;
+  dispose?: () => void;
+  formatParams?: (params: Record<string, unknown>, entryKey: string) => Record<string, unknown>;
+};
+
+const present = <T>(value: T | null | undefined | false): value is T => Boolean(value);
+const unrefTimer = (timer: unknown): void => {
+  if (timer && typeof timer === 'object' && 'unref' in timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+};
 
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
@@ -21,12 +74,12 @@ const PAGES_ORIGIN = 'https://shengjiex98.github.io';
 const store = createStore();
 
 /** A remembered choice outlives the game it names; fall back rather than fail. */
-function storedGameId() {
+function storedGameId(): GameId {
   const stored = store.game;
   return knownGame(stored) ? stored : DEFAULT_GAME;
 }
 
-const app = {
+const app: AppState = {
   lang: detectLang(),
   server: null,           // remote origin, or '' when Node serves this page
   serverStatus: 'checking',
@@ -57,7 +110,7 @@ const app = {
   updateAvailable: false,
 };
 
-const T = (key, params) => t(app.lang, key, params);
+const T = (key: string, params?: Record<string, unknown>) => t(app.lang, key, params);
 
 function resolveServer() {
   if (location.origin !== PAGES_ORIGIN) {
@@ -70,7 +123,7 @@ function resolveServer() {
 }
 
 /** Remote servers must use HTTPS; local Node deployments use same-origin ''. */
-function normaliseServer(raw) {
+function normaliseServer(raw: unknown): string | null {
   try {
     const url = new URL(String(raw ?? '').trim());
     return url.protocol === 'https:' ? url.origin : null;
@@ -80,7 +133,7 @@ function normaliseServer(raw) {
 }
 
 async function probeServer() {
-  clearTimeout(probeTimer);
+  if (probeTimer) clearTimeout(probeTimer);
   probeTimer = null;
   app.serverStatus = 'checking';
   app.serverProtocol = null;
@@ -101,7 +154,7 @@ async function probeServer() {
   return app.serverStatus;
 }
 
-let probeTimer = null;
+let probeTimer: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * A server that is down during a deployment used to strand the client on the
@@ -109,7 +162,7 @@ let probeTimer = null;
  * and pick the session back up the moment it answers.
  */
 function watchServer() {
-  clearTimeout(probeTimer);
+  if (probeTimer) clearTimeout(probeTimer);
   probeTimer = null;
   if (app.serverStatus !== 'unreachable') return;
   probeTimer = setTimeout(async () => {
@@ -122,55 +175,56 @@ function watchServer() {
     safeRender();
     watchServer();
   }, PROBE_RETRY_MS);
-  probeTimer?.unref?.();
+  unrefTimer(probeTimer);
 }
 
 // ---------------------------------------------------------------- transport
 
 const transport = createTransport({ app });
-let session;
-const send = (action) => session.send(action);
+let session: ReturnType<typeof createRoomSession>;
+const send = (action: ClientAction) => session.send(action);
 const connect = () => session.connect();
 const recover = () => session.recover();
 const wake = () => session.wake();
-const dropRoom = (reason, options) => session.dropRoom(reason, options);
+const dropRoom = (reason: string | null, options?: { keepSeat?: boolean }) => session.dropRoom(reason, options);
 const createRoom = () => session.createRoom();
-const joinRoom = (code, name) => session.joinRoom(code, name);
+const joinRoom = (code: string, name: string) => session.joinRoom(code, name);
 const leaveRoom = () => session.leaveRoom();
 const roomFromHash = () => session.roomFromHash();
-const enterRoom = (code, playerId) => session.enterRoom(code, playerId);
+const enterRoom = (code: string, playerId: string) => session.enterRoom(code, playerId);
 const offerHeldSeat = () => session.offerHeldSeat();
-const dismissSeat = (code) => session.dismissSeat(code);
+const dismissSeat = (code: string) => session.dismissSeat(code);
 
 /** The redraw is best-effort everywhere reconnection depends on it. */
 function safeRender() {
   try { render(); } catch (err) { console.error(err); }
 }
 
-const avatarInitial = (name) => [...String(name ?? '').trim()][0]?.toLocaleUpperCase() ?? '✦';
+const avatarInitial = (name: unknown) => [...String(name ?? '').trim()][0]?.toLocaleUpperCase() ?? '✦';
 
 /** Strip metadata and turn a phone photo into the small square the API accepts. */
-async function prepareAvatarUpload(file) {
+async function prepareAvatarUpload(file: File): Promise<string> {
   if (!file?.type?.startsWith('image/')) throw new ApiError('avatarImageOnly', {});
   if (file.size > 8 * 1024 * 1024) throw new ApiError('avatarTooLarge', {});
 
   const bitmap = await decodeAvatar(file);
-  const width = bitmap.width ?? bitmap.naturalWidth;
-  const height = bitmap.height ?? bitmap.naturalHeight;
+  const width = bitmap instanceof HTMLImageElement ? bitmap.naturalWidth : bitmap.width;
+  const height = bitmap instanceof HTMLImageElement ? bitmap.naturalHeight : bitmap.height;
   if (!width || !height) throw new ApiError('avatarImageOnly', {});
   const side = Math.min(width, height);
   const canvas = document.createElement('canvas');
   canvas.width = 256;
   canvas.height = 256;
   const context = canvas.getContext('2d');
+  if (!context) throw new ApiError('avatarImageOnly', {});
   context.drawImage(bitmap, (width - side) / 2, (height - side) / 2, side, side, 0, 0, 256, 256);
-  bitmap.close?.();
+  if (bitmap instanceof ImageBitmap) bitmap.close();
 
-  const blob = await new Promise((resolve, reject) => canvas.toBlob(
+  const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(
     (value) => value ? resolve(value) : reject(new ApiError('avatarImageOnly', {})),
     'image/webp', 0.78,
   ));
-  return new Promise((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
     reader.onerror = () => reject(new ApiError('avatarImageOnly', {}));
@@ -178,11 +232,11 @@ async function prepareAvatarUpload(file) {
   });
 }
 
-async function decodeAvatar(file) {
-  if (globalThis.createImageBitmap) return createImageBitmap(file);
+async function decodeAvatar(file: File): Promise<ImageBitmap | HTMLImageElement> {
+  if (typeof globalThis.createImageBitmap === 'function') return createImageBitmap(file);
   const url = URL.createObjectURL(file);
   try {
-    return await new Promise((resolve, reject) => {
+    return await new Promise<HTMLImageElement>((resolve, reject) => {
       const image = new Image();
       image.onload = () => resolve(image);
       image.onerror = () => reject(new ApiError('avatarImageOnly', {}));
@@ -193,19 +247,19 @@ async function decodeAvatar(file) {
   }
 }
 
-async function chooseAvatar(event) {
-  const file = event.target.files?.[0];
+async function chooseAvatar(event: Event) {
+  const file = event.target instanceof HTMLInputElement ? event.target.files?.[0] : undefined;
   if (!file) return;
   try {
     app.avatarUpload = await prepareAvatarUpload(file);
     render();
-  } catch (err) {
-    toast(T(`err.${err.key ?? 'avatarImageOnly'}`));
+  } catch (error) {
+    toast(T(`err.${error instanceof ApiError ? error.key : 'avatarImageOnly'}`));
   }
 }
 
 function readName() {
-  const input = el('nameInput');
+  const input = el<HTMLInputElement>('nameInput');
   const name = (input?.value ?? '').trim();
   if (!name) { toast(T('err.nameRequired')); input?.focus(); return null; }
   store.name = name;
@@ -217,8 +271,8 @@ function readName() {
 function render() {
   document.documentElement.lang = app.lang === 'zh' ? 'zh-CN' : 'en';
   el('langToggle').textContent = app.lang === 'en' ? LANGS.zh : LANGS.en;
-  for (const node of document.querySelectorAll('[data-i18n]')) {
-    node.textContent = T(node.dataset.i18n);
+  for (const node of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
+    node.textContent = T(node.dataset.i18n ?? '');
   }
   el('rulesBody').textContent = T(gameFor(currentGameId()).rulesKey);
   renderGameSwitch();
@@ -256,7 +310,7 @@ function renderUpdateBanner() {
 export async function checkForUpdate() {
   try {
     const url = new URL(VERSION_URL);
-    url.searchParams.set('check', Date.now());
+    url.searchParams.set('check', String(Date.now()));
     const version = await transport.latestVersion(url.href);
     if (!version || version === LOADED_VERSION) return false;
     app.latestVersion = version;
@@ -271,12 +325,12 @@ export async function checkForUpdate() {
 function startUpdateChecks() {
   void checkForUpdate();
   const timer = setInterval(checkForUpdate, VERSION_CHECK_MS);
-  timer.unref?.();
+  unrefTimer(timer);
   window.addEventListener('focus', checkForUpdate);
 }
 
 /** In a room it is the room's game; on the home screen it is what Create makes. */
-const currentGameId = () => app.view?.gameId ?? app.gameId;
+const currentGameId = (): GameId => app.view?.gameId ?? app.gameId;
 
 /**
  * The switcher in the top bar. On the home screen it picks what you would
@@ -284,11 +338,12 @@ const currentGameId = () => app.view?.gameId ?? app.gameId;
  * and everyone else sees which game they are in.
  */
 function renderGameSwitch() {
-  const inRoom = Boolean(app.code && app.view);
+  const view = app.view;
+  const inRoom = Boolean(app.code && view);
   const active = currentGameId();
-  const canSwitch = !inRoom || (app.view.phase === 'lobby' && app.view.you?.id === app.view.hostId);
+  const canSwitch = !inRoom || (view?.phase === 'lobby' && view.you?.id === view.hostId);
 
-  const pick = (gameId) => {
+  const pick = (gameId: GameId) => {
     if (gameId === active) return;
     if (!inRoom) {
       app.gameId = gameId;
@@ -315,17 +370,21 @@ function screenHome() {
   }
   if (app.serverStatus !== 'ready') {
     return [app.serverStatus === 'unreachable' && app.heldSeat ? paneHeldSeat() : null, paneServer()]
-      .filter(Boolean);
+      .filter(present);
   }
 
   // A shared link carries the room code, so someone arriving that way should
   // only have to give a name.
   const invited = ((location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1] ?? '').toUpperCase();
 
-  const doCreate = () => createRoom().catch((e) => toast(T(`err.${e.key ?? 'network'}`, e.params)));
+  const doCreate = () => createRoom().catch((error: unknown) => {
+    const key = error instanceof ApiError ? error.key : 'network';
+    const params = error instanceof ApiError ? error.params : {};
+    toast(T(`err.${key}`, params));
+  });
   const doJoin = () => {
     const name = readName();
-    const code = el('codeInput').value.trim().toUpperCase();
+    const code = el<HTMLInputElement>('codeInput').value.trim().toUpperCase();
     if (!name) return;
     if (!code) { toast(T('err.noSuchRoom')); return; }
     joinRoom(code, name);
@@ -343,11 +402,13 @@ function screenHome() {
           type: 'text', id: 'nameInput', maxlength: '24', value: store.name,
           placeholder: T('home.namePlaceholder'), autocomplete: 'nickname',
           autofocus: store.name ? null : 'autofocus',
-          oninput: (event) => {
+          oninput: (event: Event) => {
             const initial = el('avatarPreviewInitial');
-            if (initial) initial.textContent = avatarInitial(event.target.value);
+            if (event.target instanceof HTMLInputElement) initial.textContent = avatarInitial(event.target.value);
           },
-          onkeydown: (e) => { if (e.key === 'Enter') (invited ? doJoin() : doCreate()); },
+          onkeydown: (event: KeyboardEvent) => {
+            if (event.key === 'Enter') (invited ? doJoin() : doCreate());
+          },
         })),
       h('p', { class: 'muted', text: T('home.nameHint') }),
 
@@ -385,21 +446,23 @@ function screenHome() {
           h('input', {
             type: 'text', id: 'codeInput', maxlength: '8', value: invited,
             placeholder: T('home.codePlaceholder'), autocapitalize: 'characters', autocomplete: 'off',
-            onkeydown: (e) => { if (e.key === 'Enter') doJoin(); },
+            onkeydown: (event: KeyboardEvent) => { if (event.key === 'Enter') doJoin(); },
           })),
         h('button', { class: `btn ${invited ? 'primary' : ''}`, id: 'joinBtn', onclick: doJoin },
           invited ? T('home.joinRoom', { code: invited }) : T('home.go')),
       ),
     ),
     h('div', { class: 'row' },
-      h('button', { class: 'btn ghost grow', onclick: () => el('rules').showModal() }, T('home.rulesLink')),
+      h('button', {
+        class: 'btn ghost grow', onclick: () => el<HTMLDialogElement>('rules').showModal(),
+      }, T('home.rulesLink')),
       app.server ? h('button', {
         class: 'btn ghost',
         onclick: () => { app.serverStatus = 'unreachable'; render(); },
       }, T('server.change')) : null,
     ),
     app.server ? h('p', { class: 'muted', text: T('server.connected', { server: app.server }) }) : null,
-  ].filter(Boolean);
+  ].filter(present);
 }
 
 /**
@@ -410,6 +473,7 @@ function screenHome() {
  * reason a bare URL is now a way out.
  */
 function paneHeldSeat() {
+  if (!app.heldSeat) throw new Error('held-seat panel requires a remembered seat');
   const { code, playerId } = app.heldSeat;
   return h('div', { class: 'card stack held-seat' },
     h('p', { text: T('home.heldSeat', { code }) }),
@@ -445,7 +509,7 @@ function screenRejoining() {
 
 function paneServer() {
   const submit = async () => {
-    const value = normaliseServer(el('serverInput').value);
+    const value = normaliseServer(el<HTMLInputElement>('serverInput').value);
     if (!value) return toast(T('server.httpsOnly'));
     app.server = value;
     store.server = value;
@@ -470,7 +534,7 @@ function paneServer() {
       h('input', {
         type: 'url', id: 'serverInput', value: app.server, spellcheck: 'false',
         placeholder: T('server.placeholder'), autocapitalize: 'off', autocomplete: 'url',
-        onkeydown: (e) => { if (e.key === 'Enter') submit(); },
+        onkeydown: (event: KeyboardEvent) => { if (event.key === 'Enter') submit(); },
       })),
     h('button', { class: 'btn primary wide', onclick: submit }, T('server.connect')),
   );
@@ -478,6 +542,7 @@ function paneServer() {
 
 function screenGame() {
   const v = app.view;
+  if (!v) throw new Error('game screen requires a room view');
   const game = gameRenderer(v.gameId);
   const canReset = v.you?.id === v.hostId && v.phase !== 'lobby' && v.phase !== 'over';
   const paneKey = `${v.gameId}:${v.phase}:${game.paneKey?.() ?? ''}`;
@@ -510,18 +575,19 @@ function screenGame() {
   )];
 }
 
-let activeGameRenderer = null;
+let activeGameRenderer: GameRenderer | null = null;
 
 /** Construct a renderer when ownership moves to a different game. */
-function gameRenderer(gameId) {
+function gameRenderer(gameId: GameId): GameRenderer {
   if (activeGameRenderer?.id === gameId) return activeGameRenderer;
   disposeGameRenderer();
   const game = gameFor(gameId);
-  activeGameRenderer = game.createRenderer({
+  const renderer: GameRenderer = game.createRenderer({
     T, send, app, render, nameOf, namesOf, waitingNames, joinNames, playerList,
     setMuted(value) { app.muted = value; store.muted = value; },
   });
-  return activeGameRenderer;
+  activeGameRenderer = renderer;
+  return renderer;
 }
 
 function disposeGameRenderer() {
@@ -530,17 +596,20 @@ function disposeGameRenderer() {
 }
 
 /** Test compatibility without restoring mutable module bindings. */
-export const gameRendererForTests = (gameId) => gameRenderer(gameId);
+export const gameRendererForTests = (gameId: GameId) => gameRenderer(gameId);
 
-const nameOf = (id) => app.view.players.find((p) => p.id === id)?.name ?? '?';
-const joinNames = (names) => names.join(app.lang === 'zh' ? '、' : ', ');
-const namesOf = (ids) => joinNames(ids.map(nameOf));
-const waitingNames = () => namesOf(app.view.waitingFor);
+const nameOf = (id: string) => app.view?.players.find((player) => player.id === id)?.name ?? '?';
+const joinNames = (names: string[]) => names.join(app.lang === 'zh' ? '、' : ', ');
+const namesOf = (ids: string[]) => joinNames(ids.map(nameOf));
+const waitingNames = () => {
+  const view = app.view;
+  return view && 'waitingFor' in view ? namesOf(view.waitingFor) : '';
+};
 const sharedRendering = createSharedRendering({
   app, T, joinNames, currentGame: () => gameRenderer(currentGameId()),
 });
-const scrollPane = (...args) => sharedRendering.scrollPane(...args);
-const playerList = (options) => sharedRendering.playerList(options);
+const scrollPane = sharedRendering.scrollPane;
+const playerList = (options?: PlayerListOptions) => sharedRendering.playerList(options);
 const paneLog = () => sharedRendering.paneLog();
 session = createRoomSession({
   app, store, transport, T, render, readName, gameRenderer, disposeGameRenderer,
@@ -552,8 +621,9 @@ const paneTestMode = () => testSeats.pane();
 
 // ---- lobby
 
-function paneLobby(game) {
+function paneLobby(game: GameRenderer) {
   const v = app.view;
+  if (!v || v.phase !== 'lobby') throw new Error('lobby panel requires a lobby view');
   const isHost = v.you?.id === v.hostId;
   const enough = v.players.length >= v.setup.minPlayers;
 
@@ -571,7 +641,7 @@ function paneLobby(game) {
         return h('div', {
           class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
         },
-          playerAvatar(p, app.server),
+          playerAvatar(p, app.server ?? ''),
           h('span', { class: 'name', text: p.name }),
           p.id === v.hostId ? h('span', { class: 'tag', text: T('lobby.host') }) : null,
           isYou ? h('span', { class: 'visually-hidden', text: T('lobby.you') }) : null,

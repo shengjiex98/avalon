@@ -14,7 +14,7 @@ under [`src/games/`](../src/games/) and the request validation in
 Uploaded avatars are processed before storage. Automatic avatars are disabled
 unless Cloudflare credentials are configured and send the display name to
 Cloudflare Workers AI. Storage, limits, and request behavior are implemented in
-[`src/avatars.ts`](../src/avatars.ts) and [`public/app.js`](../public/app.js).
+[`src/avatars.ts`](../src/avatars.ts) and [`public/app.ts`](../public/app.ts).
 
 ## Deployment authority
 

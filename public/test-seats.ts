@@ -1,30 +1,30 @@
-// @ts-check
 // Multi-seat test mode is a client of the room session, not part of normal
 // rendering or transport. Every invented seat remains a real server seat.
 
-import { h, toast } from './ui.js';
-import { ApiError } from './transport.js';
+import { h, toast } from './ui.ts';
+import { ApiError } from './transport.ts';
+import type { JoinCommand } from '../src/contracts/actions.ts';
+import type { SessionApp } from './room-session.ts';
 
-/** @typedef {import('../src/contracts/actions.ts').JoinCommand} JoinCommand */
-/** @typedef {import('./room-session.js').SessionApp & { testMode: boolean }} TestSeatsApp */
+type TestSeatsApp = SessionApp & { testMode: boolean };
+type TestSeatsDependencies = {
+  app: TestSeatsApp;
+  store: ReturnType<typeof import('./storage.ts').createStore>;
+  T: (key: string, params?: Record<string, unknown>) => string;
+  transport: ReturnType<typeof import('./transport.ts').createTransport>;
+  connect: () => void;
+  render: () => void;
+  rememberSeat: (code: string, playerId: string, name: string) => void;
+};
 
 /** Anything `request` rejects with carries a message key; a fault carries none. */
-const apiError = (/** @type {unknown} */ error) => (error instanceof ApiError
+const apiError = (error: unknown): { key: string; params: Record<string, unknown> } => (error instanceof ApiError
   ? { key: error.key, params: error.params }
-  : { key: 'serverError', params: /** @type {Record<string, unknown>} */ ({}) });
+  : { key: 'serverError', params: {} });
 
-/**
- * @param {{
- *   app: TestSeatsApp,
- *   store: ReturnType<typeof import('./storage.js').createStore>,
- *   T: (key: string, params?: Record<string, unknown>) => string,
- *   transport: ReturnType<typeof import('./transport.js').createTransport>,
- *   connect: () => void,
- *   render: () => void,
- *   rememberSeat: (code: string, playerId: string, name: string) => void,
- * }} deps
- */
-export function createTestSeats({ app, store, T, transport, connect, render, rememberSeat }) {
+export function createTestSeats({
+  app, store, T, transport, connect, render, rememberSeat,
+}: TestSeatsDependencies) {
   function pane() {
     const rows = [h('button', {
       class: 'btn ghost', id: 'testToggle',
@@ -70,8 +70,7 @@ export function createTestSeats({ app, store, T, transport, connect, render, rem
 
     try {
       // An invented seat is a real one, so it never carries this browser's id.
-      /** @type {JoinCommand} */
-      const body = { name, avatar: false };
+      const body: JoinCommand = { name, avatar: false };
       const response = await transport.joinRoom(code, body);
       rememberSeat(code, response.playerId, name);
       render();
@@ -87,8 +86,7 @@ export function createTestSeats({ app, store, T, transport, connect, render, rem
     if (!code || !mine || extras.length === 0) return;
     if (app.playerId !== mine.id) actAs(mine.id);
 
-    /** @type {string[]} */
-    const gone = [];
+    const gone: string[] = [];
     for (const seat of extras) {
       try {
         await transport.action(code, seat.id, { type: 'leave' });
@@ -105,8 +103,7 @@ export function createTestSeats({ app, store, T, transport, connect, render, rem
     render();
   }
 
-  /** @param {string} playerId */
-  function actAs(playerId) {
+  function actAs(playerId: string) {
     if (playerId === app.playerId || !app.code) return;
     app.playerId = playerId;
     store.setPlayer(app.code, playerId);

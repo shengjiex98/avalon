@@ -1,61 +1,65 @@
-// @ts-check
 // One room session: reconnect policy, seat lifecycle, and stream ownership.
 
-import { toast } from './ui.js';
-import { ApiError } from './transport.js';
-
-/** @typedef {import('../src/contracts/actions.ts').JoinCommand} JoinCommand */
-/** @typedef {import('../src/contracts/actions.ts').ClientAction} ClientAction */
-/** @typedef {import('../src/contracts/views.ts').PublicView} PublicView */
-/** @typedef {import('./storage.js').StoredSeat} StoredSeat */
+import { toast } from './ui.ts';
+import { ApiError } from './transport.ts';
+import type { ClientAction, GameId, JoinCommand } from '../src/contracts/actions.ts';
+import type { PublicView } from '../src/contracts/views.ts';
+import type { StoredSeat } from './storage.ts';
 
 /**
- * What a session needs from the client's app state. app.js owns the object;
+ * What a session needs from the client's app state. app.ts owns the object;
  * naming the slice it lends out here is what lets the compiler check the
  * request bodies below against the server's own contract.
- * @typedef {{
- *   avatarUpload: string | null,
- *   centres: number[],
- *   code: string | null,
- *   connected: boolean,
- *   everConnected: boolean,
- *   gameId: string,
- *   heldSeat: { code: string, playerId: string } | null,
- *   infoPopup: unknown,
- *   playerId: string | null,
- *   rejoining: boolean,
- *   retry: number,
- *   seats: StoredSeat[],
- *   selection: string[],
- *   serverStatus: string,
- *   view: PublicView | null,
- * }} SessionApp
  */
+export interface SessionApp {
+  avatarUpload: string | null;
+  centres: number[];
+  code: string | null;
+  connected: boolean;
+  everConnected: boolean;
+  gameId: GameId;
+  heldSeat: { code: string; playerId: string } | null;
+  infoPopup: string | null;
+  playerId: string | null;
+  rejoining: boolean;
+  retry: number;
+  seats: StoredSeat[];
+  selection: string[];
+  serverStatus: string;
+  view: PublicView | null;
+}
+
+type Store = ReturnType<typeof import('./storage.ts').createStore>;
+type Transport = ReturnType<typeof import('./transport.ts').createTransport>;
+type GameRenderer = { onView?: () => void };
+type SessionDependencies = {
+  app: SessionApp;
+  store: Store;
+  transport: Transport;
+  T: (key: string, params?: Record<string, unknown>) => string;
+  render: () => void;
+  readName: () => string | null;
+  gameRenderer: (gameId: GameId) => GameRenderer;
+  disposeGameRenderer: () => void;
+};
+
+const unrefTimer = (timer: unknown): void => {
+  if (timer && typeof timer === 'object' && 'unref' in timer && typeof timer.unref === 'function') {
+    timer.unref();
+  }
+};
 
 const RETRY_STEPS = 6;
 
 /** Anything `request` rejects with carries a message key; a fault carries none. */
-const apiError = (/** @type {unknown} */ error) => (error instanceof ApiError
+const apiError = (error: unknown): { key: string; params: Record<string, unknown> } => (error instanceof ApiError
   ? { key: error.key, params: error.params }
-  : { key: 'serverError', params: /** @type {Record<string, unknown>} */ ({}) });
+  : { key: 'serverError', params: {} });
 
-/**
- * @param {{
- *   app: SessionApp,
- *   store: ReturnType<typeof import('./storage.js').createStore>,
- *   transport: ReturnType<typeof import('./transport.js').createTransport>,
- *   T: (key: string, params?: Record<string, unknown>) => string,
- *   render: () => void,
- *   readName: () => string,
- *   gameRenderer: (gameId: string) => { onView?: () => void },
- *   disposeGameRenderer: () => void,
- * }} deps
- */
 export function createRoomSession({
   app, store, transport, T, render, readName, gameRenderer, disposeGameRenderer,
-}) {
-  /** @type {ReturnType<typeof setTimeout> | undefined} */
-  let reconnectTimer;
+}: SessionDependencies) {
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let recovering = false;
   let lastAttempt = 0;
 
@@ -65,8 +69,7 @@ export function createRoomSession({
     try { render(); } catch (error) { console.error(error); }
   }
 
-  /** @param {ClientAction} action */
-  function send(action) {
+  function send(action: ClientAction) {
     if (!app.code || !app.playerId) return Promise.resolve(undefined);
     return transport.action(app.code, app.playerId, action).catch((error) => {
       const { key, params } = apiError(error);
@@ -82,8 +85,7 @@ export function createRoomSession({
     transport.open(app.code, app.playerId);
   }
 
-  /** @param {PublicView} next */
-  function receiveView(next) {
+  function receiveView(next: PublicView) {
     app.connected = true;
     app.everConnected = true;
     app.retry = 0;
@@ -106,15 +108,14 @@ export function createRoomSession({
     safeRender();
   }
 
-  /** @param {number} [delay] */
-  function scheduleReconnect(delay) {
+  function scheduleReconnect(delay?: number) {
     if (reconnectTimer || !app.code) return;
     app.retry = Math.min(app.retry + 1, RETRY_STEPS);
     reconnectTimer = setTimeout(() => {
       reconnectTimer = undefined;
       void recover();
     }, delay ?? 500 * 2 ** (app.retry - 1));
-    reconnectTimer?.unref?.();
+    unrefTimer(reconnectTimer);
   }
 
   async function recover() {
@@ -147,11 +148,9 @@ export function createRoomSession({
     }
   }
 
-  /** @param {string} code @param {string} playerId */
-  async function retakeSeat(code, playerId) {
+  async function retakeSeat(code: string, playerId: string) {
     try {
-      /** @type {JoinCommand} */
-      const body = { name: store.nameFor(code, playerId), playerId };
+      const body: JoinCommand = { name: store.nameFor(code, playerId), playerId };
       await transport.joinRoom(code, body);
       return true;
     } catch (error) {
@@ -171,8 +170,7 @@ export function createRoomSession({
     scheduleReconnect(0);
   }
 
-  /** @param {string | null} reasonKey @param {{ keepSeat?: boolean }} [options] */
-  function dropRoom(reasonKey, { keepSeat = false } = {}) {
+  function dropRoom(reasonKey: string | null, { keepSeat = false }: { keepSeat?: boolean } = {}) {
     const code = app.code;
     const playerId = app.playerId;
     clearTimeout(reconnectTimer);
@@ -208,15 +206,13 @@ export function createRoomSession({
     await joinRoom(code, name);
   }
 
-  /** @param {string} code @param {string} name */
-  async function joinRoom(code, name) {
+  async function joinRoom(code: string, name: string) {
     code = code.toUpperCase();
     try {
       // A room this browser has never sat in contributes no id at all. Sending
       // one it does not have is what the server reads as a malformed request.
       const held = store.playerFor(code);
-      /** @type {JoinCommand} */
-      const body = { name };
+      const body: JoinCommand = { name };
       if (held) body.playerId = held;
       if (app.avatarUpload) body.avatar = app.avatarUpload;
       const response = await transport.joinRoom(code, body);
@@ -237,8 +233,7 @@ export function createRoomSession({
     }
   }
 
-  /** @param {string} code @param {string} playerId @param {string} name */
-  function rememberSeat(code, playerId, name) {
+  function rememberSeat(code: string, playerId: string, name: string) {
     app.seats = store.seatsFor(code).filter((seat) => seat.id !== playerId);
     app.seats.push({ id: playerId, name });
     store.setSeats(code, app.seats);
@@ -261,8 +256,7 @@ export function createRoomSession({
     return (location.hash.match(/^#\/([A-Za-z0-9]{4,8})$/) ?? [])[1]?.toUpperCase();
   }
 
-  /** @param {string} code @param {string} playerId */
-  async function enterRoom(code, playerId) {
+  async function enterRoom(code: string, playerId: string) {
     app.heldSeat = null;
     app.code = code;
     app.playerId = playerId;
@@ -292,24 +286,20 @@ export function createRoomSession({
     if (status && (!status.exists || !status.seated)) forgetSeat(code);
   }
 
-  /** @param {string} code */
-  function dismissSeat(code) {
+  function dismissSeat(code: string) {
     if ((store.room ?? '').toUpperCase() === code) store.room = null;
     if (app.heldSeat?.code === code) app.heldSeat = null;
   }
 
-  /** @param {string} code */
-  function forgetSeat(code) {
+  function forgetSeat(code: string) {
     store.clearPlayer(code);
     store.clearSeats(code);
     dismissSeat(code);
   }
 
-  /** @param {string} code @param {string} playerId */
-  async function rejoin(code, playerId) {
+  async function rejoin(code: string, playerId: string) {
     try {
-      /** @type {JoinCommand} */
-      const body = { name: store.nameFor(code, playerId), playerId };
+      const body: JoinCommand = { name: store.nameFor(code, playerId), playerId };
       await transport.joinRoom(code, body);
       connect();
     } catch (error) {

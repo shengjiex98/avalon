@@ -40,7 +40,8 @@ cd avalon
 npm start
 ```
 
-No database or build step is required.
+`npm start` compiles the browser modules and starts the server. No database or
+separate production build setup is required.
 
 Open [http://localhost:8420](http://localhost:8420) on the host computer and
 create a room. Players on the same network open

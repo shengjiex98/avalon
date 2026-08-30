@@ -21,7 +21,7 @@ import type { GameId } from './contracts/actions.ts';
 import type { PublicView } from './contracts/views.ts';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
-const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));
+const PUBLIC_DIR = fileURLToPath(new URL('../build/public/', import.meta.url));
 
 /**
  * The commit this process is serving, read from the checkout rather than from
@@ -332,7 +332,7 @@ async function serveStatic(req: IncomingMessage, res: ServerResponse, url: URL):
   }
 }
 
-/** Local development has no build SHA, so use the newest public-file mtime. */
+/** Local development has no build SHA, so use the newest emitted-file mtime. */
 async function serveLocalVersion(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const modified = await newestMtime(PUBLIC_DIR);
   const body = Buffer.from(JSON.stringify({ version: `local-${Math.floor(modified).toString(36)}` }));

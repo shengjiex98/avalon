@@ -1,26 +1,22 @@
 {
   "compilerOptions": {
-    "allowJs": true,
-    "allowImportingTsExtensions": true,
-    "checkJs": false,
     "erasableSyntaxOnly": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "noEmit": true,
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "noEmitOnError": true,
     "noImplicitAny": true,
     "noUncheckedIndexedAccess": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": ".",
+    "sourceMap": false,
     "strict": true,
     "strictNullChecks": true,
+    "target": "ES2022",
     "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": [
-    "public/**/*.ts",
-    "src/**/*.js",
-    "src/**/*.ts",
-    "test/**/*.test.ts",
-    "types/**/*.ts"
-  ]
+  "include": ["public/**/*.ts"]
 }

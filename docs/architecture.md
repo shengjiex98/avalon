@@ -16,10 +16,8 @@ requests into room actions but does not implement game rules.
 
 ```text
 browser
-  ├── public/app.js
-  ├── public/storage.js, public/transport.js, public/room-session.js
-  ├── public/rendering.js and public/test-seats.js
-  └── public/games/* (constructed renderers)
+  ├── build/public/* (generated browser modules and static assets)
+  └── authored under public/*.ts and public/games/*.ts
           │ JSON + SSE
           ▼
 src/server.js (compatibility launcher) ──> src/server.ts
@@ -38,7 +36,8 @@ The browser entrypoint composes owners for durable storage, HTTP and stream
 transport, the active room session, shared rendering, and test seats. A game
 renderer receives an explicit context and owns its disposable resources; One
 Night countdowns and audio therefore end with that renderer rather than living
-as module globals.
+as module globals. `npm run build:browser` emits the browser-loadable tree under
+`build/public/`; the generated directory is never authored or committed.
 
 ## State and secrecy
 
@@ -60,7 +59,7 @@ The Node-hosted client and server move together. The optional GitHub Pages
 client moves only after the server, so it checks the server's API protocol
 before joining a room. Compatibility constants and checks live in
 [`src/api-protocol.ts`](../src/api-protocol.ts) and
-[`public/app.js`](../public/app.js).
+[`public/app.ts`](../public/app.ts).
 
 ## Deployment boundary
 

@@ -3,7 +3,7 @@
 // pipeline that keeps the two on the same commit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -13,7 +13,7 @@ import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
 test('every page load resolves the current server-hosted version', async () => {
-  const bootstrap = await read('../public/bootstrap.js');
+  const bootstrap = await read('../public/bootstrap.ts');
   assert.match(bootstrap, /version\.json/);
   assert.match(bootstrap, /cache:\s*'no-store'/);
   assert.match(bootstrap, /app\.js\?v=/);
@@ -44,17 +44,17 @@ test('the connection banner lives outside the top bar', async () => {
 // Pages ships on its own release train, so the client cannot import the
 // server's constant. It carries a copy, and the two must be the same number.
 test('the Pages client declares the same API protocol as the server', async () => {
-  const source = await read('../public/app.js');
+  const source = await read('../public/app.ts');
   const declared = /^const API_PROTOCOL = (\d+);$/m.exec(source);
-  assert.ok(declared, 'public/app.js must declare API_PROTOCOL as a plain number');
+  assert.ok(declared, 'public/app.ts must declare API_PROTOCOL as a plain number');
   assert.equal(Number(declared[1]), API_PROTOCOL);
 });
 
 test('the browser defaults to Node but can remember one HTTPS backend', async () => {
-  const source = await read('../public/app.js');
-  const config = await read('../public/config.js');
-  const storage = await read('../public/storage.js');
-  const transport = await read('../public/transport.js');
+  const source = await read('../public/app.ts');
+  const config = await read('../public/config.ts');
+  const storage = await read('../public/storage.ts');
+  const transport = await read('../public/transport.ts');
   assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
   assert.match(source, /location\.origin !== PAGES_ORIGIN/);
   assert.match(source, /normaliseServer\(API_BASE\)/);
@@ -67,17 +67,17 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
 });
 
 test('game renderers are constructed without mutable module bindings', async () => {
-  for (const file of ['../public/games/avalon.js', '../public/games/onuw.js']) {
+  for (const file of ['../public/games/avalon.ts', '../public/games/onuw.ts']) {
     const source = await read(file);
-    assert.match(source, /export function createRenderer\(ctx\)/);
+    assert.match(source, /export function createRenderer\(ctx:/);
     assert.doesNotMatch(source, /export function bind|\blet (?:T|send|app)\b/);
   }
 });
 
 test('the Pages renderers consume server-owned setup metadata', async () => {
-  const app = await read('../public/app.js');
-  const avalon = await read('../public/games/avalon.js');
-  const onuw = await read('../public/games/onuw.js');
+  const app = await read('../public/app.ts');
+  const avalon = await read('../public/games/avalon.ts');
+  const onuw = await read('../public/games/onuw.ts');
 
   assert.match(app, /v\.setup\.minPlayers/);
   assert.match(avalon, /v\.setup\.options/);
@@ -90,10 +90,12 @@ test('the Pages renderers consume server-owned setup metadata', async () => {
   }
 });
 
-test('development type checking is locked, no-emit, and separate from the release gate', async () => {
+test('development checking and browser emit are explicit package contracts', async () => {
   const pkg = JSON.parse(await read('../package.json'));
   const lock = JSON.parse(await read('../package-lock.json'));
   const config = JSON.parse(await read('../tsconfig.json'));
+  const browserConfig = JSON.parse(await read('../tsconfig.browser.json'));
+  const browserBuild = await read('../scripts/build-browser.mjs');
   const actions = await read('../src/contracts/actions.ts');
   const persistence = await read('../src/contracts/persistence.ts');
   const runtime = await read('../src/contracts/runtime.ts');
@@ -118,18 +120,18 @@ test('development type checking is locked, no-emit, and separate from the releas
 
   // The browser client is what talks to the API, so leaving it out of the
   // program is what let a request body drift from the contract unnoticed.
-  assert.ok(config.include.includes('public/**/*.js'), 'the client is type checked too');
-  for (const file of ['../public/transport.js', '../public/room-session.js',
-                      '../public/storage.js', '../public/test-seats.js',
-                      '../public/client-actions.js', '../public/rendering.js',
-                      '../public/assert-never.js', '../public/games/index.js',
-                      '../public/games/avalon.js', '../public/games/onuw.js']) {
-    assert.match(await read(file), /^\/\/ @ts-check/, `${file} opts into checking`);
-  }
+  assert.ok(config.include.includes('public/**/*.ts'), 'the authored client is type checked too');
+  assert.equal(pkg.scripts['build:browser'], 'node scripts/build-browser.mjs');
+  assert.equal(browserConfig.compilerOptions.rewriteRelativeImportExtensions, true);
+  assert.equal(browserConfig.compilerOptions.sourceMap, false);
+  assert.equal(browserConfig.compilerOptions.module, 'esnext');
+  assert.match(browserBuild, /build\/public/);
+  assert.deepEqual((await readdir(new URL('../public/', import.meta.url)))
+    .filter((file) => file.endsWith('.js')), [], 'converted JavaScript sources are deleted');
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
-  assert.doesNotMatch(deploy, /npm ci|npm run typecheck/,
-    'a release runs plain JavaScript and never installs development tools');
+  assert.doesNotMatch(deploy, /npm run typecheck/,
+    'deployment executes the checked browser compiler but not a second typecheck gate');
 });
 
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
@@ -148,10 +150,11 @@ test('the deploy workflow tests the exact archive with trusted checked-out code'
   assert.doesNotMatch(workflow, /\.tar\.gz\.sha256/);
   assert.match(workflow, /GH_REPO:\s*\$\{\{ github\.repository \}\}/);
   assert.match(workflow, /API_BASE:\s*\$\{\{ vars\.API_BASE \}\}/);
-  assert.match(workflow, /writeFileSync\("public\/config\.js"/);
-  assert.match(workflow, /stamp-frontend-version\.mjs public "\$GITHUB_SHA"/);
+  assert.match(workflow, /npm ci[\s\S]*npm run build:browser/);
+  assert.match(workflow, /writeFileSync\("build\/public\/config\.js"/);
+  assert.match(workflow, /stamp-frontend-version\.mjs build\/public "\$GITHUB_SHA"/);
   assert.match(workflow, /actions\/deploy-pages/);
-  assert.match(workflow, /path:\s*public/);
+  assert.match(workflow, /path:\s*build\/public/);
   assert.doesNotMatch(workflow, /ALLOW_ORIGIN/);
 });
 
