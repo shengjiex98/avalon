@@ -611,7 +611,7 @@ input[type=text]:focus { outline-color: var(--gold); }
 .role-portrait {
   --portrait-x: 0%; --portrait-y: 0%;
   display: block; flex: 0 0 auto; width: 110px; height: 110px; border-radius: 50%;
-  background-image: url('./art/jrpg-role-atlas.webp');
+  background-image: url('/art/jrpg-role-atlas.webp');
   background-repeat: no-repeat; background-size: 500% 400%;
   background-position: var(--portrait-x) var(--portrait-y);
   box-shadow: 0 0 0 2px #10182f, 0 0 0 3px var(--gold), 0 5px 16px rgba(0,0,0,.45);
@@ -666,7 +666,7 @@ input[type=text]:focus { outline-color: var(--gold); }
   box-shadow: inset 0 0 0 2px #070d1d;
 }
 .centre-card.card-back {
-  background: #071126 url('./art/card-back.webp') center / cover no-repeat;
+  background: #071126 url('/art/card-back.webp') center / cover no-repeat;
 }
 .centre-card.card-back::after {
   content: ""; position: absolute; inset: 3px; border: 1px solid rgba(255,226,142,.34);

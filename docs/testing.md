@@ -8,8 +8,9 @@ npm test
 
 The project uses Node's built-in test runner, needs no network access or
 browser after `npm ci`, and discovers JavaScript and TypeScript tests under
-`test/`. The gate first builds the browser into `build/public/`, so HTTP and
-emitted-entry tests exercise the same module shape a browser receives.
+`test/`. The gate first builds the browser into `build/public/`; emitted-entry
+tests select the fingerprinted module through Vite's build manifest, and HTTP
+tests exercise the same output a browser receives.
 
 Development also checks the TypeScript contracts with the locked tools:
 

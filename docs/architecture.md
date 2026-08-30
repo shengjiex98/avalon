@@ -16,7 +16,7 @@ requests into room actions but does not implement game rules.
 
 ```text
 browser
-  └── build/public/* (generated browser modules and copied public assets)
+  └── build/public/* (fingerprinted browser artifact and copied public assets)
           │ JSON + SSE
           ▼
 src/server/main.ts
@@ -26,10 +26,11 @@ src/server/rooms.ts ──> src/server/persistence.ts
           └──> src/server/games/*
 ```
 
-Authored browser modules live under [`src/client/`](../src/client/), Node-only
-code under [`src/server/`](../src/server/), and contracts used across that
-boundary under [`src/contracts/`](../src/contracts/). Copy-only HTML, CSS, art,
-and audio live under [`public/`](../public/).
+Authored browser modules and styles live under [`src/client/`](../src/client/),
+Node-only code under [`src/server/`](../src/server/), and contracts used across
+that boundary under [`src/contracts/`](../src/contracts/). The browser entry is
+[`index.html`](../index.html); [`public/`](../public/) holds only runtime
+configuration and copy-only art and audio.
 
 The game registry is [`src/server/games/index.ts`](../src/server/games/index.ts).
 Shared room behavior is in [`src/server/lobby.ts`](../src/server/lobby.ts) and
@@ -40,8 +41,10 @@ The browser entrypoint composes owners for durable storage, HTTP and stream
 transport, the active room session, shared rendering, and test seats. A game
 renderer receives an explicit context and owns its disposable resources; One
 Night countdowns and audio therefore end with that renderer rather than living
-as module globals. `npm run build:browser` emits the browser-loadable tree under
-`build/public/`; the generated directory is never authored or committed.
+as module globals. `npm run build:browser` uses
+[`vite.config.ts`](../vite.config.ts) to emit the browser-loadable tree and its
+manifest under `build/public/`; the generated directory is never authored or
+committed.
 
 ## State and secrecy
 

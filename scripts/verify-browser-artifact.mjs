@@ -1,15 +1,13 @@
 import { access, readFile, readdir } from 'node:fs/promises';
-import { dirname, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
 
-const REQUIRED = [
-  'index.html', 'styles.css', 'bootstrap.js', 'app.js', 'config.js',
+const REQUIRED_COPY_ONLY = [
   'art/card-back.webp', 'art/jrpg-role-atlas.webp',
   'audio/onuw/unlock.wav', 'audio/onuw/en/wake-dawn.mp3', 'audio/onuw/zh/wake-dawn.mp3',
 ];
-const IMPORT = /(\bfrom\s+|\bimport\s*(?:\(\s*)?)(['"])(\.\.?\/[^'"]+\.js(?:\?[^'"]*)?)\2/g;
 
 export async function verifyBrowserArtifact(directory, {
   target,
@@ -21,41 +19,85 @@ export async function verifyBrowserArtifact(directory, {
   apiBase = apiBase.trim().replace(/\/+$/, '');
 
   const root = resolve(directory);
-  for (const name of REQUIRED) await required(root, name);
+  for (const name of ['index.html', 'config.js', 'version.json', '.vite/manifest.json', ...REQUIRED_COPY_ONLY]) {
+    await required(root, name);
+  }
 
   const files = await filesBelow(root);
   const forbidden = files.find((name) => name.endsWith('.ts') || name.endsWith('.map'));
   if (forbidden) throw new Error(`development file shipped in browser artifact: ${forbidden}`);
 
-  for (const name of files.filter((file) => file.endsWith('.js'))) {
-    const source = await readFile(join(root, name), 'utf8');
-    for (const match of source.matchAll(IMPORT)) {
-      const specifier = match[3];
-      const [pathname, query = ''] = specifier.split('?', 2);
-      const imported = resolve(dirname(join(root, name)), pathname);
-      if (relative(root, imported).startsWith('..')) throw new Error(`${name} imports outside the artifact: ${specifier}`);
-      await required(root, relative(root, imported));
-      if (target === 'pages' && query !== `v=${encodeURIComponent(commit)}`) {
-        throw new Error(`${name} has an unstamped import: ${specifier}`);
-      }
-      if (target === 'self-hosted' && query) throw new Error(`${name} has an unexpected stamped import: ${specifier}`);
-    }
+  const manifest = await readJson(root, '.vite/manifest.json', 'Vite manifest');
+  const entry = manifest['index.html'];
+  if (!entry || typeof entry !== 'object' || entry.isEntry !== true || typeof entry.file !== 'string') {
+    throw new Error('Vite manifest does not select the index.html entry');
+  }
+
+  const outputs = new Set();
+  collectOutputs(manifest, 'index.html', outputs, new Set());
+  for (const name of outputs) await required(root, safeOutput(root, name));
+
+  const html = await readFile(join(root, 'index.html'), 'utf8');
+  const configPosition = html.indexOf('./config.js');
+  const entryPosition = html.indexOf(`./${entry.file}`);
+  if (configPosition < 0 || entryPosition < 0 || configPosition > entryPosition) {
+    throw new Error('index.html does not load runtime configuration before its Vite entry');
+  }
+  for (const css of entry.css ?? []) {
+    if (!html.includes(`./${css}`)) throw new Error(`index.html does not load manifest stylesheet ${css}`);
   }
 
   const config = await readFile(join(root, 'config.js'), 'utf8');
-  const configured = /export const API_BASE = (['"])(.*?)\1;/.exec(config)?.[2];
-  if (configured !== apiBase) {
-    throw new Error(`${target} config.js does not contain the packaged API base`);
+  const configured = /Object\.freeze\((\{.*\})\)/.exec(config)?.[1];
+  let value;
+  try {
+    value = JSON.parse(configured ?? '');
+  } catch {
+    throw new Error(`${target} config.js does not contain a configuration object`);
   }
-  const protocol = Number(/export const API_PROTOCOL = (\d+);/.exec(config)?.[1]);
-  if (protocol !== API_PROTOCOL) {
+  if (value.apiBase !== apiBase) throw new Error(`${target} config.js does not contain the packaged API base`);
+  if (value.apiProtocol !== API_PROTOCOL) {
     throw new Error(`${target} config.js does not contain API protocol ${API_PROTOCOL}`);
   }
 
-  if (target === 'pages') {
-    const version = JSON.parse(await readFile(join(root, 'version.json'), 'utf8'));
-    if (version.version !== commit) throw new Error('Pages version does not match its commit');
-    await required(root, '.nojekyll');
+  const javascript = [...outputs].filter((name) => name.endsWith('.js'));
+  const sources = await Promise.all(javascript.map((name) => readFile(join(root, name), 'utf8')));
+  if (!sources.some((source) => source.includes(commit))) {
+    throw new Error('browser entry graph does not contain its release identity');
+  }
+
+  const version = await readJson(root, 'version.json', `${target} version`);
+  if (version.version !== commit) throw new Error(`${target} version does not match its commit`);
+  if (target === 'pages') await required(root, '.nojekyll');
+  else if (files.includes('.nojekyll')) throw new Error('self-hosted browser artifact contains Pages metadata');
+}
+
+function collectOutputs(manifest, key, outputs, seen) {
+  if (seen.has(key)) return;
+  seen.add(key);
+  const chunk = manifest[key];
+  if (!chunk || typeof chunk !== 'object') throw new Error(`Vite manifest references missing chunk ${key}`);
+  for (const name of [chunk.file, ...(chunk.css ?? []), ...(chunk.assets ?? [])]) {
+    if (typeof name !== 'string') throw new Error(`Vite manifest has an invalid output for ${key}`);
+    outputs.add(name);
+  }
+  for (const imported of [...(chunk.imports ?? []), ...(chunk.dynamicImports ?? [])]) {
+    if (typeof imported !== 'string') throw new Error(`Vite manifest has an invalid import for ${key}`);
+    collectOutputs(manifest, imported, outputs, seen);
+  }
+}
+
+function safeOutput(root, name) {
+  const output = resolve(root, name);
+  if (relative(root, output).startsWith('..')) throw new Error(`Vite manifest output escapes the artifact: ${name}`);
+  return relative(root, output);
+}
+
+async function readJson(root, name, description) {
+  try {
+    return JSON.parse(await readFile(join(root, name), 'utf8'));
+  } catch (error) {
+    throw new Error(`cannot read ${description}: ${error.message}`);
   }
 }
 

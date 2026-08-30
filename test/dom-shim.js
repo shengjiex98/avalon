@@ -176,6 +176,12 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     close() { this.closed = true; }
   }
 
+  class MutationObserverStub {
+    observe() {}
+    disconnect() {}
+    takeRecords() { return []; }
+  }
+
   class AudioStub {
     static instances = [];
     static playError = null;
@@ -228,6 +234,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
     location,
     fetch: fetchStub,
     EventSource: EventSourceStub,
+    MutationObserver: MutationObserverStub,
     Audio: AudioStub,
   });
 

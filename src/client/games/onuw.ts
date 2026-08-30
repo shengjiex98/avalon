@@ -39,7 +39,7 @@ let announcementAudio: HTMLAudioElement | null = null;
 let announcementQueue: string[] = [];
 let announcementGeneration = 0;
 
-const AUDIO_ROOT = new URL('../audio/onuw/', import.meta.url);
+const AUDIO_ROOT = new URL(/* @vite-ignore */ '../audio/onuw/', import.meta.url);
 
 function audioPlayer() {
   if (announcementAudio || typeof Audio === 'undefined') return announcementAudio;
