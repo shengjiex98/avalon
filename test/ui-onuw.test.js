@@ -203,7 +203,7 @@ test('everyone sees the same announcement and the same countdown', () => {
   const screens = game.room.players.map((p) => show(game, p.id).text);
   for (const text of screens) {
     assert.match(text, /Seer, wake up/, 'the whole table hears the same call');
-    assert.match(text, /Step 3 of 5/);
+    assert.match(text, /Step 3 of 6/);
   }
   assert.match(dom.fixtures.view.byId('nightClock').text, /^\d+$/, 'a countdown is on screen');
 });
@@ -224,6 +224,16 @@ test('a player whose step it is not gets no controls at all', () => {
   assert.match(bystander.text, /Eyes closed/);
   assert.equal(labelled(bystander, /^Confirm$/).length, 0);
   assert.equal(bystander.byClass('player').filter((n) => n.tagName === 'BUTTON').length, 0);
+});
+
+test('dawn has its own countdown and tells everyone to open their eyes', () => {
+  const game = dealt(['seer', 'werewolf', 'robber', 'villager', 'troublemaker', 'tanner']);
+  stepTo(game, 'dawn');
+  const view = show(game, 'p1');
+
+  assert.match(view.text, /Everyone, wake up/);
+  assert.match(view.byId('nightClock').text, /^\d+$/);
+  assert.doesNotMatch(view.text, /Eyes closed/);
 });
 
 test('the night calls the deck\'s roles and no others', () => {
@@ -293,7 +303,9 @@ test('the reference popup lists the deck, the abilities and the order', () => {
   assert.match(open.text, /Swap your card with another player/, 'abilities are spelled out');
   assert.match(open.text, /Night order/);
   const order = open.byClass('order')[0].childNodes.map((li) => li.textContent);
-  assert.deepEqual(order, ['Everyone closes their eyes', 'Werewolf', 'Seer', 'Robber', 'Troublemaker']);
+  assert.deepEqual(order, [
+    'Everyone closes their eyes', 'Werewolf', 'Seer', 'Robber', 'Troublemaker', 'Everyone, wake up.',
+  ]);
   assert.equal(order.filter((_, i) => open.byClass('order')[0].childNodes[i].className === 'now').length, 1);
 
   open.byId('infoPopupBackdrop').dispatch('click');
