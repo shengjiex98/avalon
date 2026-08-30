@@ -756,8 +756,9 @@ function paneOver() {
   const won = v.youWon;
   const votesReceived = new Map(v.players.map((p) => [p.id, 0]));
   for (const p of v.players) {
-    if (p.votedFor && votesReceived.has(p.votedFor)) {
-      votesReceived.set(p.votedFor, votesReceived.get(p.votedFor) + 1);
+    const count = p.votedFor ? votesReceived.get(p.votedFor) : undefined;
+    if (p.votedFor && count !== undefined) {
+      votesReceived.set(p.votedFor, count + 1);
     }
   }
   const winners = v.winners.length
