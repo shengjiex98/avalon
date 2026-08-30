@@ -15,7 +15,7 @@ const manifest = {
   stateVersion: STATE_VERSION,
   apiProtocol: API_PROTOCOL,
   nodeMajor: 24,
-  deployerSchema: 2,
+  deployerSchema: 3,
 };
 
 await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`);

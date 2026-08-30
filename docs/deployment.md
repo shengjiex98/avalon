@@ -1,9 +1,9 @@
 # Deployment
 
-`npm start` compiles the browser client, then runs a single Node process that
-serves the emitted client and API. Production releases already contain that
-output, so the host still installs nothing and runs no compiler. Production
-adds an immutable-release updater and, optionally, a GitHub Pages client.
+`npm start` compiles the browser client, then runs the native server source for
+checkout development. Production releases contain both emitted runtime
+outputs, so the host installs nothing and runs no compiler. Production adds an
+immutable-release updater and, optionally, a GitHub Pages client.
 
 ## Runtime state
 
@@ -33,7 +33,8 @@ The running application and deployment authority are separate:
 ~/.local/libexec/avalon-deploy/
 ├── updater.sh
 ├── verify-pointer.mjs
-└── listen.mjs
+├── listen.mjs
+└── start.mjs
 
 ~/.config/systemd/user/
 ├── avalon.service
@@ -65,7 +66,7 @@ repository in `~/.config/avalon.env`; consult the unit files and
 
 ```text
 push main
-  -> install and build the fingerprinted browser artifact once
+  -> install and build both runtime outputs once
   -> stage and test one immutable archive and one Pages tree
   -> publish archive, then latest.json
   -> send an untrusted "deploy" wake-up
@@ -74,20 +75,19 @@ push main
   -> publish the Pages client
 ```
 
-The archive contains native server source, production packages, the emitted
-self-hosted client, operational files, and `release.json`. `latest.json`
-selects a commit and supplies the archive's SHA-256 digest. Publishing the
-archive before the pointer prevents selection of missing bytes. The Pages job
-downloads the client artifact already tested beside that archive; it performs
+The archive contains only `release.json`, the bundled Node entry, and the
+emitted self-hosted client. `latest.json` selects a commit and supplies the
+archive's SHA-256 digest. Publishing the archive before the pointer prevents
+selection of missing bytes. The host compares its download with the digest of
+the exact file CI published; it never rebuilds the archive. The Pages job
+downloads the client artifact already tested beside that archive and performs
 no install, compilation, configuration, or stamping.
 
 A published run then prunes every asset except `latest.json` and the archive it
 names. Nothing else is reachable.
 
-The archive is reproducible: the same commit packages to the same bytes, which
-is what lets the host trust the digest in `latest.json`. That requires GNU tar,
-so packaging refuses to start on a BSD tar rather than producing an archive the
-host would reject.
+Packaging uses ordinary `tar`, writes a partial archive, reads it back, and
+only then publishes it under its final name.
 
 The workflow definition is authoritative for publication and ordering:
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml). Packaging and
@@ -110,8 +110,9 @@ exact-commit health check restores the previous release and snapshot.
 
 The transaction, safety decisions, retention policy, supported overrides, and
 operator force option are defined in [`deploy/updater.sh`](../deploy/updater.sh)
-and covered by [`test/updater.test.js`](../test/updater.test.js). Candidate
-release scripts are never executed.
+and covered by [`test/updater.test.js`](../test/updater.test.js). Application
+releases contain no deployment scripts; candidate code is never used to make a
+safety decision.
 
 ## Public access
 

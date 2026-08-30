@@ -1,7 +1,6 @@
 # Build and deployment simplification plan
 
-Status: in progress. The standard browser build is implemented; the bundled
-server and minimal-release cutover remains.
+Status: implemented.
 
 This plan replaces project-specific artifact construction with one standard
 build tool while preserving the deployment behavior that protects running

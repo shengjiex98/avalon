@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: '24'
       - run: npm ci
-      - run: npm run build:browser
+      - run: npm run build
       - run: npm run test:built
       - run: npm run typecheck
       - name: Stage the self-hosted and Pages clients from the tested build
@@ -33,7 +33,7 @@ jobs:
           API_BASE: ${{ vars.API_BASE }}
         run: node scripts/stage-browser-artifacts.mjs "$GITHUB_SHA" dist "$API_BASE"
       - name: Package the immutable release
-        run: scripts/package-release.sh "$GITHUB_SHA" dist dist/self-hosted-public node_modules
+        run: scripts/package-release.sh "$GITHUB_SHA" dist dist/self-hosted-public
       - name: Test the exact server and Pages artifacts
         env:
           API_BASE: ${{ vars.API_BASE }}

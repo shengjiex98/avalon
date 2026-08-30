@@ -25,29 +25,33 @@ function run(command, args, env = {}, cwd) {
   });
 }
 
-const manifest = (commit, stateVersion = 1, apiProtocol = 1, nodeMajor = 24) => ({
+const manifest = (commit, stateVersion = 1, apiProtocol = 1, nodeMajor = 24, deployerSchema = 3) => ({
   commit,
   stateVersion,
   apiProtocol,
   nodeMajor,
-  deployerSchema: 2,
+  deployerSchema,
 });
 
 async function writeRelease(root, commit, options = {}) {
   const release = join(root, commit);
-  await mkdir(join(release, 'src/server'), { recursive: true });
   await mkdir(join(release, 'build/public'), { recursive: true });
-  await mkdir(join(release, 'deploy'), { recursive: true });
-  await writeFile(join(release, 'release.json'), JSON.stringify(
-    options.manifest ?? manifest(commit, options.stateVersion, options.apiProtocol, options.nodeMajor),
-  ));
-  await writeFile(join(release, 'package.json'), '{}');
-  await writeFile(join(release, 'src/server/main.ts'), '// inert candidate server');
+  const releaseManifest = options.manifest
+    ?? manifest(commit, options.stateVersion, options.apiProtocol, options.nodeMajor, options.deployerSchema);
+  await writeFile(join(release, 'release.json'), JSON.stringify(releaseManifest));
+  if (releaseManifest.deployerSchema === 2) {
+    await mkdir(join(release, 'src/server'), { recursive: true });
+    await writeFile(join(release, 'package.json'), '{}');
+    await writeFile(join(release, 'src/server/main.ts'), '// inert legacy candidate server');
+  } else {
+    await mkdir(join(release, 'build/server'), { recursive: true });
+    await writeFile(join(release, 'build/server/main.mjs'), '// inert candidate server');
+  }
   await writeFile(join(release, 'build/public/index.html'), '<!doctype html>');
   // If the updater ever executes candidate control-plane code, this marker is
   // created and the fixture catches the trust-boundary regression.
-  await writeFile(join(release, 'deploy/controller.sh'), `#!/bin/sh\nprintf pwned >"${options.marker ?? join(root, 'candidate-ran')}"\n`);
-  await chmod(join(release, 'deploy/controller.sh'), 0o755);
+  await writeFile(join(release, 'candidate-controller.sh'), `#!/bin/sh\nprintf pwned >"${options.marker ?? join(root, 'candidate-ran')}"\n`);
+  await chmod(join(release, 'candidate-controller.sh'), 0o755);
   if (options.omit) await rm(join(release, options.omit));
   if (options.escapeSymlink) await symlink('../../../outside', join(release, 'build/public', 'escape'));
   return release;
@@ -174,7 +178,7 @@ async function fixture(options = {}) {
   }));
 
   if (options.old !== false) {
-    await writeRelease(releases, oldCommit);
+    await writeRelease(releases, oldCommit, { deployerSchema: options.oldSchema });
     await symlink(`releases/${oldCommit}`, join(releaseRoot, 'current'));
     await writeFile(runningFile, options.running ?? oldCommit);
   }
@@ -227,6 +231,17 @@ test('a matching pointer prepares, seals, switches, and health-verifies the rele
   assert.match(await readFile(fix.curlLog, 'utf8'), /latest\.json\?t=\d+/);
 });
 
+test('the bundle cutover preserves a schema-2 release as the immediate rollback', async () => {
+  const deployed = await fixture({ oldSchema: 2 });
+  assert.equal((await reconcile(deployed)).code, 0);
+  assert.equal(await readlink(join(deployed.releaseRoot, 'current')), `releases/${targetCommit}`);
+
+  const failed = await fixture({ oldSchema: 2 });
+  const result = await reconcile(failed, [], { FAIL_COMMIT: targetCommit });
+  assert.notEqual(result.code, 0);
+  assert.equal(await readlink(join(failed.releaseRoot, 'current')), `releases/${oldCommit}`);
+});
+
 test('ntfy reports terminal deployment status with the seven-character Git commit', async () => {
   const deployed = await fixture();
   assert.equal((await reconcile(deployed)).code, 0);
@@ -252,6 +267,7 @@ test('download, pointer, digest, and manifest failures cannot change current', a
     { digest: 'f'.repeat(64) },
     { target: { manifest: manifest('3'.repeat(40)) } },
     { target: { nodeMajor: 23 } },
+    { target: { omit: 'build/server/main.mjs' } },
     { target: { omit: 'build/public/index.html' } },
   ]) {
     const fix = await fixture(options);
@@ -380,6 +396,7 @@ test('the installer atomically installs only static files and never starts a dep
   assert.equal((await readFile(join(root, 'updater.sh'), 'utf8')), await readFile(updater, 'utf8'));
   assert.equal((await readFile(join(root, 'verify-pointer.mjs'), 'utf8')), await readFile(join(deployDir, 'verify-pointer.mjs'), 'utf8'));
   assert.equal((await readFile(join(root, 'listen.mjs'), 'utf8')), await readFile(join(deployDir, 'listen.mjs'), 'utf8'));
+  assert.equal((await readFile(join(root, 'start.mjs'), 'utf8')), await readFile(join(deployDir, 'start.mjs'), 'utf8'));
   for (const unit of ['avalon.service', 'avalon-listen.service', 'avalon-update.service', 'avalon-update.timer']) {
     assert.equal(await readFile(join(units, unit), 'utf8'), await readFile(join(deployDir, unit), 'utf8'));
   }

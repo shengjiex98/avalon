@@ -8,9 +8,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "build:browser": "vite build",
+    "build": "npm run build:browser && npm run build:server",
+    "build:browser": "vite build --mode browser",
+    "build:server": "vite build --mode server",
     "start": "npm run build:browser && node src/server/main.ts",
-    "test": "AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run build:browser && AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run test:built",
+    "test": "AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run build && AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run test:built",
     "test:built": "node --test \"test/**/*.test.js\" \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"
   },

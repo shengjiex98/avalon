@@ -1,6 +1,8 @@
-import { access, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, readdir } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
+import { STATE_VERSION } from '../src/contracts/state-version.ts';
 import { verifyBrowserArtifact } from './verify-browser-artifact.mjs';
 
 const [, , releaseDir, expectedCommit] = process.argv;
@@ -23,50 +25,31 @@ try {
     }
 
     if (manifest.commit !== expectedCommit) reject('manifest commit does not match the workflow commit');
-    if (!Number.isInteger(manifest.stateVersion) || manifest.stateVersion < 1) reject('invalid stateVersion');
-    if (!Number.isInteger(manifest.apiProtocol) || manifest.apiProtocol < 1) reject('invalid apiProtocol');
+    if (manifest.stateVersion !== STATE_VERSION) reject(`unexpected stateVersion ${manifest.stateVersion}`);
+    if (manifest.apiProtocol !== API_PROTOCOL) reject(`unexpected apiProtocol ${manifest.apiProtocol}`);
     if (manifest.nodeMajor !== 24) reject(`unsupported Node major ${manifest.nodeMajor}`);
-    if (manifest.deployerSchema !== 2) reject(`unsupported deployer schema ${manifest.deployerSchema}`);
+    if (manifest.deployerSchema !== 3) reject(`unsupported deployer schema ${manifest.deployerSchema}`);
     if (Number(process.versions.node.split('.')[0]) !== manifest.nodeMajor) {
       reject(`release requires Node ${manifest.nodeMajor}, running ${process.versions.node}`);
     }
 
-    const packageJson = JSON.parse(await readFile(join(releaseDir, 'package.json'), 'utf8'));
-    const packageLock = JSON.parse(await readFile(join(releaseDir, 'package-lock.json'), 'utf8'));
-    const dependencies = Object.keys(packageJson.dependencies ?? {});
-    if (!dependencies.length) reject('release manifest has no production dependencies');
-    for (const dependency of dependencies) {
-      if (!(dependency in (packageLock.packages?.['']?.dependencies ?? {}))) {
-        reject(`${dependency} is not locked as a production dependency`);
-      }
-      try {
-        await access(join(releaseDir, 'node_modules', dependency, 'package.json'));
-      } catch {
-        reject(`missing production package ${dependency}`);
+    const entries = await readdir(releaseDir, { recursive: true, withFileTypes: true });
+    for (const entry of entries) {
+      const name = relative(releaseDir, join(entry.parentPath, entry.name));
+      if (!entry.isFile() && !entry.isDirectory()) reject(`unsupported release object ${name}`);
+      if (entry.isFile() && name !== 'release.json' && name !== 'build/server/main.mjs'
+          && !name.startsWith('build/public/')) reject(`unexpected release file ${name}`);
+      if (entry.isDirectory() && name !== 'build' && name !== 'build/server'
+          && name !== 'build/public' && !name.startsWith('build/public/')) {
+        reject(`unexpected release directory ${name}`);
       }
     }
 
-    for (const dependency of Object.keys(packageJson.devDependencies ?? {})) {
-      if (await exists(join(releaseDir, 'node_modules', dependency, 'package.json'))) {
-        reject(`development package shipped in release: ${dependency}`);
-      }
+    const server = await readFile(join(releaseDir, 'build/server/main.mjs'), 'utf8');
+    for (const match of server.matchAll(/\b(?:from|import)\s+['"]([^'"]+)['"]/g)) {
+      if (!match[1].startsWith('node:')) reject(`server bundle has a runtime import: ${match[1]}`);
     }
-
-    for (const name of [
-      'package.json', 'package-lock.json', 'src/server/main.ts',
-      'deploy/updater.sh', 'deploy/avalon.service',
-      'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
-    ]) {
-      try {
-        await access(join(releaseDir, name));
-      } catch {
-        reject(`missing ${name}`);
-      }
-    }
-
-    for (const name of ['test', 'node_modules/typescript', 'node_modules/@types/node']) {
-      if (await exists(join(releaseDir, name))) reject(`development-only path shipped in release: ${name}`);
-    }
+    if (/sourceMappingURL=/.test(server)) reject('server bundle contains a source map reference');
 
     await verifyBrowserArtifact(join(releaseDir, 'build/public'), {
       target: 'self-hosted', commit: expectedCommit, apiBase: '',
@@ -77,13 +60,4 @@ try {
 } catch (error) {
   console.error(`invalid packaged Avalon release: ${error.message}`);
   process.exitCode = 65;
-}
-
-async function exists(path) {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
 }

@@ -33,6 +33,8 @@ try {
 
   const index = await fetch(running.base + '/');
   assert(index.ok && (await index.text()).includes('<title>Avalon</title>'), 'packaged static entry did not load');
+  const version = await json(running.base, '/version.json');
+  assert(version.version === expectedCommit, 'packaged front-end reports the wrong commit');
   const entry = await fetch(`${running.base}/${browserEntry}`);
   assert(entry.ok && (entry.headers.get('content-type') ?? '').includes('text/javascript'),
     'packaged browser entry did not load as JavaScript');
@@ -71,7 +73,7 @@ async function startRelease() {
   const port = await availablePort();
   let stdout = '';
   let stderr = '';
-  const child = spawn(process.execPath, [join(current, 'src/server/main.ts')], {
+  const child = spawn(process.execPath, [join(current, 'build/server/main.mjs')], {
     cwd: current,
     env: {
       ...process.env,

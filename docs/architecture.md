@@ -19,7 +19,7 @@ browser
   └── build/public/* (fingerprinted browser artifact and copied public assets)
           │ JSON + SSE
           ▼
-src/server/main.ts
+build/server/main.mjs (bundled from src/server/main.ts)
           ▼
 src/server/rooms.ts ──> src/server/persistence.ts
           │
@@ -44,7 +44,10 @@ Night countdowns and audio therefore end with that renderer rather than living
 as module globals. `npm run build:browser` uses
 [`vite.config.ts`](../vite.config.ts) to emit the browser-loadable tree and its
 manifest under `build/public/`; the generated directory is never authored or
-committed.
+committed. `npm run build:server` emits the Node 24 ESM bundle under
+`build/server/`, including application packages and leaving Node built-ins to
+the runtime. `npm run build` produces both outputs without either build
+deleting the other.
 
 ## State and secrecy
 

@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,9 +13,9 @@ import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
-function run(command, args) {
+function run(command, args, options = {}) {
   return new Promise((resolve) => {
-    const child = spawn(command, args);
+    const child = spawn(command, args, options);
     let stderr = '';
     child.stderr.on('data', (chunk) => { stderr += chunk; });
     child.on('close', (code) => resolve({ code, stderr }));
@@ -111,7 +111,7 @@ test('the Pages renderers consume server-owned setup metadata', async () => {
   }
 });
 
-test('development checking and browser emit are explicit package contracts', async () => {
+test('development checking and both runtime builds are explicit package contracts', async () => {
   const pkg = JSON.parse(await read('../package.json'));
   const lock = JSON.parse(await read('../package-lock.json'));
   const config = JSON.parse(await read('../tsconfig.json'));
@@ -142,12 +142,20 @@ test('development checking and browser emit are explicit package contracts', asy
   // The browser client is what talks to the API, so leaving it out of the
   // program is what let a request body drift from the contract unnoticed.
   assert.ok(config.include.includes('src/**/*.ts'), 'the authored client is type checked too');
-  assert.equal(pkg.scripts['build:browser'], 'vite build');
+  assert.equal(pkg.scripts.build, 'npm run build:browser && npm run build:server');
+  assert.equal(pkg.scripts['build:browser'], 'vite build --mode browser');
+  assert.equal(pkg.scripts['build:server'], 'vite build --mode server');
   assert.match(pkg.devDependencies.vite, /^\d+\.\d+\.\d+$/);
   assert.equal(lock.packages[''].devDependencies.vite, pkg.devDependencies.vite);
   assert.match(vite, /base:\s*'\.\/'/);
   assert.match(vite, /manifest:\s*true/);
   assert.match(vite, /outDir:\s*'build\/public'/);
+  assert.match(vite, /outDir:\s*'build\/server'/);
+  assert.match(vite, /entryFileNames:\s*'main\.mjs'/);
+  assert.match(vite, /target:\s*'node24'/);
+  assert.match(vite, /noExternal:\s*true/);
+  assert.match(vite, /publicDir:\s*false/);
+  assert.match(vite, /minify:\s*false/);
   assert.match(vite, /sourcemap:\s*false/);
   assert.match(vite, /__AVALON_BUILD_COMMIT__/);
   assert.deepEqual((await readdir(new URL('../public/', import.meta.url))).sort(), ['art', 'audio', 'config.js'],
@@ -155,10 +163,12 @@ test('development checking and browser emit are explicit package contracts', asy
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
   assert.equal((deploy.match(/npm ci/g) ?? []).length, 1, 'deployment installs the lockfile once');
-  assert.equal((deploy.match(/npm run build:browser/g) ?? []).length, 1, 'deployment emits the browser once');
+  assert.equal((deploy.match(/npm run build\b/g) ?? []).length, 1, 'deployment builds both outputs once');
+  assert.doesNotMatch(deploy, /npm run build:browser|npm run build:server/,
+    'deployment does not rebuild either output independently');
   assert.match(deploy, /AVALON_BUILD_COMMIT:\s*\$\{\{ github\.sha \}\}/,
     'deployment supplies the exact workflow commit to Vite');
-  assert.match(deploy, /npm run build:browser[\s\S]*npm run test:built[\s\S]*npm run typecheck/);
+  assert.match(deploy, /npm run build[\s\S]*npm run test:built[\s\S]*npm run typecheck/);
 });
 
 test('the authored tree has explicit runtime boundaries', async () => {
@@ -178,14 +188,14 @@ test('the authored tree has explicit runtime boundaries', async () => {
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
   const workflow = await read('../.github/workflows/deploy.yml');
   assert.match(workflow,
-    /package-release\.sh "\$GITHUB_SHA" dist dist\/self-hosted-public node_modules/);
+    /package-release\.sh "\$GITHUB_SHA" dist dist\/self-hosted-public/);
   assert.match(workflow, /tree="\$RUNNER_TEMP\/release-tree"/);
   assert.match(workflow, /tar -xzf "\$archive" --strip-components=1 -C "\$tree"/);
   assert.match(workflow, /node scripts\/verify-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
   assert.match(workflow, /node scripts\/test-packaged-release\.mjs "\$tree" "\$GITHUB_SHA"/);
   assert.match(workflow,
     /node scripts\/verify-browser-artifact\.mjs dist\/pages pages "\$GITHUB_SHA" "\$API_BASE"/);
-  assert.doesNotMatch(workflow, /"\$tree\/deploy\/controller\.sh"|NTFY_TOPIC=ci-canary/,
+  assert.doesNotMatch(workflow, /"\$tree\/deploy\/|NTFY_TOPIC=ci-canary/,
     'CI never executes candidate deployment code');
 
   assert.match(workflow, /actions\/upload-artifact@v4/);
@@ -312,8 +322,40 @@ test('the server and the updater snapshot the same file', async () => {
   assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
 });
 
-test('the installed service starts the canonical server entry directly', async () => {
+test('the installed service prefers the bundle and preserves one legacy rollback', async () => {
   const unit = await read('../deploy/avalon.service');
-  assert.match(unit, /ExecStart=%h\/\.local\/bin\/node %h\/\.local\/lib\/avalon\/current\/src\/server\/main\.ts/);
-  assert.doesNotMatch(unit, /server\.js|preserve-symlinks-main/);
+  const start = await read('../deploy/start.mjs');
+  assert.match(unit, /ExecStart=%h\/\.local\/bin\/node %h\/\.local\/libexec\/avalon-deploy\/start\.mjs/);
+  assert.ok(start.indexOf("build/server/main.mjs") < start.indexOf("src/server/main.ts"));
+  assert.match(start, /application\.start\(\)/);
+
+  const application = `
+    import { writeFileSync } from 'node:fs';
+    export function start() { writeFileSync(process.env.AVALON_TEST_MARKER, process.env.AVALON_TEST_VALUE); }
+  `;
+  const launch = fileURLToPath(new URL('../deploy/start.mjs', import.meta.url));
+
+  const bundled = await mkdtemp(join(tmpdir(), 'avalon-start-bundle-'));
+  await mkdir(join(bundled, 'build/server'), { recursive: true });
+  await mkdir(join(bundled, 'src/server'), { recursive: true });
+  await writeFile(join(bundled, 'build/server/main.mjs'), application);
+  await writeFile(join(bundled, 'src/server/main.ts'), application);
+  const bundledMarker = join(bundled, 'started');
+  const bundledResult = await run(process.execPath, [launch], {
+    cwd: bundled,
+    env: { ...process.env, AVALON_TEST_MARKER: bundledMarker, AVALON_TEST_VALUE: 'bundle' },
+  });
+  assert.equal(bundledResult.code, 0, bundledResult.stderr);
+  assert.equal(await readFile(bundledMarker, 'utf8'), 'bundle');
+
+  const legacy = await mkdtemp(join(tmpdir(), 'avalon-start-legacy-'));
+  await mkdir(join(legacy, 'src/server'), { recursive: true });
+  await writeFile(join(legacy, 'src/server/main.ts'), application);
+  const legacyMarker = join(legacy, 'started');
+  const legacyResult = await run(process.execPath, [launch], {
+    cwd: legacy,
+    env: { ...process.env, AVALON_TEST_MARKER: legacyMarker, AVALON_TEST_VALUE: 'legacy' },
+  });
+  assert.equal(legacyResult.code, 0, legacyResult.stderr);
+  assert.equal(await readFile(legacyMarker, 'utf8'), 'legacy');
 });

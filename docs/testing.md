@@ -8,9 +8,10 @@ npm test
 
 The project uses Node's built-in test runner, needs no network access or
 browser after `npm ci`, and discovers JavaScript and TypeScript tests under
-`test/`. The gate first builds the browser into `build/public/`; emitted-entry
-tests select the fingerprinted module through Vite's build manifest, and HTTP
-tests exercise the same output a browser receives.
+`test/`. The gate first builds the browser and server under `build/`;
+emitted-entry tests select the fingerprinted browser module through Vite's
+manifest, and release tests start the bundled server from the same minimal tree
+CI publishes.
 
 Development also checks the TypeScript contracts with the locked tools:
 
@@ -21,9 +22,10 @@ npm run typecheck
 
 The no-emit checker covers validated commands, room and engine state,
 snapshots, phase-specific views, the browser client, and the game registry.
-Use `npm run build:browser` when only the emitted client is needed, or
-`npm start` to rebuild it before starting the local server. CI runs the full
-test and typecheck gates; see [`package.json`](../package.json),
+Use `npm run build` for both production outputs, `npm run build:browser` for
+only the emitted client, or `npm start` to rebuild the client before starting
+the native local server. CI runs the full test and typecheck gates; see
+[`package.json`](../package.json),
 [`.github/workflows/ci.yml`](../.github/workflows/ci.yml), and
 [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml).
 

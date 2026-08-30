@@ -123,13 +123,14 @@ valid_commit "$commit" || { log 'pointer verifier returned an invalid commit'; e
 archive="avalon-$commit.tar.gz"
 release="$releases/$commit"
 
-# Prints commit, stateVersion, and apiProtocol. All validation logic here is
-# installed code passed through -e; no verifier from the candidate is run.
+# Prints commit, stateVersion, and apiProtocol. Targets require the bundled
+# schema. Rollback validation additionally recognizes the one preceding layout
+# so the static unit upgrade does not destroy the existing safety net.
 verify_release() {
   "$node_bin" -e '
     const fs = require("node:fs");
     const path = require("node:path");
-    const [release, expected] = process.argv.slice(1);
+    const [release, expected, purpose] = process.argv.slice(1);
     const fail = (message) => { throw new Error(message); };
     let manifest;
     try { manifest = JSON.parse(fs.readFileSync(path.join(release, "release.json"), "utf8")); }
@@ -138,15 +139,23 @@ verify_release() {
     if (!Number.isInteger(manifest.stateVersion) || manifest.stateVersion < 1) fail("invalid stateVersion");
     if (!Number.isInteger(manifest.apiProtocol) || manifest.apiProtocol < 1) fail("invalid apiProtocol");
     if (manifest.nodeMajor !== 24) fail(`unsupported Node major ${manifest.nodeMajor}`);
-    if (manifest.deployerSchema !== 2) fail(`unsupported deployer schema ${manifest.deployerSchema}`);
-    for (const name of ["package.json", "src/server/main.ts", "build/public/index.html"]) {
+    if (purpose === "target" && manifest.deployerSchema !== 3) {
+      fail(`unsupported target deployer schema ${manifest.deployerSchema}`);
+    }
+    if (purpose === "rollback" && manifest.deployerSchema !== 2 && manifest.deployerSchema !== 3) {
+      fail(`unsupported rollback deployer schema ${manifest.deployerSchema}`);
+    }
+    const required = manifest.deployerSchema === 3
+      ? ["build/server/main.mjs", "build/public/index.html"]
+      : ["package.json", "src/server/main.ts", "build/public/index.html"];
+    for (const name of required) {
       const file = path.join(release, name);
       let stat;
       try { stat = fs.statSync(file); } catch { fail(`missing ${name}`); }
       if (!stat.isFile()) fail(`${name} is not a regular file`);
     }
     process.stdout.write(`${manifest.commit}\n${manifest.stateVersion}\n${manifest.apiProtocol}\n`);
-  ' "$1" "$2"
+  ' "$1" "$2" "$3"
 }
 
 # The tar implementation also rejects absolute and parent-traversing names;
@@ -269,7 +278,7 @@ if [ "$server_available" -eq 1 ] && [ "$running_commit" = "$commit" ] && \
 fi
 
 if [ -d "$release" ]; then
-  manifest_values=$(verify_release "$release" "$commit") || { log "existing release $commit is invalid"; exit 1; }
+  manifest_values=$(verify_release "$release" "$commit" target) || { log "existing release $commit is invalid"; exit 1; }
 else
   downloaded="$work/$archive"
   curl -fsSL --retry 3 --connect-timeout 10 --max-time 300 \
@@ -284,7 +293,7 @@ else
   stage=$(mktemp -d "$releases/.staging-$commit.XXXXXX")
   tar -xzf "$downloaded" --strip-components=1 -C "$stage" || { log "cannot extract $archive"; exit 1; }
   verify_extracted_tree "$stage" || { log "unsafe extracted tree in $archive"; exit 1; }
-  manifest_values=$(verify_release "$stage" "$commit") || { log "invalid manifest in $archive"; exit 1; }
+  manifest_values=$(verify_release "$stage" "$commit" target) || { log "invalid manifest in $archive"; exit 1; }
   chmod -R a-w "$stage"
   mv "$stage" "$release"
   stage=
@@ -307,7 +316,7 @@ case "$selected" in
     rollback=${selected#releases/}
     valid_commit "$rollback" || { log "current points at an invalid release: $selected"; exit 1; }
     [ -d "$releases/$rollback" ] || { log "current release $rollback is missing"; exit 1; }
-    verify_release "$releases/$rollback" "$rollback" >/dev/null || { log "rollback release $rollback is invalid"; exit 1; }
+    verify_release "$releases/$rollback" "$rollback" rollback >/dev/null || { log "rollback release $rollback is invalid"; exit 1; }
     if [ "$server_available" -eq 1 ] && [ "$running_commit" != "$rollback" ]; then
       log "health reports $running_commit but current selects $rollback"
       exit 1

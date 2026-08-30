@@ -4,7 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
-import { CLIENT_ORIGIN, createApp } from '../src/server/main.ts';
+import { CLIENT_ORIGIN, createApp, runtimePaths } from '../src/server/main.ts';
 import { Rooms } from '../src/server/rooms.ts';
 import { STATE_VERSION } from '../src/contracts/state-version.ts';
 import * as onuw from '../src/server/games/onuw/game.ts';
@@ -15,6 +15,13 @@ type AppOptions = NonNullable<Parameters<typeof createApp>[0]>;
 type JsonRecord = Record<string, unknown>;
 const isOnuwContext = (context: GameContext): context is OnuwContext =>
   context.room.game.id === 'onuw';
+
+test('runtime paths follow the selected release working directory', () => {
+  assert.deepEqual(runtimePaths('/tmp/avalon-selected-release'), {
+    rootDir: '/tmp/avalon-selected-release',
+    publicDir: '/tmp/avalon-selected-release/build/public',
+  });
+});
 
 async function withServer(fn: (base: string) => Promise<void>, options: AppOptions = {}): Promise<void> {
   const server = createServer(createApp(options));
