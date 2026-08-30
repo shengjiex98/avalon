@@ -91,7 +91,7 @@ class Element {
 }
 
 /**
- * Install a document matching public/index.html, plus the browser globals the
+ * Install a document matching the public HTML shell, plus the browser globals the
  * client touches. Returns handles the tests drive.
  */
 export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 'en' } = {}) {

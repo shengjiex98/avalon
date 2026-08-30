@@ -2,6 +2,8 @@ import { access, readFile, readdir } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
+
 const REQUIRED = [
   'index.html', 'styles.css', 'bootstrap.js', 'app.js', 'config.js',
   'art/card-back.webp', 'art/jrpg-role-atlas.webp',
@@ -44,6 +46,10 @@ export async function verifyBrowserArtifact(directory, {
   const configured = /export const API_BASE = (['"])(.*?)\1;/.exec(config)?.[2];
   if (configured !== apiBase) {
     throw new Error(`${target} config.js does not contain the packaged API base`);
+  }
+  const protocol = Number(/export const API_PROTOCOL = (\d+);/.exec(config)?.[1]);
+  if (protocol !== API_PROTOCOL) {
+    throw new Error(`${target} config.js does not contain API protocol ${API_PROTOCOL}`);
   }
 
   if (target === 'pages') {

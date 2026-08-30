@@ -30,26 +30,26 @@ const manifest = (commit, stateVersion = 1, apiProtocol = 1, nodeMajor = 24) => 
   stateVersion,
   apiProtocol,
   nodeMajor,
-  deployerSchema: 1,
+  deployerSchema: 2,
 });
 
 async function writeRelease(root, commit, options = {}) {
   const release = join(root, commit);
-  await mkdir(join(release, 'src'), { recursive: true });
-  await mkdir(join(release, 'public'), { recursive: true });
+  await mkdir(join(release, 'src/server'), { recursive: true });
+  await mkdir(join(release, 'build/public'), { recursive: true });
   await mkdir(join(release, 'deploy'), { recursive: true });
   await writeFile(join(release, 'release.json'), JSON.stringify(
     options.manifest ?? manifest(commit, options.stateVersion, options.apiProtocol, options.nodeMajor),
   ));
   await writeFile(join(release, 'package.json'), '{}');
-  await writeFile(join(release, 'src/server.js'), '// inert candidate server');
-  await writeFile(join(release, 'public/index.html'), '<!doctype html>');
+  await writeFile(join(release, 'src/server/main.ts'), '// inert candidate server');
+  await writeFile(join(release, 'build/public/index.html'), '<!doctype html>');
   // If the updater ever executes candidate control-plane code, this marker is
   // created and the fixture catches the trust-boundary regression.
   await writeFile(join(release, 'deploy/controller.sh'), `#!/bin/sh\nprintf pwned >"${options.marker ?? join(root, 'candidate-ran')}"\n`);
   await chmod(join(release, 'deploy/controller.sh'), 0o755);
   if (options.omit) await rm(join(release, options.omit));
-  if (options.escapeSymlink) await symlink('../../outside', join(release, 'public', 'escape'));
+  if (options.escapeSymlink) await symlink('../../../outside', join(release, 'build/public', 'escape'));
   return release;
 }
 
@@ -252,7 +252,7 @@ test('download, pointer, digest, and manifest failures cannot change current', a
     { digest: 'f'.repeat(64) },
     { target: { manifest: manifest('3'.repeat(40)) } },
     { target: { nodeMajor: 23 } },
-    { target: { omit: 'public/index.html' } },
+    { target: { omit: 'build/public/index.html' } },
   ]) {
     const fix = await fixture(options);
     const result = await reconcile(fix);

@@ -5,11 +5,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import * as g from '../src/games/avalon/game.ts';
-import { sideOf } from '../src/games/avalon/rules.ts';
+import * as g from '../src/server/games/avalon/game.ts';
+import { sideOf } from '../src/server/games/avalon/rules.ts';
 
 const dom = installDom();
-const client = await import('../public/app.ts');
+const client = await import('../src/client/app.ts');
 await client.ready;
 const { app, render } = client;
 

@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  chmod, cp, lstat, mkdir, mkdtemp, readdir, readFile, rm, writeFile,
+  chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { API_PROTOCOL } from '../src/api-protocol.ts';
-import { readDeployedCommit } from '../src/server.ts';
-import { STATE_VERSION } from '../src/state-version.ts';
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
+import { readDeployedCommit } from '../src/server/main.ts';
+import { STATE_VERSION } from '../src/contracts/state-version.ts';
 
 const script = fileURLToPath(new URL('../scripts/write-release-manifest.mjs', import.meta.url));
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -70,7 +70,7 @@ test('a release manifest carries the deployment compatibility contract', async (
     stateVersion: STATE_VERSION,
     apiProtocol: API_PROTOCOL,
     nodeMajor: 24,
-    deployerSchema: 1,
+    deployerSchema: 2,
   });
   assert.equal(readDeployedCommit(dir), commit);
 });
@@ -92,10 +92,8 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   await cp(join(root, 'build/public'), join(dir, 'build/public'), { recursive: true });
   await cp(join(root, 'package.json'), join(dir, 'package.json'));
   await cp(join(root, 'package-lock.json'), join(dir, 'package-lock.json'));
-  await mkdir(join(dir, 'public'));
-  await cp(join(root, 'build/public/index.html'), join(dir, 'public/index.html'));
   for (const name of [
-    'node_modules/zod/package.json', 'src/server.js', 'src/server.ts',
+    'node_modules/zod/package.json', 'src/server/main.ts',
     'deploy/updater.sh', 'deploy/avalon.service',
     'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
   ]) {
@@ -107,16 +105,17 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
     stateVersion: STATE_VERSION,
     apiProtocol: API_PROTOCOL,
     nodeMajor: 24,
-    deployerSchema: 1,
+    deployerSchema: 2,
   }));
 
   const verifier = join(root, 'scripts/verify-packaged-release.mjs');
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 0);
   assert.equal((await run(process.execPath, [verifier, dir, 'e'.repeat(40)])).code, 65);
-  await rm(join(dir, 'public/index.html'));
+  await rm(join(dir, 'src/server/main.ts'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
-    'the installed updater compatibility entry must fail closed when absent');
-  await cp(join(root, 'build/public/index.html'), join(dir, 'public/index.html'));
+    'a missing production entrypoint must fail before publication');
+  await mkdir(join(dir, 'src/server'), { recursive: true });
+  await writeFile(join(dir, 'src/server/main.ts'), 'src/server/main.ts');
   await rm(join(dir, 'build/public/app.js'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'a missing emitted module must fail before publication');
@@ -178,11 +177,10 @@ test('the packaged release carries the control plane that deploys it', async (t)
   }
   assert.ok(files.has('node_modules/zod/package.json'), 'the artifact must ship its runtime schema package');
   assert.ok(![...files].some((file) => file.startsWith('test/')), 'the artifact must omit the test suite');
-  assert.deepEqual(
-    [...files].filter((file) => file.startsWith('public/') && file !== 'public/'),
-    ['public/index.html'],
-    'the artifact must omit authored browser source except for the installed-updater link',
-  );
+  assert.equal([...files].some((file) => file.startsWith('public/')), false,
+    'the artifact must omit the authored static-source tree');
+  assert.equal([...files].some((file) => file.startsWith('src/client/')), false,
+    'the artifact must omit authored browser modules');
   assert.ok(!files.has('node_modules/typescript/package.json'), 'the artifact must omit the browser compiler');
   assert.ok(!files.has('node_modules/@types/node/package.json'), 'the artifact must omit development types');
 
@@ -191,12 +189,6 @@ test('the packaged release carries the control plane that deploys it', async (t)
   assert.equal(unpacked.code, 0, unpacked.stderr);
   const imported = await run(process.execPath, ['--input-type=module', '-e', "await import('zod')"], { cwd: extracted });
   assert.equal(imported.code, 0, imported.stderr);
-  assert.equal((await lstat(join(extracted, 'public/index.html'))).isFile(), true,
-    'the installed updater rejects compatibility symlinks before extraction');
-  assert.deepEqual(
-    await readFile(join(extracted, 'public/index.html')),
-    await readFile(join(extracted, 'build/public/index.html')),
-  );
   const commit = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
   const verified = await run(process.execPath, [join(root, 'scripts/verify-packaged-release.mjs'), extracted, commit]);
   assert.equal(verified.code, 0, verified.stderr);

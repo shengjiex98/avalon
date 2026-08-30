@@ -2,6 +2,7 @@ import { cp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { browserConfig } from './browser-config.mjs';
 import { stampFrontend } from './stamp-frontend-version.mjs';
 
 const [, , commit, outputDirectory, configuredBase = ''] = process.argv;
@@ -31,8 +32,5 @@ await stampFrontend(pages, commit);
 await writeFile(join(pages, '.nojekyll'), '');
 
 async function writeConfig(directory, base, target) {
-  await writeFile(
-    join(directory, 'config.js'),
-    `// Generated for the ${target} release.\nexport const API_BASE = ${JSON.stringify(base)};\n`,
-  );
+  await writeFile(join(directory, 'config.js'), browserConfig(base, `${target} release`));
 }

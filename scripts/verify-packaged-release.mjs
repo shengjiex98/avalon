@@ -26,7 +26,7 @@ try {
     if (!Number.isInteger(manifest.stateVersion) || manifest.stateVersion < 1) reject('invalid stateVersion');
     if (!Number.isInteger(manifest.apiProtocol) || manifest.apiProtocol < 1) reject('invalid apiProtocol');
     if (manifest.nodeMajor !== 24) reject(`unsupported Node major ${manifest.nodeMajor}`);
-    if (manifest.deployerSchema !== 1) reject(`unsupported deployer schema ${manifest.deployerSchema}`);
+    if (manifest.deployerSchema !== 2) reject(`unsupported deployer schema ${manifest.deployerSchema}`);
     if (Number(process.versions.node.split('.')[0]) !== manifest.nodeMajor) {
       reject(`release requires Node ${manifest.nodeMajor}, running ${process.versions.node}`);
     }
@@ -53,8 +53,7 @@ try {
     }
 
     for (const name of [
-      'package.json', 'package-lock.json', 'src/server.js', 'src/server.ts',
-      'public/index.html',
+      'package.json', 'package-lock.json', 'src/server/main.ts',
       'deploy/updater.sh', 'deploy/avalon.service',
       'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
     ]) {
@@ -63,12 +62,6 @@ try {
       } catch {
         reject(`missing ${name}`);
       }
-    }
-
-    const legacyEntry = await readFile(join(releaseDir, 'public/index.html'));
-    const emittedEntry = await readFile(join(releaseDir, 'build/public/index.html'));
-    if (!legacyEntry.equals(emittedEntry)) {
-      reject('public/index.html must match the emitted client entry');
     }
 
     for (const name of ['test', 'node_modules/typescript', 'node_modules/@types/node']) {

@@ -49,7 +49,7 @@ trap 'rm -rf "$stage" "$partial"' EXIT HUP INT TERM
 release="$stage/avalon-$commit"
 mkdir "$release"
 git -C "$root" archive --format=tar "$commit" -- \
-  deploy package.json package-lock.json src >"$stage/source.tar"
+  deploy package.json package-lock.json src/contracts src/server >"$stage/source.tar"
 tar -xf "$stage/source.tar" -C "$release"
 rm -f "$stage/source.tar"
 mkdir "$release/scripts"
@@ -58,8 +58,6 @@ cp "$root/scripts/verify-packaged-release.mjs" "$release/scripts/verify-packaged
 cp "$root/scripts/write-release-manifest.mjs" "$release/scripts/write-release-manifest.mjs"
 mkdir -p "$release/build"
 cp -R "$browser" "$release/build/public"
-mkdir "$release/public"
-cp "$browser/index.html" "$release/public/index.html"
 cp -R "$modules" "$release/node_modules"
 npm prune --omit=dev --ignore-scripts --no-audit --no-fund --offline --prefix "$release"
 node "$release/scripts/write-release-manifest.mjs" "$commit" "$release/release.json"

@@ -15,8 +15,7 @@
     "strict": true,
     "strictNullChecks": true,
     "target": "ES2022",
-    "types": ["node"],
     "verbatimModuleSyntax": true
   },
-  "include": ["public/**/*.ts"]
+  "include": ["src/client/**/*.ts"]
 }

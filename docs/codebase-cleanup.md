@@ -10,11 +10,7 @@ game is exposed beyond its current friends-only trust model.
   authoritative for what already landed.
 - Former items 15–16 are dropped. Replay tooling and expanded fuzz/property
   testing are not planned.
-- Items 19–21 remain deliberately deferred. Their numbering is retained so old
-  discussions and commits still point to the same work.
-- [Contract and TypeScript modernization](build-contract-modernization.md) is
-  the active architectural direction. Do not mix these hardening items into its
-  behavior-preserving migration PRs.
+- Three hardening items remain deliberately deferred.
 
 Deferral is a scope decision, not a security conclusion. In particular, a
 public seat ID is still identity rather than a secure authorization capability.
@@ -23,16 +19,16 @@ public seat ID is still identity rather than a secure authorization capability.
 
 | Item | Outcome | Priority now | Status |
 | --- | --- | --- | --- |
-| 19 | Bound public resource use and request abuse | Not current | Deferred |
-| 20 | Bound avatar storage and async lifecycle | Not current | Deferred |
-| 21 | Authenticate private seat views and actions | Not current | Deferred |
+| 1 | Bound public resource use and request abuse | Not current | Deferred |
+| 2 | Bound avatar storage and async lifecycle | Not current | Deferred |
+| 3 | Authenticate private seat views and actions | Not current | Deferred |
 
-Reassess these items after the contract modernization, or sooner if the service
-is intentionally opened to untrusted users. Item 21 should be the first
+Reassess these items if the service is intentionally opened to untrusted users.
+Item 3 should be the first
 security design revisited before calling the deployment safe for public use;
-items 19–20 protect availability and storage.
+items 1–2 protect availability and storage.
 
-## Item 19 — Public resource and request bounds
+## Item 1 — Public resource and request bounds
 
 Goal: one user or network origin cannot consume unbounded rooms, joins, actions,
 or avatar-generation capacity.
@@ -54,7 +50,7 @@ Acceptance:
 - normal reconnect and live-game flows remain usable; and
 - memory use cannot grow indefinitely from unique rejected identities.
 
-## Item 20 — Avatar lifecycle
+## Item 2 — Avatar lifecycle
 
 Goal: avatar work and stored avatar files remain bounded without deleting files
 referenced by live rooms.
@@ -74,7 +70,7 @@ Acceptance:
 - cleanup never removes a live referenced avatar; and
 - failed or abandoned work eventually releases its reservation and files.
 
-## Item 21 — Seat credentials
+## Item 3 — Seat credentials
 
 Goal: knowing a public room code or seat ID cannot reveal private views or
 authorize actions for that seat.

@@ -4,15 +4,15 @@ import { mkdtemp, readFile, stat, writeFile } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import * as avalon from '../src/games/avalon/game.ts';
-import { gameFor } from '../src/games/index.ts';
-import * as onuw from '../src/games/onuw/game.ts';
-import { defaultStateFile, load, save } from '../src/persistence.ts';
-import { Rooms } from '../src/rooms.ts';
-import { STATE_VERSION } from '../src/state-version.ts';
+import * as avalon from '../src/server/games/avalon/game.ts';
+import { gameFor } from '../src/server/games/index.ts';
+import * as onuw from '../src/server/games/onuw/game.ts';
+import { defaultStateFile, load, save } from '../src/server/persistence.ts';
+import { Rooms } from '../src/server/rooms.ts';
+import { STATE_VERSION } from '../src/contracts/state-version.ts';
 import { snapshotFileSchema } from '../src/contracts/persistence.ts';
 import type { SnapshotFile } from '../src/contracts/persistence.ts';
-import type { RuntimeRoom, RuntimeRoomFor } from '../src/contracts/runtime.ts';
+import type { RuntimeRoom, RuntimeRoomFor } from '../src/server/runtime.ts';
 
 const currentFixture: SnapshotFile = snapshotFileSchema.parse(
   JSON.parse(await readFile(new URL('fixtures/state-v3.json', import.meta.url), 'utf8')),

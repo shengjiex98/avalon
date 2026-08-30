@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, symlink } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -14,6 +14,9 @@ if (!releaseDirectory || !/^[0-9a-f]{40}$/.test(expectedCommit ?? '')) {
 const release = resolve(releaseDirectory);
 const stateDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-state-'));
 const stateFile = join(stateDirectory, 'rooms.json');
+const installDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-install-'));
+const current = join(installDirectory, 'current');
+await symlink(release, current, 'dir');
 let running;
 
 try {
@@ -62,8 +65,8 @@ async function startRelease() {
   const port = await availablePort();
   let stdout = '';
   let stderr = '';
-  const child = spawn(process.execPath, ['src/server.js'], {
-    cwd: release,
+  const child = spawn(process.execPath, [join(current, 'src/server/main.ts')], {
+    cwd: current,
     env: {
       ...process.env,
       HOST: '127.0.0.1',

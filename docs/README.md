@@ -10,5 +10,4 @@ code and tests remain authoritative for implementation details.
 - [HTTP API](api.md)
 - [Test suite](testing.md)
 - [Security and trust model](security.md)
-- [Build and contract modernization plan](build-contract-modernization.md)
 - [Deferred public-service hardening](codebase-cleanup.md)

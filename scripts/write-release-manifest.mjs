@@ -1,7 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 
-import { API_PROTOCOL } from '../src/api-protocol.ts';
-import { STATE_VERSION } from '../src/state-version.ts';
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
+import { STATE_VERSION } from '../src/contracts/state-version.ts';
 
 const [, , commit, output] = process.argv;
 
@@ -15,7 +15,7 @@ const manifest = {
   stateVersion: STATE_VERSION,
   apiProtocol: API_PROTOCOL,
   nodeMajor: 24,
-  deployerSchema: 1,
+  deployerSchema: 2,
 };
 
 await writeFile(output, `${JSON.stringify(manifest, null, 2)}\n`);

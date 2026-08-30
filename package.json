@@ -9,7 +9,7 @@
   },
   "scripts": {
     "build:browser": "node scripts/build-browser.mjs",
-    "start": "npm run build:browser && node src/server.js",
+    "start": "npm run build:browser && node src/server/main.ts",
     "test": "npm run build:browser && npm run test:built",
     "test:built": "node --test \"test/**/*.test.js\" \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"

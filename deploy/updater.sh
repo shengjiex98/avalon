@@ -138,8 +138,8 @@ verify_release() {
     if (!Number.isInteger(manifest.stateVersion) || manifest.stateVersion < 1) fail("invalid stateVersion");
     if (!Number.isInteger(manifest.apiProtocol) || manifest.apiProtocol < 1) fail("invalid apiProtocol");
     if (manifest.nodeMajor !== 24) fail(`unsupported Node major ${manifest.nodeMajor}`);
-    if (manifest.deployerSchema !== 1) fail(`unsupported deployer schema ${manifest.deployerSchema}`);
-    for (const name of ["package.json", "src/server.js", "public/index.html"]) {
+    if (manifest.deployerSchema !== 2) fail(`unsupported deployer schema ${manifest.deployerSchema}`);
+    for (const name of ["package.json", "src/server/main.ts", "build/public/index.html"]) {
       const file = path.join(release, name);
       let stat;
       try { stat = fs.statSync(file); } catch { fail(`missing ${name}`); }

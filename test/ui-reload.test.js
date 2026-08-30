@@ -21,7 +21,7 @@ dom.storage.set('avalon.seats.WXYZ', JSON.stringify([{ id: 'me', name: 'Ann' }])
 dom.state.responses.set('/api/rooms/WXYZ/join', { playerId: 'me', code: 'WXYZ' });
 dom.state.responses.set('/api/rooms/WXYZ?playerId=me', { exists: true, seated: true });
 
-const client = await import('../public/app.ts');
+const client = await import('../src/client/app.ts');
 await client.ready;
 const { app } = client;
 

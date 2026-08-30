@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import * as w from '../src/games/onuw/game.ts';
+import * as w from '../src/server/games/onuw/game.ts';
 import {
   NIGHT_ORDER, buildDeck, decideWinners, defaultOptions,
   nightLength, nightScript, roomForOptions, stepMillis, tallyVotes,
-} from '../src/games/onuw/rules.ts';
-import type { OnuwRole } from '../src/games/onuw/rules.ts';
+} from '../src/server/games/onuw/rules.ts';
+import type { OnuwRole } from '../src/server/games/onuw/rules.ts';
 import type { GameEvent } from '../src/contracts/persistence.ts';
-import type { OnuwContext } from '../src/contracts/runtime.ts';
+import type { OnuwContext } from '../src/server/runtime.ts';
 import type { OnuwPhase, OnuwView } from '../src/contracts/views.ts';
 
 function assertPhase<P extends OnuwPhase>(

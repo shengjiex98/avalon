@@ -4,14 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
 
-import { STRINGS } from '../public/i18n.ts';
-import { ROLES } from '../src/games/avalon/rules.ts';
+import { STRINGS } from '../src/client/i18n.ts';
+import { ROLES } from '../src/server/games/avalon/rules.ts';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
 /** Every server source file, so a newly added game cannot skip these checks. */
 async function serverSources() {
-  const dir = new URL('../src/', import.meta.url);
+  const dir = new URL('../src/server/', import.meta.url);
   const files = await readdir(dir, { recursive: true });
   const sources = files.filter((f) => f.endsWith('.js') || f.endsWith('.ts')).sort();
   assert.ok(sources.length >= 5, `expected to find the server sources, found ${sources.length}`);
@@ -20,9 +20,9 @@ async function serverSources() {
 
 /** Every client source, so a game's panels cannot skip the check either. */
 async function clientSources() {
-  const dir = new URL('../public/', import.meta.url);
+  const dir = new URL('../src/client/', import.meta.url);
   const files = await readdir(dir, { recursive: true });
-  const modules = files.filter((file) => file.endsWith('.ts') && !file.endsWith('config.ts')).sort();
+  const modules = files.filter((file) => file.endsWith('.ts') && !file.endsWith('.d.ts')).sort();
   assert.ok(modules.length >= 4, `expected to find the client sources, found ${modules.length}`);
   return Promise.all(modules.map((file) => readFile(new URL(file, dir), 'utf8')));
 }

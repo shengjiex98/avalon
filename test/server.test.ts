@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 
-import { API_PROTOCOL } from '../src/api-protocol.ts';
-import { CLIENT_ORIGIN, createApp } from '../src/server.ts';
-import { Rooms } from '../src/rooms.ts';
-import { STATE_VERSION } from '../src/state-version.ts';
-import * as onuw from '../src/games/onuw/game.ts';
-import type { GameContext, OnuwContext } from '../src/contracts/runtime.ts';
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
+import { CLIENT_ORIGIN, createApp } from '../src/server/main.ts';
+import { Rooms } from '../src/server/rooms.ts';
+import { STATE_VERSION } from '../src/contracts/state-version.ts';
+import * as onuw from '../src/server/games/onuw/game.ts';
+import type { GameContext, OnuwContext } from '../src/server/runtime.ts';
 import type { PublicView } from '../src/contracts/views.ts';
 
 type AppOptions = NonNullable<Parameters<typeof createApp>[0]>;
@@ -221,7 +221,7 @@ test('rejoining retries a missing avatar without creating a new seat', async () 
 
 test('refuses to walk out of the public directory', async () => {
   await withServer(async (base) => {
-    const res = await fetch(base + '/../src/server.ts', { redirect: 'manual' });
+    const res = await fetch(base + '/../src/server/main.ts', { redirect: 'manual' });
     assert.notEqual(res.status, 200);
   });
 });

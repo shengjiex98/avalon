@@ -27,17 +27,15 @@ the shape to copy. Comments follow the same rule: say why, not what.
 
 ## Constraints worth knowing before you write code
 
-**Production installs nothing, deliberately.** The server currently has no
-runtime dependencies and the browser client is plain ES modules with no build
-step. The development toolchain already includes TypeScript and Node types.
-Adding a runtime/build dependency or build step is a design decision, not an
-implementation detail — follow the approved modernization phase or raise it
-rather than assuming it.
+**Production installs nothing, deliberately.** Releases carry locked production
+packages and emitted plain browser modules; the host runs native server
+TypeScript and performs no install or build. Adding another runtime or build
+dependency is a design decision, not an implementation detail.
 
 **Two compatibility numbers gate deployment.** `STATE_VERSION`
-(`src/state-version.ts`) covers persisted room state; `API_PROTOCOL`
-(`src/api-protocol.ts` and `public/app.js`, which must agree) covers views and
-actions. Renaming or re-typing persisted state bumps the first. Changing a view
+(`src/contracts/state-version.ts`) covers persisted room state; `API_PROTOCOL`
+(`src/contracts/api-protocol.ts`) covers views and actions and is written into
+generated browser configuration. Renaming or re-typing persisted state bumps the first. Changing a view
 or action so an old client cannot handle it bumps the second. Within either
 version, stay backward compatible — releases land during live games, not just
 lobbies.

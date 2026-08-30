@@ -4,14 +4,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import * as w from '../src/games/onuw/game.ts';
-import { nightScript, stepMillis } from '../src/games/onuw/rules.ts';
+import * as w from '../src/server/games/onuw/game.ts';
+import { nightScript, stepMillis } from '../src/server/games/onuw/rules.ts';
 
 let clock = 1_700_000_000_000;
 const now = () => clock;
 
 const dom = installDom();
-const client = await import('../public/app.ts');
+const client = await import('../src/client/app.ts');
 await client.ready;
 const { app, render, gameRendererForTests } = client;
 

@@ -1,8 +1,6 @@
 {
   "compilerOptions": {
-    "allowJs": true,
     "allowImportingTsExtensions": true,
-    "checkJs": false,
     "erasableSyntaxOnly": true,
     "exactOptionalPropertyTypes": true,
     "forceConsistentCasingInFileNames": true,
@@ -17,10 +15,8 @@
     "verbatimModuleSyntax": true
   },
   "include": [
-    "public/**/*.ts",
-    "src/**/*.js",
     "src/**/*.ts",
     "test/**/*.test.ts",
-    "types/**/*.ts"
+    "test/type/**/*.ts"
   ]
 }

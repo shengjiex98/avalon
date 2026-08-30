@@ -4,11 +4,11 @@ import assert from 'node:assert/strict';
 import {
   HOUSE_RULES, HOUSE_RULE_KEYS, SETUPS, buildRoleList, defaultOptions, failsRequired,
   knowledgeFor, sideOf, teamSize,
-} from '../src/games/avalon/rules.ts';
-import * as avalon from '../src/games/avalon/game.ts';
-import { houseRulesInForce, setHouseRules } from '../src/lobby.ts';
-import { missingKeys, t, STRINGS } from '../public/i18n.ts';
-import type { AvalonRole } from '../src/games/avalon/rules.ts';
+} from '../src/server/games/avalon/rules.ts';
+import * as avalon from '../src/server/games/avalon/game.ts';
+import { houseRulesInForce, setHouseRules } from '../src/server/lobby.ts';
+import { missingKeys, t, STRINGS } from '../src/client/i18n.ts';
+import type { AvalonRole } from '../src/server/games/avalon/rules.ts';
 
 const roleMap = (values: Record<string, AvalonRole>): Record<string, AvalonRole> => values;
 
