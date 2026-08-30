@@ -558,6 +558,13 @@ test('a full three player game plays through to a verdict', () => {
   assert.deepEqual(game.state.dead, ['p2']);
   assert.equal(game.state.finalRoles.p2, 'werewolf');
   assert.deepEqual(game.state.winners, ['village']);
+  const result = game.room.log.find((entry) => entry.key === 'log.gameResult');
+  assert.ok(result);
+  const winners = result.params.winners as Array<{ id: string; name: string; side: string }>;
+  const losers = result.params.losers as Array<{ id: string; name: string; side: string }>;
+  assert.deepEqual(winners.map(({ side }) => side), ['village', 'village']);
+  assert.deepEqual(losers.map(({ side }) => side), ['werewolf']);
+  assert.ok([...winners, ...losers].every((player) => !('role' in player)), 'the report never retains roles');
 });
 
 test('the hunter takes their target down too', () => {
@@ -638,6 +645,8 @@ test('play again reshuffles the same table', () => {
   const lobby = w.viewFor(game, 'p0', clock);
   assertPhase(lobby, 'lobby');
   assert.equal('startRole' in lobby.players[0]!, false);
+  assert.equal(lobby.log.filter((entry) => entry.key === 'log.gameResult').length, 1,
+    'the completed result survives into the next game');
 });
 
 test('the host can abandon an active night without changing the table settings', () => {

@@ -83,10 +83,55 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
         h('span', { text: T('log.title') }),
         h('span', { class: 'journal-count', text: entries.length }),
       ),
-      scrollPane('log', { class: 'log' }, entries.map((entry) => h('div', {
-        text: T(entry.key, formatParams(entry.params, entry.key)),
-      }))),
+      scrollPane('log', { class: 'log' }, entries.map(renderLogEntry)),
     );
+  }
+
+  /** @param {import('../src/contracts/persistence.ts').LogEntry} entry */
+  function renderLogEntry(entry) {
+    if (entry.key !== 'log.gameResult') return h('div', {
+      text: T(entry.key, formatParams(entry.params, entry.key)),
+    });
+    return h('div', { class: 'game-result' },
+      resultRow('report.winners', entry.params.winners),
+      resultRow('report.losers', entry.params.losers),
+    );
+  }
+
+  /** @param {string} label @param {unknown} value */
+  function resultRow(label, value) {
+    const players = Array.isArray(value) ? value.filter(resultPlayer) : [];
+    const names = players.length
+      ? players.flatMap((player, index) => [
+          index ? T('report.separator') : null,
+          h('span', {
+            class: `report-player ${resultSideClass(player.side)}`,
+            text: player.name,
+            title: resultSideLabel(player.side),
+            'aria-label': `${player.name}, ${resultSideLabel(player.side)}`,
+          }),
+        ])
+      : [h('span', { class: 'muted', text: T('report.none') })];
+    return h('div', { class: 'result-row' }, h('span', { text: T(label) }), names);
+  }
+
+  /** @param {unknown} value */
+  function resultPlayer(value) {
+    return Boolean(value && typeof value === 'object'
+      && 'name' in value && typeof value.name === 'string'
+      && 'side' in value && typeof value.side === 'string');
+  }
+
+  /** @param {string} side */
+  function resultSideClass(side) {
+    if (side === 'good' || side === 'village') return 'good';
+    if (side === 'evil' || side === 'werewolf') return 'evil';
+    return 'tanner';
+  }
+
+  /** @param {string} side */
+  function resultSideLabel(side) {
+    return T(side === 'good' || side === 'evil' ? `side.${side}` : `onuw.team.${side}`);
   }
 
   /** @param {Record<string, unknown>} params @param {string} entryKey */

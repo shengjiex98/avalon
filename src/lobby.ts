@@ -109,6 +109,18 @@ export function logEvent(
   g.room.log.push({ key, params, at: g.room.log.length });
 }
 
+type ResultSide = 'good' | 'evil' | 'village' | 'werewolf' | 'tanner';
+type ResultPlayer = { id: string; name: string; side: ResultSide; won: boolean };
+
+/** Keep the verdict, but not anyone's character, for the life of the room. */
+export function recordGameResult(g: GameContext, players: ResultPlayer[]): void {
+  const resultPlayer = ({ id, name, side }: ResultPlayer) => ({ id, name, side });
+  logEvent(g, 'log.gameResult', {
+    winners: players.filter((player) => player.won).map(resultPlayer),
+    losers: players.filter((player) => !player.won).map(resultPlayer),
+  });
+}
+
 /**
  * @param {GameContext} g
  * @param {{ id: string, name?: string, avatar?: string }} player
@@ -205,6 +217,7 @@ function rebuildLobby<C extends GameContext>(
   const carried = {
     code: g.room.code, players: g.room.players, hostId: g.room.hostId,
     seed: g.room.seed, rng: g.room.rng, journal: g.room.journal,
+    log: g.room.log.filter((entry) => entry.key === 'log.gameResult'),
     ...(g.room.journalDropped ? { journalDropped: true } : {}),
   };
   const revision = g.room.revision;
@@ -257,7 +270,7 @@ export function baseView(
     version: g.room.revision,
     hostId: g.room.hostId,
     me: me ? { id: me.id, name: me.name, avatar: me.avatar ?? null } : null,
-    log: g.room.log.slice(-40),
+    log: visibleLog(g),
   };
   if (g.room.game.id === 'avalon') {
     if (!('roles' in g.state)) throw new GameError('noSuchGame', { game: g.room.game.id });
@@ -265,4 +278,16 @@ export function baseView(
   }
   if ('roles' in g.state) throw new GameError('noSuchGame', { game: g.room.game.id });
   return { ...shared, gameId: g.room.game.id, phase: g.state.phase };
+}
+
+/** Completed-game verdicts never fall off the report; only event detail is capped. */
+function visibleLog(g: GameContext) {
+  let ordinary = 0;
+  let firstRecent = 0;
+  for (let i = g.room.log.length - 1; i >= 0; i--) {
+    if (g.room.log[i]!.key === 'log.gameResult') continue;
+    ordinary += 1;
+    if (ordinary === 40) { firstRecent = i; break; }
+  }
+  return g.room.log.filter((entry, index) => entry.key === 'log.gameResult' || index >= firstRecent);
 }

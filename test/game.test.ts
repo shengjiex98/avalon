@@ -126,6 +126,13 @@ test('five rejections hand the game to evil', () => {
   assert.equal(game.state.phase, 'over');
   assert.equal(game.state.winner, 'evil');
   assert.equal(game.state.winReason, 'win.hammer');
+  const result = game.room.log.find((entry) => entry.key === 'log.gameResult');
+  assert.ok(result);
+  const winners = result.params.winners as Array<{ id: string; name: string; side: string }>;
+  const losers = result.params.losers as Array<{ id: string; name: string; side: string }>;
+  assert.deepEqual(winners.map(({ side }) => side), ['evil', 'evil']);
+  assert.deepEqual(losers.map(({ side }) => side), ['good', 'good', 'good']);
+  assert.ok([...winners, ...losers].every((player) => !('role' in player)), 'the report never retains roles');
 });
 
 test('an approved vote does not reset the rejection counter by default', () => {
@@ -341,6 +348,8 @@ test('play again returns the same table to the lobby', () => {
   const lobbyView = g.viewFor(game, 'p0');
   assertPhase(lobbyView, 'lobby');
   assert.equal('role' in lobbyView.players[0]!, false);
+  assert.equal(lobbyView.log.filter((entry) => entry.key === 'log.gameResult').length, 1,
+    'the completed result survives into the next game');
 });
 
 test('the host can abandon an active game and return the same table to the lobby', () => {

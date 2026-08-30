@@ -7,7 +7,7 @@ import {
 } from './rules.ts';
 import type { AvalonOptions, AvalonRole } from './rules.ts';
 import * as lobby from '../../lobby.ts';
-import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.ts';
+import { logEvent, playerById, randInt, recordGameResult, require_, shuffleWith } from '../../lobby.ts';
 import type { AvalonState, Player } from '../../contracts/persistence.ts';
 import type { AvalonCommand, AvalonContext } from '../../contracts/runtime.ts';
 import type { AvalonView } from '../../contracts/views.ts';
@@ -284,6 +284,10 @@ function finish(g: AvalonContext, winner: 'good' | 'evil', reason: string): void
   g.state.winner = winner;
   g.state.winReason = reason;
   logEvent(g, 'log.gameOver', { winner });
+  recordGameResult(g, g.room.players.map((player) => {
+    const side = sideOf(g.state.roles[player.id]!);
+    return { id: player.id, name: player.name, side, won: side === winner };
+  }));
 }
 
 /** What this table agreed to before the cards came out, and keeps. */

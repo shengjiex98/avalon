@@ -25,7 +25,7 @@ import {
 } from './rules.ts';
 import type { NightStep, OnuwOptions, OnuwRole } from './rules.ts';
 import * as lobby from '../../lobby.ts';
-import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.ts';
+import { logEvent, playerById, randInt, recordGameResult, require_, shuffleWith } from '../../lobby.ts';
 import type { OnuwNightAction } from '../../contracts/actions.ts';
 import type { GameEvent, OnuwState, Player } from '../../contracts/persistence.ts';
 import type { OnuwCommand, OnuwContext } from '../../contracts/runtime.ts';
@@ -444,6 +444,10 @@ function resolveVote(g: OnuwContext): void {
   logEvent(g, dead.size ? 'log.executed' : 'log.nobodyDied',
     { names: g.state.dead.map((id) => nameOf(g, id)) });
   logEvent(g, 'log.gameOver', { winner: g.state.winners[0] ?? 'nobody' });
+  recordGameResult(g, g.room.players.map((player) => {
+    const side = teamOf(g.state.finalRoles[player.id]!);
+    return { id: player.id, name: player.name, side, won: g.state.winners.includes(side) };
+  }));
 }
 
 /** What this table agreed to before the cards came out, and keeps. */
