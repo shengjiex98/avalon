@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { API_PROTOCOL } from '../src/api-protocol.ts';
+import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
 import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
@@ -24,7 +24,7 @@ function run(command, args) {
 }
 
 test('every page load resolves the current server-hosted version', async () => {
-  const bootstrap = await read('../public/bootstrap.ts');
+  const bootstrap = await read('../src/client/bootstrap.ts');
   assert.match(bootstrap, /version\.json/);
   assert.match(bootstrap, /cache:\s*'no-store'/);
   assert.match(bootstrap, /app\.js\?v=/);
@@ -69,20 +69,19 @@ test('the connection banner lives outside the top bar', async () => {
   assert.match(html, /<div id="conn" class="conn-banner"/);
 });
 
-// Pages ships on its own release train, so the client cannot import the
-// server's constant. It carries a copy, and the two must be the same number.
-test('the Pages client declares the same API protocol as the server', async () => {
-  const source = await read('../public/app.ts');
-  const declared = /^const API_PROTOCOL = (\d+);$/m.exec(source);
-  assert.ok(declared, 'public/app.ts must declare API_PROTOCOL as a plain number');
-  assert.equal(Number(declared[1]), API_PROTOCOL);
+test('generated browser configuration carries the authored API protocol', async () => {
+  const source = await read('../src/client/app.ts');
+  const generated = await read('../build/public/config.js');
+  assert.match(source, /import \{ API_BASE, API_PROTOCOL \} from '\.\/config\.ts'/);
+  assert.match(generated, new RegExp(`export const API_PROTOCOL = ${API_PROTOCOL};`));
+  assert.doesNotMatch(source, /^const API_PROTOCOL = \d+;$/m);
 });
 
 test('the browser defaults to Node but can remember one HTTPS backend', async () => {
-  const source = await read('../public/app.ts');
-  const config = await read('../public/config.ts');
-  const storage = await read('../public/storage.ts');
-  const transport = await read('../public/transport.ts');
+  const source = await read('../src/client/app.ts');
+  const config = await read('../src/client/config.ts');
+  const storage = await read('../src/client/storage.ts');
+  const transport = await read('../src/client/transport.ts');
   assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
   assert.match(source, /location\.origin !== PAGES_ORIGIN/);
   assert.match(source, /normaliseServer\(API_BASE\)/);
@@ -92,10 +91,11 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(transport, /new EventSource\(`\$\{app\.server \?\? ''\}\/api\/rooms\//);
   assert.match(source, /url\.search = app\.server \? `\?server=/);
   assert.match(config, /export const API_BASE = ''/);
+  assert.match(config, /export \{ API_PROTOCOL \} from '\.\.\/contracts\/api-protocol\.ts'/);
 });
 
 test('game renderers are constructed without mutable module bindings', async () => {
-  for (const file of ['../public/games/avalon.ts', '../public/games/onuw.ts']) {
+  for (const file of ['../src/client/games/avalon.ts', '../src/client/games/onuw.ts']) {
     const source = await read(file);
     assert.match(source, /export function createRenderer\(ctx:/);
     assert.doesNotMatch(source, /export function bind|\blet (?:T|send|app)\b/);
@@ -103,9 +103,9 @@ test('game renderers are constructed without mutable module bindings', async () 
 });
 
 test('the Pages renderers consume server-owned setup metadata', async () => {
-  const app = await read('../public/app.ts');
-  const avalon = await read('../public/games/avalon.ts');
-  const onuw = await read('../public/games/onuw.ts');
+  const app = await read('../src/client/app.ts');
+  const avalon = await read('../src/client/games/avalon.ts');
+  const onuw = await read('../src/client/games/onuw.ts');
 
   assert.match(app, /v\.setup\.minPlayers/);
   assert.match(avalon, /v\.setup\.options/);
@@ -126,7 +126,7 @@ test('development checking and browser emit are explicit package contracts', asy
   const browserBuild = await read('../scripts/build-browser.mjs');
   const actions = await read('../src/contracts/actions.ts');
   const persistence = await read('../src/contracts/persistence.ts');
-  const runtime = await read('../src/contracts/runtime.ts');
+  const runtime = await read('../src/server/runtime.ts');
   const views = await read('../src/contracts/views.ts');
   const ci = await read('../.github/workflows/ci.yml');
   const deploy = await read('../.github/workflows/deploy.yml');
@@ -135,7 +135,7 @@ test('development checking and browser emit are explicit package contracts', asy
   assert.ok(pkg.devDependencies.typescript);
   assert.ok(pkg.devDependencies['@types/node']);
   assert.equal(lock.lockfileVersion, 3);
-  assert.equal(config.compilerOptions.allowJs, true);
+  assert.equal(config.compilerOptions.allowJs, undefined);
   assert.equal(config.compilerOptions.noEmit, true);
   assert.equal(config.compilerOptions.strict, true);
   assert.match(actions, /ValidatedAction/);
@@ -144,23 +144,42 @@ test('development checking and browser emit are explicit package contracts', asy
   assert.match(views, /PublicView|GamePhase/);
   await assert.rejects(read('../src/contracts/types.ts'), /ENOENT/);
   assert.ok(config.include.includes('src/**/*.ts'), 'native server TypeScript is checked');
+  assert.equal(config.include.includes('src/**/*.js'), false, 'the source tree is TypeScript-only');
   assert.ok(config.include.includes('test/**/*.test.ts'), 'native test TypeScript is checked');
 
   // The browser client is what talks to the API, so leaving it out of the
   // program is what let a request body drift from the contract unnoticed.
-  assert.ok(config.include.includes('public/**/*.ts'), 'the authored client is type checked too');
+  assert.ok(config.include.includes('src/**/*.ts'), 'the authored client is type checked too');
   assert.equal(pkg.scripts['build:browser'], 'node scripts/build-browser.mjs');
   assert.equal(browserConfig.compilerOptions.rewriteRelativeImportExtensions, true);
   assert.equal(browserConfig.compilerOptions.sourceMap, false);
   assert.equal(browserConfig.compilerOptions.module, 'esnext');
+  assert.equal(browserConfig.compilerOptions.types, undefined,
+    'browser checking does not inherit Node ambient types');
+  assert.deepEqual(browserConfig.include, ['src/client/**/*.ts']);
   assert.match(browserBuild, /build\/public/);
-  assert.deepEqual((await readdir(new URL('../public/', import.meta.url)))
-    .filter((file) => file.endsWith('.js')), [], 'converted JavaScript sources are deleted');
+  assert.equal((await readdir(new URL('../public/', import.meta.url), { recursive: true }))
+    .some((file) => file.endsWith('.ts') || file.endsWith('.js')), false,
+  'public contains only copy-as-is assets');
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
   assert.equal((deploy.match(/npm ci/g) ?? []).length, 1, 'deployment installs the lockfile once');
   assert.equal((deploy.match(/npm run build:browser/g) ?? []).length, 1, 'deployment emits the browser once');
   assert.match(deploy, /npm run build:browser[\s\S]*npm run test:built[\s\S]*npm run typecheck/);
+});
+
+test('the authored tree has explicit runtime boundaries', async () => {
+  const entries = await readdir(new URL('../src/', import.meta.url), { withFileTypes: true });
+  assert.deepEqual(entries.map((entry) => `${entry.name}${entry.isDirectory() ? '/' : ''}`).sort(), [
+    'client/', 'contracts/', 'server/',
+  ]);
+
+  for (const entry of await readdir(new URL('../src/contracts/', import.meta.url))) {
+    if (!entry.endsWith('.ts')) continue;
+    const source = await read(`../src/contracts/${entry}`);
+    assert.doesNotMatch(source, /from ['"]\.\.\/server\//,
+      `${entry} must not depend on the server runtime`);
+  }
 });
 
 test('the deploy workflow tests the exact archive with trusted checked-out code', async () => {
@@ -298,4 +317,10 @@ test('the server and the updater snapshot the same file', async () => {
   assert.match(unit, /ReadWritePaths=%h\/\.local\/state\/avalon$/m);
   assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$\{XDG_STATE_HOME:-\$HOME\/\.local\/state\}\/avalon\/rooms\.json\}/);
   assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
+});
+
+test('the installed service starts the canonical server entry directly', async () => {
+  const unit = await read('../deploy/avalon.service');
+  assert.match(unit, /ExecStart=%h\/\.local\/bin\/node %h\/\.local\/lib\/avalon\/current\/src\/server\/main\.ts/);
+  assert.doesNotMatch(unit, /server\.js|preserve-symlinks-main/);
 });

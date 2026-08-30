@@ -4,12 +4,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { installDom } from './dom-shim.js';
-import { parseCreateRoom, parseJoin } from '../src/contracts/actions.ts';
+import { parseCreateRoom, parseJoin } from '../src/server/commands.ts';
 
 const dom = installDom();
 // A game this build no longer knows, left behind by an older one.
 dom.storage.set('avalon.game', 'werewolf');
-const client = await import('../public/app.ts');
+const client = await import('../src/client/app.ts');
 await client.ready;
 
 const { app, render } = client;
@@ -299,8 +299,8 @@ test('a remembered game this build does not know falls back instead of failing',
 });
 
 test('an unknown game id is never drawn as some other game', async () => {
-  const { gameFor, knownGame } = await import('../public/games/index.ts');
+  const { gameFor, knownGame } = await import('../src/client/games/index.ts');
   assert.equal(knownGame('werewolf'), false);
   assert.throws(() => gameFor('werewolf'), /unknown game: werewolf/);
-  assert.equal(gameFor('onuw'), (await import('../public/games/onuw.ts')));
+  assert.equal(gameFor('onuw'), (await import('../src/client/games/onuw.ts')));
 });

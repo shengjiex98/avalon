@@ -8,13 +8,14 @@ network or reverse-proxy access control when that model is insufficient.
 The server—not the browser—enforces legal actions and derives filtered views,
 so modifying a client does not grant another player's hidden information or an
 illegal move. The authoritative boundaries are the action and view functions
-under [`src/games/`](../src/games/) and the request validation in
-[`src/server.ts`](../src/server.ts).
+under [`src/server/games/`](../src/server/games/) and the request validation in
+[`src/server/commands.ts`](../src/server/commands.ts).
 
 Uploaded avatars are processed before storage. Automatic avatars are disabled
 unless Cloudflare credentials are configured and send the display name to
 Cloudflare Workers AI. Storage, limits, and request behavior are implemented in
-[`src/avatars.ts`](../src/avatars.ts) and [`public/app.ts`](../public/app.ts).
+[`src/server/avatars.ts`](../src/server/avatars.ts) and
+[`src/client/app.ts`](../src/client/app.ts).
 
 ## Deployment authority
 

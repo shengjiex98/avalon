@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-import { GameError } from '../lobby.ts';
-
 const nonEmptyString = z.string().min(1);
 const playerAction = { playerId: nonEmptyString };
 
@@ -105,33 +103,3 @@ type WithoutActor<T> = T extends { playerId: string } ? Omit<T, 'playerId'> : ne
 export type AvalonClientAction = WithoutActor<AvalonAction>;
 export type OnuwClientAction = WithoutActor<OnuwAction>;
 export type ClientAction = AvalonClientAction | OnuwClientAction;
-
-const actionEnvelopeSchema = z.object({ type: nonEmptyString, playerId: nonEmptyString });
-const actionTypes = {
-  avalon: new Set(['setGame', 'leave', 'options', 'start', 'confirm', 'propose', 'vote', 'card', 'assassinate', 'reset', 'again']),
-  onuw: new Set(['setGame', 'leave', 'options', 'start', 'confirm', 'night', 'startVote', 'vote', 'reset', 'again']),
-};
-
-const badRequest = (): never => { throw new GameError('badRequest'); };
-
-function parse<T>(schema: z.ZodType<T>, value: unknown): T {
-  const result = schema.safeParse(value);
-  return result.success ? result.data : badRequest();
-}
-
-export const parseCreateRoom = (value: unknown): CreateRoomCommand => parse(createRoomSchema, value);
-export const parseJoin = (value: unknown): JoinCommand => parse(joinSchema, value);
-
-export function parseAction(gameId: 'avalon', value: unknown): AvalonAction;
-export function parseAction(gameId: 'onuw', value: unknown): OnuwAction;
-export function parseAction(gameId: GameId, value: unknown): ValidatedAction;
-export function parseAction(gameId: GameId, value: unknown): ValidatedAction {
-  const envelope = parse(actionEnvelopeSchema, value);
-  if (!actionTypes[gameId].has(envelope.type)) {
-    throw new GameError('unknownAction', { type: envelope.type });
-  }
-  if (gameId === 'avalon') return parse(avalonActionSchema, value);
-  return parse(onuwActionSchema, value);
-}
-
-export const parseRoomCode = (value: unknown): string => parse(z.string().min(1), value).toUpperCase();

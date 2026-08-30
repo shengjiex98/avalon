@@ -10,7 +10,7 @@ Type=simple
 WorkingDirectory=%h/.local/lib/avalon/current
 EnvironmentFile=-%h/.config/avalon.env
 Environment=PORT=8420
-ExecStart=%h/.local/bin/node --preserve-symlinks-main %h/.local/lib/avalon/current/src/server.js
+ExecStart=%h/.local/bin/node %h/.local/lib/avalon/current/src/server/main.ts
 Restart=on-failure
 RestartSec=3
 # Pinned rather than left to StateDirectory=, whose user-unit path moved

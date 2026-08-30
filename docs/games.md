@@ -17,9 +17,9 @@ Merlin.
 Optional roles and house rules change information, seating, or voting without
 changing the room model. Exact decks, quest sizes, knowledge rules, rejection
 behavior, and win conditions are defined in
-[`src/games/avalon/rules.js`](../src/games/avalon/rules.js) and enforced by
-[`src/games/avalon/game.js`](../src/games/avalon/game.js). The corresponding UI
-is [`public/games/avalon.ts`](../public/games/avalon.ts).
+[`src/server/games/avalon/rules.ts`](../src/server/games/avalon/rules.ts) and enforced by
+[`src/server/games/avalon/game.ts`](../src/server/games/avalon/game.ts). The corresponding UI
+is [`src/client/games/avalon.ts`](../src/client/games/avalon.ts).
 
 ## One Night Ultimate Werewolf
 
@@ -29,9 +29,9 @@ the night, and vote simultaneously. The final card held by each player—not the
 original deal—determines their team.
 
 Exact roles, night order, timing, house rules, and winner calculation are in
-[`src/games/onuw/rules.js`](../src/games/onuw/rules.js) and
-[`src/games/onuw/game.js`](../src/games/onuw/game.js). The corresponding UI is
-[`public/games/onuw.ts`](../public/games/onuw.ts), and checked-in narration is
+[`src/server/games/onuw/rules.ts`](../src/server/games/onuw/rules.ts) and
+[`src/server/games/onuw/game.ts`](../src/server/games/onuw/game.ts). The corresponding UI is
+[`src/client/games/onuw.ts`](../src/client/games/onuw.ts), and checked-in narration is
 under [`public/audio/onuw/`](../public/audio/onuw/).
 
 ## Privacy and language
@@ -42,7 +42,7 @@ game state. Tests under [`test/`](../test/) exercise role knowledge, hidden
 actions, and post-game disclosure.
 
 English and Chinese strings are rendered by the browser from translation keys.
-The canonical catalog is [`public/i18n.ts`](../public/i18n.ts), with coverage in
+The canonical catalog is [`src/client/i18n.ts`](../src/client/i18n.ts), with coverage in
 [`test/i18n-coverage.test.js`](../test/i18n-coverage.test.js).
 
 Test mode creates real seats through the normal API and lets one browser switch

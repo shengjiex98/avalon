@@ -3,12 +3,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { record } from '../src/lobby.ts';
-import { Rooms } from '../src/rooms.ts';
-import * as avalon from '../src/games/avalon/game.ts';
+import { record } from '../src/server/lobby.ts';
+import { Rooms } from '../src/server/rooms.ts';
+import * as avalon from '../src/server/games/avalon/game.ts';
 import type {
   GameContext, OnuwContext, RuntimeRoom, RuntimeRoomFor,
-} from '../src/contracts/runtime.ts';
+} from '../src/server/runtime.ts';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -34,7 +34,7 @@ function startedGame(rooms: Rooms): { code: string; room: RuntimeRoomFor<'onuw'>
 
 // The room layer exposes games only through the registry, so reach for it the
 // same way the server does.
-import { gameFor } from '../src/games/index.ts';
+import { gameFor } from '../src/server/games/index.ts';
 const readyEveryone = (rooms: Rooms, code: string, room: RuntimeRoomFor<'onuw'>): void => {
   for (const player of room.players) rooms.dispatch(code, player.id, { type: 'confirm' });
 };

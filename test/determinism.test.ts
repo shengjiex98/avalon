@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Rooms } from '../src/rooms.ts';
+import { Rooms } from '../src/server/rooms.ts';
 import type { AvalonState, Player } from '../src/contracts/persistence.ts';
 
 function deal(seed: number): AvalonState & { players: Player[] } {

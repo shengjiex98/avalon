@@ -9,8 +9,8 @@ import {
   AVATAR_STYLE_PROMPT,
   AVATAR_SUBJECT_PROMPT,
   Avatars,
-} from '../src/avatars.ts';
-import type { AiBody, AvatarFetch } from '../src/avatars.ts';
+} from '../src/server/avatars.ts';
+import type { AiBody, AvatarFetch } from '../src/server/avatars.ts';
 
 type AiRequest = {
   chat_template_kwargs?: unknown;

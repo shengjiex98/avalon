@@ -16,21 +16,25 @@ requests into room actions but does not implement game rules.
 
 ```text
 browser
-  ├── build/public/* (generated browser modules and static assets)
-  └── authored under public/*.ts and public/games/*.ts
+  └── build/public/* (generated browser modules and copied public assets)
           │ JSON + SSE
           ▼
-src/server.js (compatibility launcher) ──> src/server.ts
+src/server/main.ts
           ▼
-src/rooms.ts ──> src/persistence.ts
+src/server/rooms.ts ──> src/server/persistence.ts
           │
-          └──> src/games/*
+          └──> src/server/games/*
 ```
 
-The game registry is [`src/games/index.ts`](../src/games/index.ts). Shared room
-behavior is in [`src/lobby.ts`](../src/lobby.ts) and
-[`src/rooms.ts`](../src/rooms.ts); each server game module has a matching
-browser module under [`public/games/`](../public/games/).
+Authored browser modules live under [`src/client/`](../src/client/), Node-only
+code under [`src/server/`](../src/server/), and contracts used across that
+boundary under [`src/contracts/`](../src/contracts/). Copy-only HTML, CSS, art,
+and audio live under [`public/`](../public/).
+
+The game registry is [`src/server/games/index.ts`](../src/server/games/index.ts).
+Shared room behavior is in [`src/server/lobby.ts`](../src/server/lobby.ts) and
+[`src/server/rooms.ts`](../src/server/rooms.ts); each server game module has a
+matching browser module under [`src/client/games/`](../src/client/games/).
 
 The browser entrypoint composes owners for durable storage, HTTP and stream
 transport, the active room session, shared rendering, and test seats. A game
@@ -46,11 +50,11 @@ room, and successful player inputs are recorded with the room. A snapshot is
 validated as one unit before any room is restored, so malformed state or broken
 roster references cannot leave a partial registry. Snapshots can resume the
 same stream and timers after a restart. Persistence and restore rules are in
-[`src/persistence.ts`](../src/persistence.ts).
+[`src/server/persistence.ts`](../src/server/persistence.ts).
 
 Game state is never broadcast directly. Each engine derives a filtered view
 for the requesting seat, so hidden roles and actions remain server-side. The
-rules and view functions under [`src/games/`](../src/games/) are the canonical
+rules and view functions under [`src/server/games/`](../src/server/games/) are the canonical
 privacy boundary.
 
 ## Client compatibility
@@ -58,8 +62,8 @@ privacy boundary.
 The Node-hosted client and server move together. The optional GitHub Pages
 client moves only after the server, so it checks the server's API protocol
 before joining a room. Compatibility constants and checks live in
-[`src/api-protocol.ts`](../src/api-protocol.ts) and
-[`public/app.ts`](../public/app.ts).
+[`src/contracts/api-protocol.ts`](../src/contracts/api-protocol.ts), generated
+browser configuration, and [`src/client/app.ts`](../src/client/app.ts).
 
 ## Deployment boundary
 

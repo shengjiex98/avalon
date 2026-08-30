@@ -9,7 +9,7 @@ import assert from 'node:assert/strict';
 import { installDom } from './dom-shim.js';
 
 const dom = installDom();
-const client = await import('../public/app.ts');
+const client = await import('../src/client/app.ts');
 await client.ready;
 const { app, render } = client;
 
