@@ -645,12 +645,24 @@ test('the end screen explains the night and the verdict', () => {
   assert.match(card.text, /Robber\s*→\s*Werewolf/, 'the card that arrived, and the one that stayed');
   assert.equal(card.getAttribute('aria-label'), 'dealt Robber → ended Werewolf');
   assert.match(cai.byClass('tag')[1].text, /☞\s*Ann/, 'and who they pointed at');
+  assert.deepEqual(Object.fromEntries(view.byClass('player').map((row) => [
+    row.byClass('name')[0]?.text,
+    row.byClass('vote-count')[0]?.text,
+  ])), {
+    Ann: 'Votes received: 1',
+    '张三': 'Votes received: 0',
+    Cai: 'Votes received: 2',
+  }, 'every seat shows its final vote tally');
   // The centre is finally face up.
   assert.ok(view.byClass('centre-card').every((c) => !c.text.includes('?')));
   assertNoRawKeys(view, 'end screen');
 
   const loser = show(game, 'p2');
   assert.match(loser.text, /You lost\./);
+
+  const chinese = show(game, 'p0', 'zh');
+  assert.match(chinese.text, /得票：2/, 'the tally is translated in Chinese');
+  assertNoRawKeys(chinese, 'Chinese end screen');
 });
 
 test('the end screen keeps each seat\u2019s tags inside the seat\u2019s box', () => {
