@@ -3,14 +3,16 @@
 
 import { randomInt } from 'node:crypto';
 
+import type { GameId } from './contracts/actions.ts';
 import { persistedRoomSchema, persistedRoomsSchema } from './contracts/persistence.ts';
+import type { PersistedRoom } from './contracts/persistence.ts';
 import { validateRestoreInvariants } from './contracts/restore-invariants.ts';
+import type {
+  CreatedRoom, GameContext, RoomCommand, RuntimeRoom, RuntimeRoomFor,
+} from './contracts/runtime.ts';
+import type { PublicView } from './contracts/views.ts';
 import { GameError, logEvent, record, require_ } from './lobby.ts';
 import { DEFAULT_GAME, GAMES, gameFor } from './games/index.ts';
-import type {
-  CreatedRoom, GameContext, GameId, PersistedRoom, PublicView, RoomCommand, RuntimeRoom,
-  RuntimeRoomFor,
-} from './contracts/types.ts';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 4;
@@ -212,7 +214,7 @@ export class Rooms {
   }
 
   /** Compatibility seam for focused tests and non-player jobs. */
-  /** @param {string} code @param {(context: import('./contracts/types.ts').GameContext) => unknown} fn */
+  /** @param {string} code @param {(context: import('./contracts/runtime.ts').GameContext) => unknown} fn */
   apply<T>(code: string, fn: (context: GameContext) => T): T {
     return this.mutate(code, (room) => fn(contextFor(room)));
   }

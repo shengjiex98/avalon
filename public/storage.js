@@ -2,7 +2,7 @@
 // The browser's durable session keys. Keeping every key here makes storage a
 // boundary instead of ambient state spread through rendering and transport.
 
-/** @typedef {import('../src/contracts/types.ts').StoredSeat} StoredSeat */
+/** @typedef {{ id: string, name: string }} StoredSeat */
 
 /** @param {Storage} storage */
 export function createStore(storage = localStorage) {

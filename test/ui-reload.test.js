@@ -32,6 +32,7 @@ const frame = () => ({
   me: { id: 'me', name: 'Ann' },
   you: { id: 'me', name: 'Ann', role: 'merlin', team: 'good', awake: false, action: null, acted: false, voted: false },
   players: [{ id: 'me', name: 'Ann', seat: 0, isLeader: true, onTeam: true }],
+  setup: { minPlayers: 5, maxPlayers: 10, options: [], houseRules: [] },
   options: {}, optionRoom: 1, deck: {}, centreCount: 3, centre: null,
   round: 1, rejects: 0, maxRejects: 5, teamSize: 2, failsRequired: 1,
   boardSizes: [2, 3, 2, 3, 3], team: ['me'], quests: [], lastVote: null,

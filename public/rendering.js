@@ -1,16 +1,29 @@
+// @ts-check
 // Shared room rendering and scroll ownership. Game renderers receive only the
 // player-list function; journal formatting remains private to this owner.
 
 import { h, playerAvatar } from './ui.js';
 
+/** @typedef {import('../types/browser-renderers.d.ts').PlayerListOptions} PlayerListOptions */
+/** @typedef {import('../types/browser-renderers.d.ts').SharedRenderingContext} SharedRenderingContext */
+
+/** @param {SharedRenderingContext} deps */
 export function createSharedRendering({ app, T, currentGame, joinNames }) {
+  /** @type {Map<string, number>} */
   let scrollTops = new Map();
+  /** @type {Array<[string, HTMLElement]>} */
   let scrollPanes = [];
+
+  function view() {
+    if (!app.view) throw new Error('shared renderer requires a room view');
+    return app.view;
+  }
 
   function begin() {
     scrollPanes = [];
   }
 
+  /** @param {string} key @param {Record<string, unknown>} props @param {...unknown} children */
   function scrollPane(key, props, ...children) {
     const node = h('div', { ...props, onscroll: () => scrollTops.set(key, node.scrollTop) }, ...children);
     scrollPanes.push([key, node]);
@@ -28,20 +41,21 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     scrollPanes = [];
   }
 
+  /** @param {PlayerListOptions} [options] */
   function playerList({ selectable = false, selected = [], onpick, tags, only, exclude = [] } = {}) {
-    const view = app.view;
-    const rows = view.players
+    const current = view();
+    const rows = current.players
       .filter((player) => !only || only.includes(player.id))
       .map((player) => {
         const picked = selected.includes(player.id);
         const blocked = exclude.includes(player.id);
-        const isYou = player.id === view.you?.id;
+        const isYou = player.id === current.you?.id;
         const inner = [
-          playerAvatar(player, app.server),
+          playerAvatar(player, app.server ?? undefined),
           h('span', { class: 'name', text: player.name }),
           isYou ? h('span', { class: 'visually-hidden', text: T('lobby.you') }) : null,
-          player.isLeader ? h('span', { class: 'tag leader', text: '👑' }) : null,
-          player.onTeam && view.phase !== 'quest' ? h('span', { class: 'tag team', text: '⚔' }) : null,
+          'isLeader' in player && player.isLeader ? h('span', { class: 'tag leader', text: '👑' }) : null,
+          'onTeam' in player && player.onTeam && current.phase !== 'quest' ? h('span', { class: 'tag team', text: '⚔' }) : null,
           ...(tags ? tags(player) : []),
         ];
         if (!selectable) return h('div', {
@@ -50,17 +64,19 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
         return h('button', {
           class: `player ${isYou ? 'is-you' : ''} ${picked ? 'selected' : ''}`, type: 'button',
           'aria-current': isYou ? 'true' : null,
-          disabled: blocked, onclick: () => onpick(player),
+          disabled: blocked, onclick: () => onpick?.(player),
         }, inner);
       });
     return h('div', { class: 'players' }, rows);
   }
 
   function paneLog() {
-    const entries = app.view.log.slice().reverse();
+    const entries = view().log.slice().reverse();
     return h('details', {
       class: 'card journal', open: app.logOpen,
-      ontoggle: (event) => { app.logOpen = Boolean(event.target.open); },
+      ontoggle: (/** @type {Event} */ event) => {
+        app.logOpen = Boolean(event.target && 'open' in event.target && event.target.open);
+      },
     },
       h('summary', {},
         h('span', { 'aria-hidden': 'true', text: '▤' }),
@@ -73,13 +89,14 @@ export function createSharedRendering({ app, T, currentGame, joinNames }) {
     );
   }
 
+  /** @param {Record<string, unknown>} params @param {string} entryKey */
   function formatParams(params, entryKey) {
     const out = { ...params };
     for (const [key, value] of Object.entries(out)) if (Array.isArray(value)) out[key] = joinNames(value);
-    if (out.game) out.game = T(`game.${out.game}`);
+    if (out.game) out.game = T(`game.${String(out.game)}`);
     const game = currentGame();
     if (game.formatParams) return game.formatParams(out, entryKey);
-    if (out.winner) out.winner = T(`side.${out.winner}`);
+    if (out.winner) out.winner = T(`side.${String(out.winner)}`);
     return out;
   }
 

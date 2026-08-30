@@ -31,6 +31,7 @@ export type GameEvent = z.infer<typeof gameEventSchema>;
 const avalonRoleSchema = z.enum([
   'merlin', 'percival', 'servant', 'assassin', 'morgana', 'mordred', 'oberon', 'minion',
 ]);
+export type AvalonRole = z.infer<typeof avalonRoleSchema>;
 const avalonOptionsSchema = z.strictObject({
   percival: z.boolean(), morgana: z.boolean(), mordred: z.boolean(), oberon: z.boolean(),
 });
@@ -69,21 +70,17 @@ const avalonStateShape = {
   ready: booleanRecord.optional(),
 };
 
-export const avalonStateSchema = z.discriminatedUnion('phase', [
-  z.strictObject({ phase: z.literal('lobby'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('reveal'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('team'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('vote'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('quest'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('assassin'), ...avalonStateShape }),
-  z.strictObject({ phase: z.literal('over'), ...avalonStateShape }),
-]);
+export const avalonStateSchema = z.strictObject({
+  phase: z.enum(['lobby', 'reveal', 'team', 'vote', 'quest', 'assassin', 'over']),
+  ...avalonStateShape,
+});
 export type AvalonState = z.infer<typeof avalonStateSchema>;
 
 const onuwRoleSchema = z.enum([
   'werewolf', 'minion', 'mason', 'seer', 'robber', 'troublemaker',
   'drunk', 'insomniac', 'hunter', 'tanner', 'villager',
 ]);
+export type OnuwRole = z.infer<typeof onuwRoleSchema>;
 const onuwOptionsSchema = z.strictObject({
   minion: z.boolean(), mason: z.boolean(), drunk: z.boolean(), insomniac: z.boolean(),
   hunter: z.boolean(), tanner: z.boolean(),
@@ -92,6 +89,7 @@ const onuwHouseRulesSchema = z.strictObject({ decisiveVote: z.boolean() });
 const onuwScriptStepSchema = z.strictObject({
   key: z.string(), role: onuwRoleSchema.optional(), seconds: z.number().finite().positive(),
 });
+export type OnuwScriptStep = z.infer<typeof onuwScriptStepSchema>;
 const onuwStateShape = {
   options: onuwOptionsSchema,
   optionsTouched: z.boolean(),
@@ -113,14 +111,10 @@ const onuwStateShape = {
   winners: z.array(z.enum(['village', 'werewolf', 'tanner'])),
 };
 
-export const onuwStateSchema = z.discriminatedUnion('phase', [
-  z.strictObject({ phase: z.literal('lobby'), ...onuwStateShape }),
-  z.strictObject({ phase: z.literal('reveal'), ...onuwStateShape }),
-  z.strictObject({ phase: z.literal('night'), ...onuwStateShape }),
-  z.strictObject({ phase: z.literal('day'), ...onuwStateShape }),
-  z.strictObject({ phase: z.literal('vote'), ...onuwStateShape }),
-  z.strictObject({ phase: z.literal('over'), ...onuwStateShape }),
-]);
+export const onuwStateSchema = z.strictObject({
+  phase: z.enum(['lobby', 'reveal', 'night', 'day', 'vote', 'over']),
+  ...onuwStateShape,
+});
 export type OnuwState = z.infer<typeof onuwStateSchema>;
 
 const roomShape = {

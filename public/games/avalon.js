@@ -1,19 +1,36 @@
+// @ts-check
 // Avalon's screens. The shell hands over a context so these read the same as
 // they did when they lived in app.js.
 
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
+import { assertNever } from '../assert-never.js';
+
+/** @typedef {import('../../src/contracts/views.ts').AvalonView} AvalonView */
+/** @typedef {import('../../types/browser-renderers.d.ts').AvalonRendererContext} AvalonRendererContext */
 
 export const id = 'avalon';
 export const rulesKey = 'rules.body';
 export const taglineKey = 'app.tagline';
 
 /** Construct one renderer with an explicit, immutable shell context. */
+/** @param {AvalonRendererContext} ctx */
 export function createRenderer(ctx) {
 const { T, send, app, nameOf, namesOf, waitingNames, playerList, render } = ctx;
-const avatarOf = (player) => playerAvatar(player, app.server);
+/** @param {{ name: string, avatar: string | null, seat?: number } | undefined} player */
+const avatarOf = (player) => playerAvatar(player, app.server ?? undefined);
+
+/** @returns {AvalonView} */
+function view() {
+  const current = app.view;
+  if (!current || current.gameId !== 'avalon') throw new Error('Avalon renderer received another game');
+  return current;
+}
 
 /** Each round is a fresh screen, so the middle pane starts at the top again. */
-function paneKey() { return String(app.view.round); }
+function paneKey() {
+  const current = view();
+  return String('round' in current ? current.round : '');
+}
 
 /**
  * House rules are variants, not cards, so they sit under their own heading and
@@ -22,15 +39,22 @@ function paneKey() { return String(app.view.round); }
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const houseRuleName = (rule) => T(`avalon.house.${rule}`);
+const houseRuleName = (/** @type {string} */ rule) => T(`avalon.house.${rule}`);
+
+/** @param {Event} event */
+function checked(event) {
+  const target = event.target;
+  return Boolean(target && 'checked' in target && target.checked);
+}
 
 /** The role toggles and house rules the host sets before starting. */
 function lobbyOptions() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'lobby') throw new Error('expected lobby view');
   const isHost = v.you?.id === v.hostId;
-  const optionRow = (key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
+  const optionRow = (/** @type {string} */ key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', { type: 'checkbox', checked: v.options[key], disabled: !isHost,
-      onchange: (e) => send('options', { options: { [key]: e.target.checked } }) }),
+      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { [key]: checked(e) } }) }),
     rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
       h('span', { class: 'role-option-name', text: T(`role.${key}`) }),
@@ -38,10 +62,10 @@ function lobbyOptions() {
     ),
   );
 
-  const houseToggle = (rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+  const houseToggle = (/** @type {string} */ rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
-      onchange: (e) => send('options', { options: { houseRules: { [rule]: e.target.checked } } }),
+      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { houseRules: { [rule]: checked(e) } } }),
     }),
     h('span', { class: 'house-rule-copy' },
       h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
@@ -103,15 +127,22 @@ function header_() {
 }
 
 function panes() {
-  const byPhase = {
-    reveal: paneReveal, team: paneTeam, vote: paneVote,
-    quest: paneQuest, assassin: paneAssassin, over: paneOver,
-  };
-  return byPhase[app.view.phase]();
+  const current = view();
+  switch (current.phase) {
+    case 'lobby': return [lobbyOptions()];
+    case 'reveal': return paneReveal();
+    case 'team': return paneTeam();
+    case 'vote': return paneVote();
+    case 'quest': return paneQuest();
+    case 'assassin': return paneAssassin();
+    case 'over': return paneOver();
+    default: return assertNever(current);
+  }
 }
 
 function roleContent() {
-  const v = app.view;
+  const v = view();
+  if (v.phase === 'lobby') return null;
   if (!v.you?.role) return null;
   const side = v.you.side;
   return h('div', { class: 'reveal-card stack' },
@@ -151,22 +182,24 @@ function closeInfoPopup() {
 }
 
 /** The variants this table switched on, in the order they are listed. */
-const houseRulesInForce = () => app.view.setup.houseRules.filter((rule) => app.view.houseRules?.[rule]);
+const houseRulesInForce = () => view().setup.houseRules.filter((rule) => view().houseRules?.[rule]);
 
 /** Public role composition and abilities, without revealing who holds what. */
 function referenceContent() {
-  const counts = app.view.roleCounts ?? {};
+  const current = view();
+  if (current.phase === 'lobby') throw new Error('reference panel is not available in the lobby');
+  const counts = current.roleCounts;
   const roles = Object.keys(counts);
   const inForce = houseRulesInForce();
   return h('div', { class: 'stack' },
-    h('h3', { text: T('avalon.ref.inPlay', { n: app.view.players.length }) }),
+    h('h3', { text: T('avalon.ref.inPlay', { n: current.players.length }) }),
     ...['good', 'evil'].map((side) => h('div', { class: 'stack tight' },
       h('h3', { text: T(`side.${side}`) }),
       ...roles.filter((role) => sideOfRole(role) === side).map((role) => h('div', { class: 'ref-role' },
         rolePortrait(role, { small: true }),
         h('span', {
           class: `tag ${side === 'evil' ? 'evil' : 'good'}`,
-          text: counts[role] > 1 ? `${T(`role.${role}`)} ×${counts[role]}` : T(`role.${role}`),
+          text: (counts[role] ?? 0) > 1 ? `${T(`role.${role}`)} ×${counts[role]}` : T(`role.${role}`),
         }),
         h('span', { class: 'muted', text: T(`roleDesc.${role}`) }),
       )),
@@ -184,7 +217,8 @@ function referenceContent() {
 }
 
 function paneBoard() {
-  const v = app.view;
+  const v = view();
+  if (v.phase === 'lobby') throw new Error('board is not available in the lobby');
   return h('div', { class: 'card stack board-card' },
     h('div', { class: 'row' },
       h('h2', { class: 'grow', text: T('board.title') }),
@@ -222,7 +256,8 @@ function paneBoard() {
  * ballots in that case.
  */
 function voteResult() {
-  const v = app.view;
+  const v = view();
+  if (v.phase === 'lobby') throw new Error('vote result is not available in the lobby');
   const tally = v.voteTally ?? (v.lastVote ? {
     approved: v.lastVote.approved,
     yes: Object.values(v.lastVote.votes).filter(Boolean).length,
@@ -238,7 +273,7 @@ function voteResult() {
     }) }),
     v.lastVote
       ? h('div', { class: 'players' }, v.players.map((p) => {
-          const approved = v.lastVote.votes[p.id];
+          const approved = v.lastVote?.votes[p.id];
           return h('div', { class: 'player' },
             avatarOf(p),
             h('span', { class: 'name', text: p.name }),
@@ -257,22 +292,28 @@ function voteResult() {
 // ---- phases
 
 function paneReveal() {
-  const v = app.view;
-  const done = v.players.find((p) => p.id === v.you.id)?.ready;
+  const v = view();
+  if (v.phase !== 'reveal') throw new Error('expected reveal view');
+  if (!v.you) throw new Error('expected seated viewer');
+  const youId = v.you.id;
+  const done = v.players.find((p) => p.id === youId)?.ready;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.reveal') }),
-    playerList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('reveal.confirm'), text: '◆' })] : []) }),
+    playerList({ tags: (p) => ('ready' in p && p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('reveal.confirm'), text: '◆' })] : []) }),
     done
       ? h('p', { class: 'muted', text: T('reveal.waiting', { names: waitingNames() }) })
-      : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('reveal.confirm')),
+      : h('button', { class: 'btn primary wide', onclick: () => send({ type: 'confirm' }) }, T('reveal.confirm')),
   )];
 }
 
 function paneTeam() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'team') throw new Error('expected team view');
+  if (!v.you || v.teamSize === undefined) throw new Error('expected seated viewer and team size');
+  const teamSize = v.teamSize;
   const leader = v.players.find((p) => p.isLeader);
   const isLeader = leader?.id === v.you.id;
-  const full = app.selection.length === v.teamSize;
+  const full = app.selection.length === teamSize;
 
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.team') }),
@@ -286,28 +327,31 @@ function paneTeam() {
       onpick: (p) => {
         const i = app.selection.indexOf(p.id);
         if (i >= 0) app.selection.splice(i, 1);
-        else if (app.selection.length < v.teamSize) app.selection.push(p.id);
+        else if (app.selection.length < teamSize) app.selection.push(p.id);
         render();
       },
     }),
     isLeader ? h('div', { class: 'row' },
       h('span', { class: 'muted grow', text: T('team.selected', { n: app.selection.length, max: v.teamSize }) }),
-      h('button', { class: 'btn primary', disabled: !full, onclick: () => send('propose', { team: app.selection }) },
+      h('button', { class: 'btn primary', disabled: !full, onclick: () => send({ type: 'propose', team: app.selection }) },
         T('team.submit')),
     ) : null,
   )];
 }
 
 function paneVote() {
-  const v = app.view;
-  const voted = v.players.find((p) => p.id === v.you.id)?.hasVoted;
+  const v = view();
+  if (v.phase !== 'vote') throw new Error('expected vote view');
+  if (!v.you) throw new Error('expected seated viewer');
+  const youId = v.you.id;
+  const voted = v.players.find((p) => p.id === youId)?.hasVoted;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.vote') }),
     h('p', { text: T('vote.team', { names: namesOf(v.team) }) }),
     // The proposed team already wears the sword the list draws for it. During
     // voting, reveal only that a choice is locked in — the tick or cross
     // appears for everyone once the vote resolves.
-    playerList({ tags: (p) => (p.hasVoted
+    playerList({ tags: (p) => ('hasVoted' in p && p.hasVoted
       ? [h('span', { class: 'tag ok status-glyph', title: T('vote.voted'), text: '◆' })]
       : []) }),
     voted
@@ -315,16 +359,19 @@ function paneVote() {
       : h('div', { class: 'stack' },
           h('p', { text: T('vote.prompt') }),
           h('div', { class: 'row' },
-            h('button', { class: 'btn primary grow', onclick: () => send('vote', { approve: true }) }, T('vote.approve')),
-            h('button', { class: 'btn danger grow', onclick: () => send('vote', { approve: false }) }, T('vote.reject')),
+            h('button', { class: 'btn primary grow', onclick: () => send({ type: 'vote', approve: true }) }, T('vote.approve')),
+            h('button', { class: 'btn danger grow', onclick: () => send({ type: 'vote', approve: false }) }, T('vote.reject')),
           ),
         ),
   )];
 }
 
 function paneQuest() {
-  const v = app.view;
-  const me = v.players.find((p) => p.id === v.you.id);
+  const v = view();
+  if (v.phase !== 'quest') throw new Error('expected quest view');
+  if (!v.you) throw new Error('expected seated viewer');
+  const youId = v.you.id;
+  const me = v.players.find((p) => p.id === youId);
   const onTeam = me?.onTeam;
   const played = me?.hasPlayed;
 
@@ -332,13 +379,13 @@ function paneQuest() {
     h('h2', { text: T('phase.quest') }),
     h('p', { text: T('quest.watching', { round: v.round + 1, names: namesOf(v.team) }) }),
     v.failsRequired === 2 ? h('p', { class: 'muted', text: T('quest.needsTwo') }) : null,
-    playerList({ only: v.team, tags: (p) => (p.hasPlayed ? [h('span', { class: 'tag ok status-glyph', title: T('quest.played'), text: '◆' })] : []) }),
+    playerList({ only: v.team, tags: (p) => ('hasPlayed' in p && p.hasPlayed ? [h('span', { class: 'tag ok status-glyph', title: T('quest.played'), text: '◆' })] : []) }),
     onTeam && !played ? h('div', { class: 'stack' },
       h('p', { text: T('quest.prompt') }),
       h('div', { class: 'row' },
-        h('button', { class: 'btn primary grow', onclick: () => send('card', { success: true }) }, T('quest.success')),
+        h('button', { class: 'btn primary grow', onclick: () => send({ type: 'card', success: true }) }, T('quest.success')),
         v.you.side === 'evil'
-          ? h('button', { class: 'btn danger grow', onclick: () => send('card', { success: false }) }, T('quest.fail'))
+          ? h('button', { class: 'btn danger grow', onclick: () => send({ type: 'card', success: false }) }, T('quest.fail'))
           : h('span', { class: 'muted grow', text: T('quest.goodCannotFail') }),
       ),
     ) : h('p', { class: 'muted', text: T(onTeam ? 'quest.played' : 'reveal.waiting', { names: waitingNames() }) }),
@@ -346,7 +393,9 @@ function paneQuest() {
 }
 
 function paneAssassin() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'assassin') throw new Error('expected assassin view');
+  if (!v.you) throw new Error('expected seated viewer');
   const isAssassin = v.you.role === 'assassin';
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('phase.assassin') }),
@@ -359,44 +408,52 @@ function paneAssassin() {
     }),
     isAssassin ? h('button', {
       class: 'btn danger wide', disabled: !app.selection.length,
-      onclick: () => send('assassinate', { target: app.selection[0] }),
-    }, T('assassin.kill', { name: app.selection.length ? nameOf(app.selection[0]) : '…' })) : null,
+      onclick: () => send({ type: 'assassinate', target: selectedPlayer() }),
+    }, T('assassin.kill', { name: app.selection.length ? nameOf(selectedPlayer()) : '…' })) : null,
   )];
 }
 
 function paneOver() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'over') throw new Error('expected over view');
   const good = v.winner === 'good';
   return [h('div', { class: 'card stack' },
     h('div', { class: `banner ${good ? 'good' : 'evil'}`, text: T(good ? 'over.goodWins' : 'over.evilWins') }),
-    h('p', { text: T(v.winReason) }),
+    h('p', { text: T(v.winReason ?? 'over.evilWins') }),
     v.assassinTarget ? h('p', { class: 'muted', text: T('over.assassinPicked', { name: nameOf(v.assassinTarget) }) }) : null,
     h('h3', { text: T('over.roles') }),
     h('div', { class: 'players' }, v.players.map((p) => {
       const isYou = p.id === v.you?.id;
+      const role = p.role;
       return h('div', {
         class: `player ${isYou ? 'is-you' : ''}`, 'aria-current': isYou ? 'true' : null,
       },
         avatarOf(p),
-        rolePortrait(p.role, { small: true }),
+        role ? rolePortrait(role, { small: true }) : null,
         h('span', { class: 'name', text: p.name }),
-        h('span', { class: `tag ${sideOfRole(p.role)}`, text: T(`role.${p.role}`) }),
-        h('span', {
-          class: `faction-sigil mini ${sideOfRole(p.role)}`,
-          title: T(`side.${sideOfRole(p.role)}`),
-          'aria-label': T(`side.${sideOfRole(p.role)}`),
-          text: sideOfRole(p.role) === 'evil' ? '☾' : '☀',
-        }),
+        role ? h('span', { class: `tag ${sideOfRole(role)}`, text: T(`role.${role}`) }) : null,
+        role ? h('span', {
+          class: `faction-sigil mini ${sideOfRole(role)}`,
+          title: T(`side.${sideOfRole(role)}`),
+          'aria-label': T(`side.${sideOfRole(role)}`),
+          text: sideOfRole(role) === 'evil' ? '☾' : '☀',
+        }) : null,
       );
     })),
-    v.you.id === v.hostId
-      ? h('button', { class: 'btn primary wide', onclick: () => send('again') }, T('over.again'))
+    v.you?.id === v.hostId
+      ? h('button', { class: 'btn primary wide', onclick: () => send({ type: 'again' }) }, T('over.again'))
       : h('p', { class: 'muted', text: T('lobby.waitingHost') }),
   )];
 }
 
 const EVIL_ROLES = new Set(['assassin', 'morgana', 'mordred', 'oberon', 'minion']);
-const sideOfRole = (role) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
+const sideOfRole = (/** @type {string} */ role) => (EVIL_ROLES.has(role) ? 'evil' : 'good');
+
+function selectedPlayer() {
+  const selected = app.selection[0];
+  if (!selected) throw new Error('expected a selected player');
+  return selected;
+}
 
 return { id, rulesKey, taglineKey, paneKey, lobbyOptions, header_, panes };
 }

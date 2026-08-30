@@ -8,9 +8,9 @@ import {
 import type { AvalonOptions, AvalonRole } from './rules.ts';
 import * as lobby from '../../lobby.ts';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.ts';
-import type {
-  AvalonCommand, AvalonContext, AvalonState, AvalonView, Player,
-} from '../../contracts/types.ts';
+import type { AvalonState, Player } from '../../contracts/persistence.ts';
+import type { AvalonCommand, AvalonContext } from '../../contracts/runtime.ts';
+import type { AvalonView } from '../../contracts/views.ts';
 
 type CreateOptions = { now?: () => number; seed?: number };
 type SetOptions = Extract<AvalonCommand, { type: 'options' }>['options'];

@@ -1,7 +1,7 @@
 import type {
   AvalonLobbyView, AvalonQuestView, AvalonTeamView, AvalonView,
   OnuwLobbyView, OnuwNightView, OnuwOverView, OnuwView,
-} from '../src/contracts/types.ts';
+} from '../src/contracts/views.ts';
 import type { AvalonAction, OnuwAction } from '../src/contracts/actions.ts';
 
 declare const avalonLobby: AvalonLobbyView;
@@ -63,6 +63,10 @@ avalonTeam.players[0]?.hasPlayed;
 avalonQuest.teamSize;
 // @ts-expect-error the night clock does not exist in the One Night lobby
 onuwLobby.night;
+// @ts-expect-error an Avalon renderer can never receive a One Night phase
+const impossibleAvalonPhase: AvalonView = { ...avalonLobbyFixture, phase: 'night' };
+// @ts-expect-error a One Night renderer can never receive an Avalon-only phase
+const impossibleOnuwPhase: OnuwView = { ...onuwNightFixture, phase: 'quest' };
 
 // @ts-expect-error propose requires its team payload
 const missingAvalonPayload: AvalonAction = { type: 'propose', playerId: 'p0' };

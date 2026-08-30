@@ -1,16 +1,34 @@
+// @ts-check
 // One Night Werewolf's screens.
 
 import { h, infoPopup, playerAvatar, rolePortrait } from '../ui.js';
+import { assertNever } from '../assert-never.js';
+
+/** @typedef {import('../../src/contracts/actions.ts').OnuwNightAction} OnuwNightAction */
+/** @typedef {import('../../src/contracts/persistence.ts').GameEvent} GameEvent */
+/** @typedef {import('../../src/contracts/views.ts').OnuwNightView} OnuwNightView */
+/** @typedef {import('../../src/contracts/views.ts').OnuwView} OnuwView */
+/** @typedef {OnuwView['players'][number]} OnuwPlayer */
+/** @typedef {import('../../types/browser-renderers.d.ts').OnuwRendererContext} OnuwRendererContext */
 
 export const id = 'onuw';
 export const rulesKey = 'onuw.rules.body';
 export const taglineKey = 'onuw.tagline';
 
 /** Audio, clocks, and rendering belong to this renderer instance. */
+/** @param {OnuwRendererContext} ctx */
 export function createRenderer(ctx) {
 const { T, send, app, joinNames, render } = ctx;
 const setMuted = ctx.setMuted ?? ((value) => { app.muted = value; });
-const avatarOf = (player) => playerAvatar(player, app.server);
+/** @param {{ name: string, avatar: string | null, seat?: number } | undefined} player */
+const avatarOf = (player) => playerAvatar(player, app.server ?? undefined);
+
+/** @returns {OnuwView} */
+function view() {
+  const current = app.view;
+  if (!current || current.gameId !== 'onuw') throw new Error('One Night renderer received another game');
+  return current;
+}
 
 // ---------------------------------------------------------------- the clock
 
@@ -19,9 +37,13 @@ const avatarOf = (player) => playerAvatar(player, app.server);
  * locally from there and re-sync on the next message. That keeps everyone on
  * the same clock without trusting any two devices to agree on the time.
  */
+/** @type {ReturnType<typeof setInterval> | null} */
 let clockTimer = null;
+/** @type {number | null} */
 let spokenStep = null;
+/** @type {HTMLAudioElement | null} */
 let announcementAudio = null;
+/** @type {string[]} */
 let announcementQueue = [];
 let announcementGeneration = 0;
 
@@ -51,7 +73,9 @@ function playNextAnnouncement(generation = announcementGeneration) {
   if (generation !== announcementGeneration) return;
   const audio = audioPlayer();
   if (!audio || app?.muted || !announcementQueue.length) return stopAnnouncements();
-  audio.src = announcementQueue.shift();
+  const next = announcementQueue.shift();
+  if (!next) return stopAnnouncements();
+  audio.src = next;
   const started = audio.play();
   // Autoplay policies can still refuse playback when a player has not touched
   // the page. The written call remains visible, and a rejection must never
@@ -61,7 +85,7 @@ function playNextAnnouncement(generation = announcementGeneration) {
   });
 }
 
-const announcementUrl = (lang, phase, key) =>
+const announcementUrl = (/** @type {string} */ lang, /** @type {string} */ phase, /** @type {string} */ key) =>
   new URL(`${lang}/${phase}-${key}.mp3`, AUDIO_ROOT).href;
 
 /**
@@ -88,12 +112,13 @@ if (typeof window !== 'undefined') {
 }
 
 function stopClock() {
-  clearInterval(clockTimer);
+  if (clockTimer) clearInterval(clockTimer);
   clockTimer = null;
 }
 
 function paintClock() {
-  if (!app.view?.night) return stopClock();
+  const current = view();
+  if (current.phase !== 'night' || !current.night) return stopClock();
   const num = document.getElementById('nightClock');
   if (num) num.textContent = clockText();
   const bar = document.getElementById('nightBar');
@@ -106,14 +131,16 @@ function paintClock() {
  * draw that beats the anchor, shows zero.
  */
 function msLeft() {
-  const night = app.view?.night;
+  const current = view();
+  const night = current.phase === 'night' ? current.night : null;
   if (!night) return 0;
   if (app.clockStep !== night.index) return night.msLeft;
   return Math.max(0, (app.stepEndsAt ?? 0) - Date.now());
 }
 const clockText = () => String(Math.ceil(msLeft() / 1000));
 const clockFraction = () => {
-  const total = app.view?.night?.msTotal ?? 1;
+  const current = view();
+  const total = current.phase === 'night' ? current.night?.msTotal ?? 1 : 1;
   return Math.max(0, Math.min(1, msLeft() / total));
 };
 
@@ -122,6 +149,7 @@ const clockFraction = () => {
  * including the roles nobody was dealt — that is what stops the table reading
  * the deck off what does and does not get called.
  */
+/** @param {NonNullable<OnuwNightView['night']>} night */
 function announce(night) {
   if (spokenStep === night.index) return;
   const previous = spokenStep;
@@ -129,7 +157,7 @@ function announce(night) {
   if (app.muted) return stopAnnouncements();
 
   const clips = [];
-  const script = app.view.nightScript ?? [];
+  const script = view().nightScript;
   const prevKey = previous !== null ? script[previous] : null;
   const lang = app.lang === 'zh' ? 'zh' : 'en';
   if (prevKey && prevKey !== 'nightfall') clips.push(announcementUrl(lang, 'sleep', prevKey));
@@ -145,7 +173,8 @@ function announce(night) {
  * paints the time that is actually left rather than the step's full length.
  */
 function onView() {
-  const night = app.view?.night;
+  const current = view();
+  const night = current.phase === 'night' ? current.night : null;
   if (!night) { stopClock(); stopAnnouncements(); spokenStep = null; return; }
   app.stepEndsAt = Date.now() + night.msLeft;
   app.clockStep = night.index;
@@ -160,8 +189,8 @@ function onView() {
  * the server offers them, so a newer client against an older server shows no
  * switch it cannot actually throw.
  */
-const roleName = (role) => T(`onuw.role.${role}`);
-const houseRuleName = (rule) => T(`onuw.house.${rule}`);
+const roleName = (/** @type {unknown} */ role) => T(`onuw.role.${String(role)}`);
+const houseRuleName = (/** @type {string} */ rule) => T(`onuw.house.${rule}`);
 
 /**
  * How a card is coloured: red for the werewolf side, gold for the tanner, blue
@@ -169,7 +198,7 @@ const houseRuleName = (rule) => T(`onuw.house.${rule}`);
  * same way Avalon's client knows which of its own roles are evil.
  */
 const WOLF_ROLES = new Set(['werewolf', 'minion']);
-const teamTag = (role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
+const teamTag = (/** @type {string} */ role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? 'gold' : 'good');
 
 /**
  * Centre cards are lettered rather than numbered, so "centre card 2" can never
@@ -177,9 +206,12 @@ const teamTag = (role) => (WOLF_ROLES.has(role) ? 'evil' : role === 'tanner' ? '
  * presentation, exactly like role names, so a game already in flight — and a
  * snapshot restored from before this — reads as A, B, C too.
  */
-const centreLabel = (n) => (Number.isInteger(n) && n >= 1 && n <= 26 ? String.fromCharCode(64 + n) : n);
+const centreLabel = (/** @type {unknown} */ n) => (
+  typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 26 ? String.fromCharCode(64 + n) : String(n)
+);
 
 /** Which of an entry's params hold a centre card rather than a player name. */
+/** @type {Record<string, string[]>} */
 const CENTRE_PARAMS = {
   'onuw.info.sawCentre': ['index'],
   'onuw.info.sawTwoCentre': ['a', 'b'],
@@ -188,6 +220,7 @@ const CENTRE_PARAMS = {
 };
 
 /** Role keys arrive raw from the server so each client can name them itself. */
+/** @param {Record<string, unknown>} params @param {string} key */
 function formatParams(params, key) {
   const out = { ...params };
   for (const k of ['role', 'roleA', 'roleB']) if (out[k]) out[k] = roleName(out[k]);
@@ -196,9 +229,10 @@ function formatParams(params, key) {
   return out;
 }
 
-const line = (entry) => T(entry.key, formatParams(entry.params, entry.key));
+const line = (/** @type {GameEvent} */ entry) => T(entry.key, formatParams(entry.params, entry.key));
 
 /** A role shown as an actual card, rather than reducing the reveal to prose. */
+/** @param {unknown} role @param {unknown} [caption] */
 function cardFront(role, caption) {
   return h('span', { class: 'role-card-front' },
     caption ? h('span', { class: 'role-card-caption', text: caption }) : null,
@@ -208,8 +242,10 @@ function cardFront(role, caption) {
 }
 
 /** Turn knowledge gained by looking at a card into the card(s) that were seen. */
+/** @param {GameEvent} entry */
 function finding(entry) {
   const p = entry.params;
+  /** @type {HTMLElement[]} */
   let cards = [];
   if (entry.key === 'onuw.info.sawCentre') {
     cards = [cardFront(p.role, T('onuw.centreCard', { n: centreLabel(p.index) }))];
@@ -232,14 +268,21 @@ function finding(entry) {
 
 // ---------------------------------------------------------------- lobby
 
+/** @param {Event} event */
+function checked(event) {
+  const target = event.target;
+  return Boolean(target && 'checked' in target && target.checked);
+}
+
 function lobbyOptions() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'lobby') throw new Error('expected lobby view');
   const isHost = v.you?.id === v.hostId;
 
-  const toggle = (key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
+  const toggle = (/** @type {string} */ key) => h('label', { class: `role-option ${v.options[key] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.options[key], disabled: !isHost,
-      onchange: (e) => send('options', { options: { [key]: e.target.checked } }),
+      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { [key]: checked(e) } }),
     }),
     rolePortrait(key, { small: true }),
     h('span', { class: 'role-option-copy' },
@@ -248,10 +291,10 @@ function lobbyOptions() {
     ),
   );
 
-  const houseToggle = (rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
+  const houseToggle = (/** @type {string} */ rule) => h('label', { class: `house-rule ${v.houseRules[rule] ? 'selected' : ''}` },
     h('input', {
       type: 'checkbox', checked: v.houseRules[rule], disabled: !isHost,
-      onchange: (e) => send('options', { options: { houseRules: { [rule]: e.target.checked } } }),
+      onchange: (/** @type {Event} */ e) => send({ type: 'options', options: { houseRules: { [rule]: checked(e) } } }),
     }),
     h('span', { class: 'house-rule-copy' },
       h('span', { class: 'house-rule-name', text: houseRuleName(rule) }),
@@ -271,7 +314,11 @@ function lobbyOptions() {
     h('h3', { text: T('onuw.pace') }),
     h('div', { class: 'row pace-picker' }, v.setup.paces.map((pace) => h('button', {
       class: `btn grow ${v.pace === pace ? 'primary' : ''}`, id: `pace-${pace}`, disabled: !isHost,
-      onclick: () => send('options', { options: { pace } }),
+      onclick: () => {
+        if (pace === 'brisk' || pace === 'normal' || pace === 'relaxed') {
+          send({ type: 'options', options: { pace } });
+        }
+      },
     }, T(`onuw.pace.${pace}`)))),
     h('p', { class: 'muted', text: T('onuw.pace.length', { n: Math.round((v.nightSeconds ?? 0)) }) }),
     h('h3', { text: T('onuw.deck') }),
@@ -291,7 +338,8 @@ function lobbyOptions() {
 
 /** The card you were dealt. It may not be the card you end up with. */
 function cardContent() {
-  const v = app.view;
+  const v = view();
+  if (v.phase === 'lobby') return null;
   if (!v.you?.role) return null;
   const evil = v.you.team === 'werewolf';
   return h('div', { class: 'reveal-card stack' },
@@ -316,25 +364,30 @@ function cardContent() {
   );
 }
 
-/** Three face-down cards, or their faces once the game is over. */
+/**
+ * Three face-down cards, or their faces once the game is over.
+ * @param {{ pickable?: boolean, picked?: number[], onpick?: (index: number) => void }} [options]
+ */
 function centreRow({ pickable = false, picked = [], onpick } = {}) {
-  const v = app.view;
+  const v = view();
+  if (v.phase === 'lobby') throw new Error('centre cards are not available in the lobby');
   const count = v.centreCount ?? 3;
   return h('div', { class: 'centre' }, [...Array(count).keys()].map((i) => {
-    const role = v.centre?.[i];
+    const role = v.phase === 'over' ? v.centre[i] : undefined;
     const props = {
       class: `centre-card ${role ? 'card-front' : 'card-back'} ${picked.includes(i) ? 'selected' : ''}`,
       title: T('onuw.centreCard', { n: centreLabel(i + 1) }),
     };
     const inner = [h('span', { class: 'centre-n', text: centreLabel(i + 1) }), role ? cardFront(role) : null];
     return pickable
-      ? h('button', { ...props, type: 'button', onclick: () => onpick(i) }, inner)
+      ? h('button', { ...props, type: 'button', onclick: () => onpick?.(i) }, inner)
       : h('div', props, inner);
   }));
 }
 
+/** @param {{ picked?: string[], onpick?: ((player: OnuwPlayer) => void) | null, exclude?: string[], tags?: (player: OnuwPlayer) => HTMLElement[] }} [options] */
 function pickList({ picked = [], onpick, exclude = [], tags } = {}) {
-  const v = app.view;
+  const v = view();
   return h('div', { class: 'players' }, v.players.map((p) => {
     const isYou = p.id === v.you?.id;
     const inner = [
@@ -354,8 +407,12 @@ function pickList({ picked = [], onpick, exclude = [], tags } = {}) {
   }));
 }
 
-const waitingNames = () => joinNames(app.view.waitingFor.map(
-  (id) => app.view.players.find((p) => p.id === id)?.name ?? '?'));
+const waitingNames = () => {
+  const current = view();
+  if (!('waitingFor' in current)) return '';
+  return joinNames(current.waitingFor.map(
+    (id) => current.players.find((p) => p.id === id)?.name ?? '?'));
+};
 
 // ---------------------------------------------------------------- phases
 
@@ -393,7 +450,7 @@ function closeInfoPopup() {
 }
 
 /** The variants this table switched on, in the order they are listed. */
-const houseRulesInForce = () => app.view.setup.houseRules.filter((rule) => app.view.houseRules?.[rule]);
+const houseRulesInForce = () => view().setup.houseRules.filter((rule) => view().houseRules?.[rule]);
 
 /**
  * Which roles are in this game, what each of them does, and the order the
@@ -401,7 +458,7 @@ const houseRulesInForce = () => app.view.setup.houseRules.filter((rule) => app.v
  * it on hand just saves asking.
  */
 function referenceContent() {
-  const v = app.view;
+  const v = view();
   const deck = v.deck ?? {};
   const script = v.nightScript ?? [];
   const inForce = houseRulesInForce();
@@ -410,12 +467,12 @@ function referenceContent() {
       h('h3', { text: T('onuw.ref.inPlay', { n: Object.values(deck).reduce((a, b) => a + b, 0) }) }),
       h('div', { class: 'stack tight' }, Object.keys(deck).map((role) => h('div', { class: 'ref-role' },
         rolePortrait(role, { small: true }),
-        h('span', { class: `tag ${teamTag(role)}`, text: deck[role] > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
+        h('span', { class: `tag ${teamTag(role)}`, text: (deck[role] ?? 0) > 1 ? `${roleName(role)} ×${deck[role]}` : roleName(role) }),
         h('span', { class: 'muted', text: T(`onuw.roleDesc.${role}`) }),
       ))),
       h('h3', { text: T('onuw.ref.order') }),
       h('ol', { class: 'order' }, script.map((key, i) => h('li', {
-        class: v.night?.index === i ? 'now' : '',
+        class: v.phase === 'night' && v.night?.index === i ? 'now' : '',
         text: key === 'nightfall' ? T('onuw.ref.nightfall') : roleName(key),
       }))),
       h('p', { class: 'muted', text: T('onuw.ref.note') }),
@@ -432,27 +489,43 @@ function referenceContent() {
 }
 
 /** Each night step is a fresh screen, so the middle pane starts at the top again. */
-function paneKey() { return String(app.view.night?.index ?? ''); }
+function paneKey() {
+  const current = view();
+  return String(current.phase === 'night' ? current.night?.index ?? '' : '');
+}
 
 function panes() {
-  const byPhase = { reveal: paneReveal, night: paneNight, day: paneDay, vote: paneVote, over: paneOver };
-  return byPhase[app.view.phase]();
+  const current = view();
+  switch (current.phase) {
+    case 'lobby': return [lobbyOptions()];
+    case 'reveal': return paneReveal();
+    case 'night': return paneNight();
+    case 'day': return paneDay();
+    case 'vote': return paneVote();
+    case 'over': return paneOver();
+    default: return assertNever(current);
+  }
 }
 
 function paneReveal() {
-  const v = app.view;
-  const done = v.players.find((p) => p.id === v.you.id)?.ready;
+  const v = view();
+  if (v.phase !== 'reveal') throw new Error('expected reveal view');
+  if (!v.you) throw new Error('expected seated viewer');
+  const youId = v.you.id;
+  const done = v.players.find((p) => p.id === youId)?.ready;
   return [h('div', { class: 'card stack' },
     h('h2', { text: T('onuw.reveal.title') }),
-    pickList({ tags: (p) => (p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.reveal.ready'), text: '◆' })] : []) }),
+    pickList({ tags: (p) => ('ready' in p && p.ready ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.reveal.ready'), text: '◆' })] : []) }),
     done
       ? h('p', { class: 'muted', text: T('onuw.reveal.waiting', { names: waitingNames() }) })
-      : h('button', { class: 'btn primary wide', onclick: () => send('confirm') }, T('onuw.reveal.ready')),
+      : h('button', { class: 'btn primary wide', onclick: () => send({ type: 'confirm' }) }, T('onuw.reveal.ready')),
   )];
 }
 
 function paneNight() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'night') throw new Error('expected night view');
+  if (!v.you || !v.night) throw new Error('expected seated viewer and active night step');
   const night = v.night;
   const awake = v.you.awake;
 
@@ -490,14 +563,18 @@ function paneNight() {
   )];
 }
 
+/** @param {NonNullable<NonNullable<OnuwNightView['you']>['action']>} kind */
 function actionBody(kind) {
-  if (app.view.you.acted) return [h('p', { class: 'muted', text: T('onuw.night.hint') })];
+  const current = view();
+  if (current.phase !== 'night' || current.you?.acted) {
+    return [h('p', { class: 'muted', text: T('onuw.night.hint') })];
+  }
   const body = { loneWolf: actLoneWolf, seer: actSeer, robber: actRobber,
                  troublemaker: actTroublemaker, drunk: actDrunk }[kind];
   return [h('p', { text: T(`onuw.act.${kind}`) }), ...body(), h('p', { class: 'muted', text: T('onuw.night.hint') })];
 }
 
-const submit = (action) => send('night', { action });
+const submit = (/** @type {OnuwNightAction} */ action) => send({ type: 'night', action });
 
 function actLoneWolf() {
   return [
@@ -505,7 +582,7 @@ function actLoneWolf() {
     h('div', { class: 'row' },
       h('button', {
         class: 'btn primary grow', disabled: !app.centres.length,
-        onclick: () => submit({ centre: app.centres[0] }),
+        onclick: () => submit({ centre: selectedCentre() }),
       }, T('onuw.night.confirm')),
       h('button', { class: 'btn ghost', onclick: () => submit({ skip: true }) }, T('onuw.night.skip')),
     ),
@@ -514,7 +591,7 @@ function actLoneWolf() {
 
 function actSeer() {
   const mode = app.seerMode ?? 'player';
-  const setMode = (m) => { app.seerMode = m; app.selection = []; app.centres = []; render(); };
+  const setMode = (/** @type {'player' | 'centre'} */ m) => { app.seerMode = m; app.selection = []; app.centres = []; render(); };
 
   return [
     h('div', { class: 'row' },
@@ -525,7 +602,7 @@ function actSeer() {
     ),
     mode === 'player'
       ? pickList({
-          picked: app.selection, exclude: [app.view.you.id],
+          picked: app.selection, exclude: [view().you?.id ?? ''],
           onpick: (p) => { app.selection = [p.id]; render(); },
         })
       : centreRow({
@@ -543,8 +620,8 @@ function actSeer() {
         class: 'btn primary grow',
         disabled: mode === 'player' ? !app.selection.length : app.centres.length !== 2,
         onclick: () => submit(mode === 'player'
-          ? { mode: 'player', target: app.selection[0] }
-          : { mode: 'centre', centres: app.centres }),
+          ? { mode: 'player', target: selectedPlayer() }
+          : { mode: 'centre', centres: selectedCentres() }),
       }, T('onuw.night.confirm')),
       h('button', { class: 'btn ghost', onclick: () => submit({ skip: true }) }, T('onuw.night.skip')),
     ),
@@ -553,12 +630,12 @@ function actSeer() {
 
 function actRobber() {
   return [
-    pickList({ picked: app.selection, exclude: [app.view.you.id],
+    pickList({ picked: app.selection, exclude: [view().you?.id ?? ''],
                onpick: (p) => { app.selection = [p.id]; render(); } }),
     h('div', { class: 'row' },
       h('button', {
         class: 'btn primary grow', disabled: !app.selection.length,
-        onclick: () => submit({ target: app.selection[0] }),
+        onclick: () => submit({ target: selectedPlayer() }),
       }, T('onuw.night.confirm')),
       h('button', { class: 'btn ghost', onclick: () => submit({ skip: true }) }, T('onuw.night.skip')),
     ),
@@ -568,7 +645,7 @@ function actRobber() {
 function actTroublemaker() {
   return [
     pickList({
-      picked: app.selection, exclude: [app.view.you.id],
+      picked: app.selection, exclude: [view().you?.id ?? ''],
       onpick: (p) => {
         const at = app.selection.indexOf(p.id);
         if (at >= 0) app.selection.splice(at, 1);
@@ -580,7 +657,7 @@ function actTroublemaker() {
     h('div', { class: 'row' },
       h('button', {
         class: 'btn primary grow', disabled: app.selection.length !== 2,
-        onclick: () => submit({ targets: app.selection }),
+        onclick: () => submit({ targets: selectedPlayers() }),
       }, T('onuw.night.confirm')),
       h('button', { class: 'btn ghost', onclick: () => submit({ skip: true }) }, T('onuw.night.skip')),
     ),
@@ -592,14 +669,43 @@ function actDrunk() {
     centreRow({ pickable: true, picked: app.centres, onpick: (i) => { app.centres = [i]; render(); } }),
     h('button', {
       class: 'btn primary wide', disabled: !app.centres.length,
-      onclick: () => submit({ centre: app.centres[0] }),
+      onclick: () => submit({ centre: selectedCentre() }),
     }, T('onuw.night.confirm')),
   ];
 }
 
+function selectedPlayer() {
+  const selected = app.selection[0];
+  if (!selected) throw new Error('expected a selected player');
+  return selected;
+}
+
+/** @returns {[string, string]} */
+function selectedPlayers() {
+  const first = app.selection[0];
+  const second = app.selection[1];
+  if (!first || !second) throw new Error('expected two selected players');
+  return [first, second];
+}
+
+function selectedCentre() {
+  const selected = app.centres[0];
+  if (selected === undefined) throw new Error('expected a selected centre card');
+  return selected;
+}
+
+/** @returns {[number, number]} */
+function selectedCentres() {
+  const first = app.centres[0];
+  const second = app.centres[1];
+  if (first === undefined || second === undefined) throw new Error('expected two selected centre cards');
+  return [first, second];
+}
+
 function paneDay() {
-  const v = app.view;
-  const isHost = v.you.id === v.hostId;
+  const v = view();
+  if (v.phase !== 'day') throw new Error('expected day view');
+  const isHost = v.you?.id === v.hostId;
   return [
     h('div', { class: 'card stack' },
       h('h2', { text: T('onuw.day.title') }),
@@ -607,15 +713,18 @@ function paneDay() {
       centreRow(),
       pickList(),
       isHost
-        ? h('button', { class: 'btn primary wide', onclick: () => send('startVote') }, T('onuw.day.startVote'))
+        ? h('button', { class: 'btn primary wide', onclick: () => send({ type: 'startVote' }) }, T('onuw.day.startVote'))
         : h('p', { class: 'muted', text: T('onuw.day.waitingHost') }),
     ),
   ];
 }
 
 function paneVote() {
-  const v = app.view;
-  const me = v.players.find((p) => p.id === v.you.id);
+  const v = view();
+  if (v.phase !== 'vote') throw new Error('expected vote view');
+  if (!v.you) throw new Error('expected seated viewer');
+  const youId = v.you.id;
+  const me = v.players.find((p) => p.id === youId);
   return [
     h('div', { class: 'card stack' },
       h('h2', { text: T('onuw.phase.vote') }),
@@ -624,20 +733,21 @@ function paneVote() {
         : h('p', { text: T('onuw.vote.prompt') }),
       pickList({
         picked: app.selection,
-        exclude: me?.voted ? v.players.map((p) => p.id) : [v.you.id],
+        exclude: me?.voted ? v.players.map((p) => p.id) : [youId],
         onpick: me?.voted ? null : (p) => { app.selection = [p.id]; render(); },
-        tags: (p) => (p.voted ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.vote.cast', { name: '', names: '' }), text: '◆' })] : []),
+        tags: (p) => ('voted' in p && p.voted ? [h('span', { class: 'tag ok status-glyph', title: T('onuw.vote.cast', { name: '', names: '' }), text: '◆' })] : []),
       }),
       me?.voted ? null : h('button', {
         class: 'btn danger wide', disabled: !app.selection.length,
-        onclick: () => send('vote', { target: app.selection[0] }),
+        onclick: () => send({ type: 'vote', target: selectedPlayer() }),
       }, T('onuw.night.confirm')),
     ),
   ];
 }
 
 function paneOver() {
-  const v = app.view;
+  const v = view();
+  if (v.phase !== 'over') throw new Error('expected over view');
   const won = v.youWon;
   const winners = v.winners.length
     ? T('onuw.over.winners', { names: joinNames(v.winners.map((w) => T(`onuw.team.${w}`))) })
@@ -648,7 +758,7 @@ function paneOver() {
       h('div', { class: `banner ${won ? 'good' : 'evil'}`, text: won ? T('onuw.over.youWon') : T('onuw.over.youLost') }),
       h('p', { text: winners }),
       h('p', { text: v.dead.length
-        ? T('onuw.over.dead', { names: joinNames(v.dead.map((id) => v.players.find((p) => p.id === id).name)) })
+        ? T('onuw.over.dead', { names: joinNames(v.dead.map((id) => v.players.find((p) => p.id === id)?.name ?? '?')) })
         : T('onuw.over.nobodyDied') }),
 
       h('h3', { text: T('onuw.over.night') }),
@@ -675,13 +785,13 @@ function paneOver() {
           'aria-current': isYou ? 'true' : null,
         },
           avatarOf(p),
-          rolePortrait(p.finalRole, { small: true }),
+          p.finalRole ? rolePortrait(p.finalRole, { small: true }) : null,
           h('span', { class: 'name', text: p.name }),
           h('div', { class: 'player-tags' },
-            h('span', { class: `tag ${teamTag(p.finalRole)}`, role: 'img', title: cardLabel, 'aria-label': cardLabel },
+            p.finalRole ? h('span', { class: `tag ${teamTag(p.finalRole)}`, role: 'img', title: cardLabel, 'aria-label': cardLabel },
               moved ? h('span', { class: 'was', text: roleName(p.startRole) }) : null,
               moved ? h('span', { class: 'arrow', 'aria-hidden': 'true', text: '→' }) : null,
-              roleName(p.finalRole)),
+              roleName(p.finalRole)) : null,
             votedFor
               ? h('span', { class: 'tag', role: 'img', title: voteLabel, 'aria-label': voteLabel },
                   h('span', { class: 'arrow', 'aria-hidden': 'true', text: '☞' }), votedFor)
@@ -700,8 +810,8 @@ function paneOver() {
       h('h3', { text: T('onuw.centre') }),
       centreRow(),
 
-      v.you.id === v.hostId
-        ? h('button', { class: 'btn primary wide', onclick: () => send('again') }, T('over.again'))
+      v.you?.id === v.hostId
+        ? h('button', { class: 'btn primary wide', onclick: () => send({ type: 'again' }) }, T('over.again'))
         : h('p', { class: 'muted', text: T('lobby.waitingHost') }),
     ),
   ];

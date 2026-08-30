@@ -5,10 +5,12 @@
 // and simply calls these for the parts that are genuinely identical.
 
 import { randomInt } from 'node:crypto';
+import type { GameId } from './contracts/actions.ts';
+import type { AvalonState, OnuwState, Player } from './contracts/persistence.ts';
 import type {
-  AvalonContext, AvalonState, CreatedRoom, CreatedRoomFor, GameContext, GameId, OnuwContext,
-  OnuwState, Player, RoomCommand, SharedViewFor,
-} from './contracts/types.ts';
+  AvalonContext, CreatedRoom, CreatedRoomFor, GameContext, OnuwContext, RoomCommand,
+  SharedViewFor,
+} from './contracts/runtime.ts';
 
 export class GameError extends Error {
   key: string;
@@ -67,7 +69,8 @@ export function record(g: GameContext, playerId: string, body: RoomCommand, at: 
     g.room.journalDropped = true;
     return;
   }
-  const { type, playerId: _transportPlayerId, ...rest } = body;
+  const { type, ...rest } = body;
+  if ('playerId' in rest) delete rest.playerId;
   g.room.journal.push({ t: type, p: playerId, b: rest, at });
 }
 
@@ -240,7 +243,7 @@ export function restartToLobby<C extends GameContext>(
  * @template {GameContext} C
  * @param {C} g
  * @param {string} viewerId
- * @returns {import('./contracts/types.ts').SharedViewFor<C>}
+ * @returns {import('./contracts/runtime.ts').SharedViewFor<C>}
  */
 export function baseView(g: AvalonContext, viewerId: string): SharedViewFor<AvalonContext>;
 export function baseView(g: OnuwContext, viewerId: string): SharedViewFor<OnuwContext>;

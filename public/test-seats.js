@@ -5,8 +5,7 @@
 import { h, toast } from './ui.js';
 import { ApiError } from './transport.js';
 
-/** @typedef {import('../src/contracts/types.ts').JoinCommand} JoinCommand */
-/** @typedef {import('../src/contracts/types.ts').ValidatedAction} ValidatedAction */
+/** @typedef {import('../src/contracts/actions.ts').JoinCommand} JoinCommand */
 /** @typedef {import('./room-session.js').SessionApp & { testMode: boolean }} TestSeatsApp */
 
 /** Anything `request` rejects with carries a message key; a fault carries none. */
@@ -19,13 +18,13 @@ const apiError = (/** @type {unknown} */ error) => (error instanceof ApiError
  *   app: TestSeatsApp,
  *   store: ReturnType<typeof import('./storage.js').createStore>,
  *   T: (key: string, params?: Record<string, unknown>) => string,
- *   request: ReturnType<typeof import('./transport.js').createTransport>['request'],
+ *   transport: ReturnType<typeof import('./transport.js').createTransport>,
  *   connect: () => void,
  *   render: () => void,
  *   rememberSeat: (code: string, playerId: string, name: string) => void,
  * }} deps
  */
-export function createTestSeats({ app, store, T, request, connect, render, rememberSeat }) {
+export function createTestSeats({ app, store, T, transport, connect, render, rememberSeat }) {
   function pane() {
     const rows = [h('button', {
       class: 'btn ghost', id: 'testToggle',
@@ -73,7 +72,7 @@ export function createTestSeats({ app, store, T, request, connect, render, remem
       // An invented seat is a real one, so it never carries this browser's id.
       /** @type {JoinCommand} */
       const body = { name, avatar: false };
-      const response = await request(`/api/rooms/${code}/join`, { body });
+      const response = await transport.joinRoom(code, body);
       rememberSeat(code, response.playerId, name);
       render();
     } catch (error) {
@@ -92,9 +91,7 @@ export function createTestSeats({ app, store, T, request, connect, render, remem
     const gone = [];
     for (const seat of extras) {
       try {
-        /** @type {ValidatedAction} */
-        const body = { type: 'leave', playerId: seat.id };
-        await request(`/api/rooms/${code}/action`, { body });
+        await transport.action(code, seat.id, { type: 'leave' });
         gone.push(seat.id);
       } catch (error) {
         const { key, params } = apiError(error);
