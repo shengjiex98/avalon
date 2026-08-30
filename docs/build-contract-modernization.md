@@ -291,6 +291,13 @@ PR. Every other phase is independently reviewable. Complete and merge one phase
 before starting the next. A phase may use multiple small PRs only when it names
 the temporary bridge and removes it in the immediately following PR.
 
+After every phase is complete, update the statically installed updater to
+validate the modern `build/public/` release layout, install that control-plane
+change on the host, and then remove the `public/index.html` compatibility copy
+from packaged releases. The authoritative validation and installation paths
+are [`deploy/updater.sh`](../deploy/updater.sh) and
+[`deploy/install-updater.sh`](../deploy/install-updater.sh).
+
 ## Phase 0 — Baseline and proof
 
 Goal: turn assumptions about Node-native TypeScript into executable checks
