@@ -94,7 +94,10 @@ test('development type checking is locked, no-emit, and separate from the releas
   const pkg = JSON.parse(await read('../package.json'));
   const lock = JSON.parse(await read('../package-lock.json'));
   const config = JSON.parse(await read('../tsconfig.json'));
-  const contracts = await read('../src/contracts/types.ts');
+  const actions = await read('../src/contracts/actions.ts');
+  const persistence = await read('../src/contracts/persistence.ts');
+  const runtime = await read('../src/contracts/runtime.ts');
+  const views = await read('../src/contracts/views.ts');
   const ci = await read('../.github/workflows/ci.yml');
   const deploy = await read('../.github/workflows/deploy.yml');
 
@@ -105,7 +108,11 @@ test('development type checking is locked, no-emit, and separate from the releas
   assert.equal(config.compilerOptions.allowJs, true);
   assert.equal(config.compilerOptions.noEmit, true);
   assert.equal(config.compilerOptions.strict, true);
-  assert.match(contracts, /ValidatedAction|PersistedRoom|PublicView|GamePhase/);
+  assert.match(actions, /ValidatedAction/);
+  assert.match(persistence, /z\.infer.*State/);
+  assert.match(runtime, /RuntimeRoom|GameContext|RoomRegistry/);
+  assert.match(views, /PublicView|GamePhase/);
+  await assert.rejects(read('../src/contracts/types.ts'), /ENOENT/);
   assert.ok(config.include.includes('src/**/*.ts'), 'native server TypeScript is checked');
   assert.ok(config.include.includes('test/**/*.test.ts'), 'native test TypeScript is checked');
 
@@ -113,7 +120,10 @@ test('development type checking is locked, no-emit, and separate from the releas
   // program is what let a request body drift from the contract unnoticed.
   assert.ok(config.include.includes('public/**/*.js'), 'the client is type checked too');
   for (const file of ['../public/transport.js', '../public/room-session.js',
-                      '../public/storage.js', '../public/test-seats.js']) {
+                      '../public/storage.js', '../public/test-seats.js',
+                      '../public/client-actions.js', '../public/rendering.js',
+                      '../public/assert-never.js', '../public/games/index.js',
+                      '../public/games/avalon.js', '../public/games/onuw.js']) {
     assert.match(await read(file), /^\/\/ @ts-check/, `${file} opts into checking`);
   }
 

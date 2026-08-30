@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import * as g from '../src/games/avalon/game.ts';
 import { sideOf } from '../src/games/avalon/rules.ts';
-import type { AvalonContext, AvalonPhase, AvalonRole, AvalonView } from '../src/contracts/types.ts';
+import type { AvalonRole } from '../src/games/avalon/rules.ts';
+import type { AvalonContext } from '../src/contracts/runtime.ts';
+import type { AvalonPhase, AvalonView } from '../src/contracts/views.ts';
 
 type SetupOptions = Parameters<typeof g.setOptions>[2];
 

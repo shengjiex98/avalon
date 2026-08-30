@@ -4,10 +4,10 @@
 import { toast } from './ui.js';
 import { ApiError } from './transport.js';
 
-/** @typedef {import('../src/contracts/types.ts').JoinCommand} JoinCommand */
-/** @typedef {import('../src/contracts/types.ts').PublicView} PublicView */
-/** @typedef {import('../src/contracts/types.ts').StoredSeat} StoredSeat */
-/** @typedef {import('../src/contracts/types.ts').ValidatedAction} ValidatedAction */
+/** @typedef {import('../src/contracts/actions.ts').JoinCommand} JoinCommand */
+/** @typedef {import('../src/contracts/actions.ts').ClientAction} ClientAction */
+/** @typedef {import('../src/contracts/views.ts').PublicView} PublicView */
+/** @typedef {import('./storage.js').StoredSeat} StoredSeat */
 
 /**
  * What a session needs from the client's app state. app.js owns the object;
@@ -61,20 +61,14 @@ export function createRoomSession({
 
   transport.setHandlers({ onMessage: receiveView, onError: loseConnection });
 
-  /** @type {typeof transport.request} */
-  const request = (path, options) => transport.request(path, options);
-
   function safeRender() {
     try { render(); } catch (error) { console.error(error); }
   }
 
-  // The action name is checked against the command union; the payload beside
-  // it is not, because `send` is a dispatcher and the shape depends on `type`.
-  // Callers are the ones the server's own action validator answers.
-  /** @param {ValidatedAction['type']} type @param {Record<string, unknown>} [extra] */
-  function send(type, extra = {}) {
-    const body = /** @type {ValidatedAction} */ ({ type, playerId: app.playerId, ...extra });
-    return request(`/api/rooms/${app.code}/action`, { body }).catch((error) => {
+  /** @param {ClientAction} action */
+  function send(action) {
+    if (!app.code || !app.playerId) return Promise.resolve(undefined);
+    return transport.action(app.code, app.playerId, action).catch((error) => {
       const { key, params } = apiError(error);
       toast(T(`err.${key}`, params));
     });
@@ -131,7 +125,7 @@ export function createRoomSession({
     try {
       let status;
       try {
-        status = await request(`/api/rooms/${code}?playerId=${encodeURIComponent(playerId)}`);
+        status = await transport.roomStatus(code, playerId);
       } catch (error) {
         if (apiError(error).key === 'network') {
           scheduleReconnect();
@@ -158,7 +152,7 @@ export function createRoomSession({
     try {
       /** @type {JoinCommand} */
       const body = { name: store.nameFor(code, playerId), playerId };
-      await request(`/api/rooms/${code}/join`, { body });
+      await transport.joinRoom(code, body);
       return true;
     } catch (error) {
       if (apiError(error).key === 'network') { scheduleReconnect(); safeRender(); return false; }
@@ -210,7 +204,7 @@ export function createRoomSession({
   async function createRoom() {
     const name = readName();
     if (!name) return;
-    const { code } = await request('/api/rooms', { body: { game: app.gameId } });
+    const { code } = await transport.createRoom({ game: app.gameId });
     await joinRoom(code, name);
   }
 
@@ -225,7 +219,7 @@ export function createRoomSession({
       const body = { name };
       if (held) body.playerId = held;
       if (app.avatarUpload) body.avatar = app.avatarUpload;
-      const response = await request(`/api/rooms/${code}/join`, { body });
+      const response = await transport.joinRoom(code, body);
       app.code = code;
       app.playerId = response.playerId;
       app.rejoining = false;
@@ -258,9 +252,7 @@ export function createRoomSession({
       if (!window.confirm(T(isHost ? 'game.leaveConfirmHost' : 'game.leaveConfirm'))) return;
     }
     const asked = app.code && app.playerId
-      ? request(`/api/rooms/${app.code}/action`, {
-          body: { type: 'leave', playerId: app.playerId },
-        })
+      ? transport.action(app.code, app.playerId, { type: 'leave' })
       : Promise.resolve();
     asked.catch(() => {}).finally(() => dropRoom(midGame ? 'room.left' : null, { keepSeat: midGame }));
   }
@@ -291,9 +283,9 @@ export function createRoomSession({
       if (code) store.room = null;
       return;
     }
-    const status = await request(`/api/rooms/${code}?playerId=${encodeURIComponent(playerId)}`).catch(() => ({}));
-    if (status.seated) app.heldSeat = { code, playerId };
-    else if (status.exists === false || status.seated === false) forgetSeat(code);
+    const status = await transport.roomStatus(code, playerId).catch(() => null);
+    if (status?.seated) app.heldSeat = { code, playerId };
+    else if (status && (!status.exists || !status.seated)) forgetSeat(code);
   }
 
   /** @param {string} code */
@@ -314,7 +306,7 @@ export function createRoomSession({
     try {
       /** @type {JoinCommand} */
       const body = { name: store.nameFor(code, playerId), playerId };
-      await request(`/api/rooms/${code}/join`, { body });
+      await transport.joinRoom(code, body);
       connect();
     } catch (error) {
       const { key } = apiError(error);
@@ -324,7 +316,7 @@ export function createRoomSession({
   }
 
   return {
-    request, send, connect, recover, wake, dropRoom, createRoom, joinRoom,
+    send, connect, recover, wake, dropRoom, createRoom, joinRoom,
     rememberSeat, leaveRoom, roomFromHash, enterRoom, offerHeldSeat, dismissSeat,
   };
 }

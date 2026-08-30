@@ -101,6 +101,10 @@ export const onuwActionSchema = z.union([sharedActionSchema, onuwGameActionSchem
 export type AvalonAction = z.infer<typeof avalonActionSchema>;
 export type OnuwAction = z.infer<typeof onuwActionSchema>;
 export type ValidatedAction = AvalonAction | OnuwAction;
+type WithoutActor<T> = T extends { playerId: string } ? Omit<T, 'playerId'> : never;
+export type AvalonClientAction = WithoutActor<AvalonAction>;
+export type OnuwClientAction = WithoutActor<OnuwAction>;
+export type ClientAction = AvalonClientAction | OnuwClientAction;
 
 const actionEnvelopeSchema = z.object({ type: nonEmptyString, playerId: nonEmptyString });
 const actionTypes = {

@@ -8,7 +8,8 @@ import { CLIENT_ORIGIN, createApp } from '../src/server.ts';
 import { Rooms } from '../src/rooms.ts';
 import { STATE_VERSION } from '../src/state-version.ts';
 import * as onuw from '../src/games/onuw/game.ts';
-import type { GameContext, OnuwContext, PublicView } from '../src/contracts/types.ts';
+import type { GameContext, OnuwContext } from '../src/contracts/runtime.ts';
+import type { PublicView } from '../src/contracts/views.ts';
 
 type AppOptions = NonNullable<Parameters<typeof createApp>[0]>;
 type JsonRecord = Record<string, unknown>;

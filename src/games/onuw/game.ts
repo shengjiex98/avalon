@@ -26,9 +26,10 @@ import {
 import type { NightStep, OnuwOptions, OnuwRole } from './rules.ts';
 import * as lobby from '../../lobby.ts';
 import { logEvent, playerById, randInt, require_, shuffleWith } from '../../lobby.ts';
-import type {
-  GameEvent, OnuwCommand, OnuwContext, OnuwNightAction, OnuwState, OnuwView, Player,
-} from '../../contracts/types.ts';
+import type { OnuwNightAction } from '../../contracts/actions.ts';
+import type { GameEvent, OnuwState, Player } from '../../contracts/persistence.ts';
+import type { OnuwCommand, OnuwContext } from '../../contracts/runtime.ts';
+import type { OnuwView } from '../../contracts/views.ts';
 
 type CreateOptions = { now?: () => number; seed?: number };
 type SetOptions = Extract<OnuwCommand, { type: 'options' }>['options'];

@@ -8,7 +8,7 @@ import { Rooms } from '../src/rooms.ts';
 import * as avalon from '../src/games/avalon/game.ts';
 import type {
   GameContext, OnuwContext, RuntimeRoom, RuntimeRoomFor,
-} from '../src/contracts/types.ts';
+} from '../src/contracts/runtime.ts';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 

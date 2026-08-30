@@ -4,7 +4,8 @@ import { dirname, join } from 'node:path';
 
 import { snapshotFileSchema } from './contracts/persistence.ts';
 import { STATE_VERSION } from './state-version.ts';
-import type { RoomRegistry, SnapshotFile } from './contracts/types.ts';
+import type { SnapshotFile } from './contracts/persistence.ts';
+import type { RoomRegistry } from './contracts/runtime.ts';
 
 type LoadResult = { restored: number; reason: string | null };
 

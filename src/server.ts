@@ -17,7 +17,8 @@ import { defaultStateFile, load, save } from './persistence.ts';
 import { Rooms } from './rooms.ts';
 import { GAME_IDS } from './games/index.ts';
 import { STATE_VERSION } from './state-version.ts';
-import type { GameId, PublicView } from './contracts/types.ts';
+import type { GameId } from './contracts/actions.ts';
+import type { PublicView } from './contracts/views.ts';
 
 const ROOT_DIR = fileURLToPath(new URL('../', import.meta.url));
 const PUBLIC_DIR = fileURLToPath(new URL('../public/', import.meta.url));

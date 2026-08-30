@@ -8,7 +8,7 @@ import {
 import * as avalon from '../src/games/avalon/game.ts';
 import { houseRulesInForce, setHouseRules } from '../src/lobby.ts';
 import { missingKeys, t, STRINGS } from '../public/i18n.js';
-import type { AvalonRole } from '../src/contracts/types.ts';
+import type { AvalonRole } from '../src/games/avalon/rules.ts';
 
 const roleMap = (values: Record<string, AvalonRole>): Record<string, AvalonRole> => values;
 

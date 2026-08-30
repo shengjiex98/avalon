@@ -7,6 +7,7 @@ import { ApiError, createTransport } from './transport.js';
 import { createSharedRendering } from './rendering.js';
 import { createTestSeats } from './test-seats.js';
 import { createRoomSession } from './room-session.js';
+import { resetAction, startAction, switchGameAction } from './client-actions.js';
 
 const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
 const VERSION_URL = new URL('./version.json', import.meta.url);
@@ -84,12 +85,15 @@ async function probeServer() {
   app.serverStatus = 'checking';
   app.serverProtocol = null;
   try {
-    const res = await fetch(`${app.server}/api/health`, { cache: 'no-store' });
-    const body = await res.json();
-    if (!res.ok || body.service !== 'avalon') throw new Error('not avalon');
-    app.serverProtocol = body.protocol;
-    app.avatarGeneration = Boolean(body.avatarGeneration);
-    app.serverStatus = body.protocol === API_PROTOCOL ? 'ready' : 'incompatible';
+    const result = await transport.probeProtocol(API_PROTOCOL);
+    app.avatarGeneration = result.avatarGeneration;
+    if (result.kind === 'ready') {
+      app.serverProtocol = API_PROTOCOL;
+      app.serverStatus = 'ready';
+    } else {
+      app.serverProtocol = result.actual;
+      app.serverStatus = 'incompatible';
+    }
   } catch {
     app.avatarGeneration = false;
     app.serverStatus = 'unreachable';
@@ -125,8 +129,7 @@ function watchServer() {
 
 const transport = createTransport({ app });
 let session;
-const api = (path, options) => session.request(path, options);
-const send = (type, extra) => session.send(type, extra);
+const send = (action) => session.send(action);
 const connect = () => session.connect();
 const recover = () => session.recover();
 const wake = () => session.wake();
@@ -254,9 +257,7 @@ export async function checkForUpdate() {
   try {
     const url = new URL(VERSION_URL);
     url.searchParams.set('check', Date.now());
-    const res = await fetch(url.href, { cache: 'no-store' });
-    if (!res.ok) return false;
-    const version = String((await res.json()).version ?? '');
+    const version = await transport.latestVersion(url.href);
     if (!version || version === LOADED_VERSION) return false;
     app.latestVersion = version;
     app.updateAvailable = true;
@@ -295,7 +296,7 @@ function renderGameSwitch() {
       render();
       return;
     }
-    send('setGame', { game: gameId });
+    send(switchGameAction(gameId));
   };
 
   el('gameSwitch').replaceChildren(...GAME_IDS.map((gameId) => h('button', {
@@ -481,7 +482,7 @@ function screenGame() {
     canReset ? h('button', {
       class: 'btn ghost grow', id: 'resetGame', type: 'button',
       onclick: () => {
-        if (window.confirm(T('game.resetConfirm'))) send('reset');
+        if (window.confirm(T('game.resetConfirm'))) send(resetAction());
       },
     }, T('game.reset')) : null,
     h('button', {
@@ -539,7 +540,7 @@ session = createRoomSession({
   app, store, transport, T, render, readName, gameRenderer, disposeGameRenderer,
 });
 const testSeats = createTestSeats({
-  app, store, T, request: api, connect, render, rememberSeat: session.rememberSeat,
+  app, store, T, transport, connect, render, rememberSeat: session.rememberSeat,
 });
 const paneTestMode = () => testSeats.pane();
 
@@ -576,7 +577,7 @@ function paneLobby(game) {
       isHost
         ? h('button', {
             class: 'btn primary grow', id: 'startBtn', disabled: !enough,
-            onclick: () => send('start'),
+            onclick: () => send(startAction()),
           }, enough ? T('lobby.start') : T('lobby.needMore', { min: v.setup.minPlayers, n: v.players.length }))
         : h('span', { class: 'muted grow', text: T('lobby.waitingHost') }),
       h('button', { class: 'btn ghost', onclick: leaveRoom }, T('lobby.leave')),

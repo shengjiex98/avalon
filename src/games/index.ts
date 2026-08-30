@@ -7,10 +7,12 @@ import { MAX_PLAYERS as AVALON_MAX, MIN_PLAYERS as AVALON_MIN } from './avalon/r
 import * as onuw from './onuw/game.ts';
 import { MAX_PLAYERS as ONUW_MAX, MIN_PLAYERS as ONUW_MIN } from './onuw/rules.ts';
 import { parseAction } from '../contracts/actions.ts';
+import type { GameId } from '../contracts/actions.ts';
 import type {
-  AvalonCommand, AvalonContext, AvalonView, CreatedRoomFor, GameEntry, GameId, OnuwCommand,
-  OnuwContext, OnuwView, RoomCommand, RuntimeRoomFor,
-} from '../contracts/types.ts';
+  AvalonCommand, AvalonContext, CreatedRoomFor, GameEntry, OnuwCommand, OnuwContext,
+  RoomCommand, RuntimeRoomFor,
+} from '../contracts/runtime.ts';
+import type { AvalonView, OnuwView } from '../contracts/views.ts';
 
 type OperationContext = { now: () => number };
 type PlayerInput = { id: string; name?: string; avatar?: string };

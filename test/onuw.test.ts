@@ -6,9 +6,10 @@ import {
   NIGHT_ORDER, buildDeck, decideWinners, defaultOptions,
   nightLength, nightScript, roomForOptions, stepMillis, tallyVotes,
 } from '../src/games/onuw/rules.ts';
-import type {
-  GameEvent, OnuwContext, OnuwPhase, OnuwRole, OnuwView,
-} from '../src/contracts/types.ts';
+import type { OnuwRole } from '../src/games/onuw/rules.ts';
+import type { GameEvent } from '../src/contracts/persistence.ts';
+import type { OnuwContext } from '../src/contracts/runtime.ts';
+import type { OnuwPhase, OnuwView } from '../src/contracts/views.ts';
 
 function assertPhase<P extends OnuwPhase>(
   view: OnuwView,
