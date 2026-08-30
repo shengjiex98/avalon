@@ -5,10 +5,13 @@ import { readdir, readFile } from 'node:fs/promises';
 import { installDom } from './dom-shim.js';
 
 test('the emitted browser entry graph loads without TypeScript or source maps', async () => {
-  installDom();
-  const client = await import('../build/public/app.js');
-  await client.ready;
-  assert.equal(typeof client.render, 'function');
+  const { fixtures } = installDom();
+  const manifest = JSON.parse(await readFile(new URL('../build/public/.vite/manifest.json', import.meta.url), 'utf8'));
+  const entry = manifest['index.html'];
+  assert.equal(entry?.isEntry, true);
+  await import(`../build/public/${entry.file}`);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(fixtures.langToggle.textContent, '中文');
 
   const files = await readdir(new URL('../build/public/', import.meta.url), { recursive: true });
   assert.equal(files.some((file) => file.endsWith('.ts') || file.endsWith('.map')), false);

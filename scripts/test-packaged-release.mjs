@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtemp, symlink } from 'node:fs/promises';
+import { mkdtemp, readFile, symlink } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -12,6 +12,12 @@ if (!releaseDirectory || !/^[0-9a-f]{40}$/.test(expectedCommit ?? '')) {
 }
 
 const release = resolve(releaseDirectory);
+const browserManifest = JSON.parse(await readFile(join(release, 'build/public/.vite/manifest.json'), 'utf8'));
+const browserEntry = browserManifest['index.html']?.file;
+if (typeof browserEntry !== 'string') {
+  console.error('packaged release behavior failed: browser manifest has no index entry');
+  process.exit(65);
+}
 const stateDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-state-'));
 const stateFile = join(stateDirectory, 'rooms.json');
 const installDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-install-'));
@@ -27,8 +33,8 @@ try {
 
   const index = await fetch(running.base + '/');
   assert(index.ok && (await index.text()).includes('<title>Avalon</title>'), 'packaged static entry did not load');
-  const bootstrap = await fetch(running.base + '/bootstrap.js');
-  assert(bootstrap.ok && (bootstrap.headers.get('content-type') ?? '').includes('text/javascript'),
+  const entry = await fetch(`${running.base}/${browserEntry}`);
+  assert(entry.ok && (entry.headers.get('content-type') ?? '').includes('text/javascript'),
     'packaged browser entry did not load as JavaScript');
 
   const created = await post(running.base, '/api/rooms', { game: 'avalon' });

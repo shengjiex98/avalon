@@ -1,5 +1,5 @@
 import { LANGS, detectLang, t } from './i18n.ts';
-import { API_BASE, API_PROTOCOL } from './config.ts';
+import { API_PROTOCOL as AUTHORED_API_PROTOCOL } from '../contracts/api-protocol.ts';
 import { el, h, playerAvatar, toast } from './ui.ts';
 import { DEFAULT_GAME, GAME_IDS, gameFor, knownGame } from './games/index.ts';
 import { createStore } from './storage.ts';
@@ -55,6 +55,11 @@ type GameRenderer = {
   formatParams?: (params: Record<string, unknown>, entryKey: string) => Record<string, unknown>;
 };
 
+declare const __AVALON_BUILD_COMMIT__: string;
+declare global {
+  var AVALON_CONFIG: { apiBase: string; apiProtocol: number } | undefined;
+}
+
 const present = <T>(value: T | null | undefined | false): value is T => Boolean(value);
 const unrefTimer = (timer: unknown): void => {
   if (timer && typeof timer === 'object' && 'unref' in timer && typeof timer.unref === 'function') {
@@ -62,8 +67,11 @@ const unrefTimer = (timer: unknown): void => {
   }
 };
 
-const LOADED_VERSION = new URL(import.meta.url).searchParams.get('v') ?? 'dev';
-const VERSION_URL = new URL('./version.json', import.meta.url);
+const CONFIG = globalThis.AVALON_CONFIG ?? { apiBase: '', apiProtocol: AUTHORED_API_PROTOCOL };
+const API_BASE = CONFIG.apiBase;
+const API_PROTOCOL = CONFIG.apiProtocol;
+const LOADED_VERSION = typeof __AVALON_BUILD_COMMIT__ === 'string' ? __AVALON_BUILD_COMMIT__ : 'dev';
+const VERSION_URL = new URL('./version.json', location.href);
 const VERSION_CHECK_MS = 60_000;
 const PROBE_RETRY_MS = 15_000;
 const PAGES_ORIGIN = 'https://shengjiex98.github.io';

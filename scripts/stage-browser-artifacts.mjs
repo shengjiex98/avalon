@@ -3,7 +3,6 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { browserConfig } from './browser-config.mjs';
-import { stampFrontend } from './stamp-frontend-version.mjs';
 
 const [, , commit, outputDirectory, configuredBase = ''] = process.argv;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -28,9 +27,14 @@ await cp(canonical, pages, { recursive: true });
 
 await writeConfig(selfHosted, '', 'self-hosted');
 await writeConfig(pages, apiBase, 'Pages');
-await stampFrontend(pages, commit);
+await writeVersion(selfHosted);
+await writeVersion(pages);
 await writeFile(join(pages, '.nojekyll'), '');
 
 async function writeConfig(directory, base, target) {
   await writeFile(join(directory, 'config.js'), browserConfig(base, `${target} release`));
+}
+
+async function writeVersion(directory) {
+  await writeFile(join(directory, 'version.json'), `${JSON.stringify({ version: commit }, null, 2)}\n`);
 }

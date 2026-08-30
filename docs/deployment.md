@@ -65,7 +65,7 @@ repository in `~/.config/avalon.env`; consult the unit files and
 
 ```text
 push main
-  -> install and build the browser once
+  -> install and build the fingerprinted browser artifact once
   -> stage and test one immutable archive and one Pages tree
   -> publish archive, then latest.json
   -> send an untrusted "deploy" wake-up

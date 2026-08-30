@@ -42,7 +42,7 @@ test('every literal key the client renders exists in both languages', async () =
 });
 
 test('the HTML shell only references keys that exist', async () => {
-  const html = await read('../public/index.html');
+  const html = await read('../index.html');
   for (const m of html.matchAll(/data-i18n="([\w.]+)"/g)) {
     for (const lang of Object.keys(STRINGS)) {
       assert.ok(m[1] in STRINGS[lang], `${lang} is missing "${m[1]}" (used in index.html)`);

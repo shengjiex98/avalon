@@ -8,15 +8,16 @@
     "node": ">=24"
   },
   "scripts": {
-    "build:browser": "node scripts/build-browser.mjs",
+    "build:browser": "vite build",
     "start": "npm run build:browser && node src/server/main.ts",
-    "test": "npm run build:browser && npm run test:built",
+    "test": "AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run build:browser && AVALON_BUILD_COMMIT=$(git rev-parse HEAD) npm run test:built",
     "test:built": "node --test \"test/**/*.test.js\" \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vite": "8.2.2"
   },
   "dependencies": {
     "zod": "4.5.4"

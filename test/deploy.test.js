@@ -4,13 +4,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
-import { stampFrontend } from '../scripts/stamp-frontend-version.mjs';
 
 const read = (rel) => readFile(new URL(rel, import.meta.url), 'utf8');
 
@@ -23,31 +22,9 @@ function run(command, args) {
   });
 }
 
-test('every page load resolves the current server-hosted version', async () => {
-  const bootstrap = await read('../src/client/bootstrap.ts');
-  assert.match(bootstrap, /version\.json/);
-  assert.match(bootstrap, /cache:\s*'no-store'/);
-  assert.match(bootstrap, /app\.js\?v=/);
-});
-
-test('the Pages artifact fingerprints its complete module graph', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'avalon-version-'));
-  await mkdir(join(dir, 'games'));
-  await writeFile(join(dir, 'app.js'), "import './ui.js';\nimport * as game from './games/index.js';\n");
-  await writeFile(join(dir, 'ui.js'), 'export const ui = true;\n');
-  await writeFile(join(dir, 'games/index.js'), "export { ui } from '../ui.js';\n");
-
-  await stampFrontend(dir, 'abc123');
-
-  assert.deepEqual(JSON.parse(await readFile(join(dir, 'version.json'), 'utf8')), { version: 'abc123' });
-  assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/ui\.js\?v=abc123/);
-  assert.match(await readFile(join(dir, 'app.js'), 'utf8'), /\.\/games\/index\.js\?v=abc123/);
-  assert.match(await readFile(join(dir, 'games/index.js'), 'utf8'), /\.\.\/ui\.js\?v=abc123/);
-});
-
 test('one emitted client becomes independently configured server and Pages artifacts', async () => {
   const output = await mkdtemp(join(tmpdir(), 'avalon-browser-artifacts-'));
-  const commit = 'c'.repeat(40);
+  const commit = process.env.AVALON_BUILD_COMMIT ?? 'c'.repeat(40);
   const apiBase = 'https://games.example.test';
   const staged = await run(process.execPath, [
     fileURLToPath(new URL('../scripts/stage-browser-artifacts.mjs', import.meta.url)),
@@ -60,10 +37,26 @@ test('one emitted client becomes independently configured server and Pages artif
   assert.equal(selfHosted.code, 0, selfHosted.stderr);
   const pages = await run(process.execPath, [verifier, join(output, 'pages'), 'pages', commit, apiBase]);
   assert.equal(pages.code, 0, pages.stderr);
+
+  const selfHostedDir = join(output, 'self-hosted-public');
+  const pagesDir = join(output, 'pages');
+  const filesIn = async (directory) => (await readdir(directory, { recursive: true, withFileTypes: true }))
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(directory, join(entry.parentPath, entry.name)))
+    .sort();
+  const selfHostedFiles = await filesIn(selfHostedDir);
+  const pagesFiles = await filesIn(pagesDir);
+  assert.deepEqual(pagesFiles.filter((name) => name !== '.nojekyll'), selfHostedFiles);
+  for (const name of selfHostedFiles.filter((file) => file !== 'config.js')) {
+    assert.deepEqual(await readFile(join(pagesDir, name)), await readFile(join(selfHostedDir, name)),
+      `${name} must come unchanged from the one tested build`);
+  }
+  assert.notEqual(await readFile(join(pagesDir, 'config.js'), 'utf8'),
+    await readFile(join(selfHostedDir, 'config.js'), 'utf8'));
 });
 
 test('the connection banner lives outside the top bar', async () => {
-  const html = await read('../public/index.html');
+  const html = await read('../index.html');
   const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
   assert.ok(!header.includes('id="conn"'), 'the banner must not sit in the header');
   assert.match(html, /<div id="conn" class="conn-banner"/);
@@ -72,14 +65,14 @@ test('the connection banner lives outside the top bar', async () => {
 test('generated browser configuration carries the authored API protocol', async () => {
   const source = await read('../src/client/app.ts');
   const generated = await read('../build/public/config.js');
-  assert.match(source, /import \{ API_BASE, API_PROTOCOL \} from '\.\/config\.ts'/);
-  assert.match(generated, new RegExp(`export const API_PROTOCOL = ${API_PROTOCOL};`));
+  assert.match(source, /globalThis\.AVALON_CONFIG/);
+  assert.match(generated, new RegExp(`apiProtocol(?:"|):\\s*${API_PROTOCOL}`));
   assert.doesNotMatch(source, /^const API_PROTOCOL = \d+;$/m);
 });
 
 test('the browser defaults to Node but can remember one HTTPS backend', async () => {
   const source = await read('../src/client/app.ts');
-  const config = await read('../src/client/config.ts');
+  const config = await read('../public/config.js');
   const storage = await read('../src/client/storage.ts');
   const transport = await read('../src/client/transport.ts');
   assert.match(source, /PAGES_ORIGIN\s*=\s*'https:\/\/shengjiex98\.github\.io'/);
@@ -90,8 +83,8 @@ test('the browser defaults to Node but can remember one HTTPS backend', async ()
   assert.match(transport, /fetch\(\(app\.server \?\? ''\) \+ path,/);
   assert.match(transport, /new EventSource\(`\$\{app\.server \?\? ''\}\/api\/rooms\//);
   assert.match(source, /url\.search = app\.server \? `\?server=/);
-  assert.match(config, /export const API_BASE = ''/);
-  assert.match(config, /export \{ API_PROTOCOL \} from '\.\.\/contracts\/api-protocol\.ts'/);
+  assert.match(config, /apiBase: ''/);
+  assert.match(config, new RegExp(`apiProtocol: ${API_PROTOCOL}`));
 });
 
 test('game renderers are constructed without mutable module bindings', async () => {
@@ -122,8 +115,7 @@ test('development checking and browser emit are explicit package contracts', asy
   const pkg = JSON.parse(await read('../package.json'));
   const lock = JSON.parse(await read('../package-lock.json'));
   const config = JSON.parse(await read('../tsconfig.json'));
-  const browserConfig = JSON.parse(await read('../tsconfig.browser.json'));
-  const browserBuild = await read('../scripts/build-browser.mjs');
+  const vite = await read('../vite.config.ts');
   const actions = await read('../src/contracts/actions.ts');
   const persistence = await read('../src/contracts/persistence.ts');
   const runtime = await read('../src/server/runtime.ts');
@@ -150,21 +142,22 @@ test('development checking and browser emit are explicit package contracts', asy
   // The browser client is what talks to the API, so leaving it out of the
   // program is what let a request body drift from the contract unnoticed.
   assert.ok(config.include.includes('src/**/*.ts'), 'the authored client is type checked too');
-  assert.equal(pkg.scripts['build:browser'], 'node scripts/build-browser.mjs');
-  assert.equal(browserConfig.compilerOptions.rewriteRelativeImportExtensions, true);
-  assert.equal(browserConfig.compilerOptions.sourceMap, false);
-  assert.equal(browserConfig.compilerOptions.module, 'esnext');
-  assert.equal(browserConfig.compilerOptions.types, undefined,
-    'browser checking does not inherit Node ambient types');
-  assert.deepEqual(browserConfig.include, ['src/client/**/*.ts']);
-  assert.match(browserBuild, /build\/public/);
-  assert.equal((await readdir(new URL('../public/', import.meta.url), { recursive: true }))
-    .some((file) => file.endsWith('.ts') || file.endsWith('.js')), false,
-  'public contains only copy-as-is assets');
+  assert.equal(pkg.scripts['build:browser'], 'vite build');
+  assert.match(pkg.devDependencies.vite, /^\d+\.\d+\.\d+$/);
+  assert.equal(lock.packages[''].devDependencies.vite, pkg.devDependencies.vite);
+  assert.match(vite, /base:\s*'\.\/'/);
+  assert.match(vite, /manifest:\s*true/);
+  assert.match(vite, /outDir:\s*'build\/public'/);
+  assert.match(vite, /sourcemap:\s*false/);
+  assert.match(vite, /__AVALON_BUILD_COMMIT__/);
+  assert.deepEqual((await readdir(new URL('../public/', import.meta.url))).sort(), ['art', 'audio', 'config.js'],
+    'public contains only copy-as-is assets and runtime configuration');
 
   assert.match(ci, /npm ci[\s\S]*npm test[\s\S]*npm run typecheck/);
   assert.equal((deploy.match(/npm ci/g) ?? []).length, 1, 'deployment installs the lockfile once');
   assert.equal((deploy.match(/npm run build:browser/g) ?? []).length, 1, 'deployment emits the browser once');
+  assert.match(deploy, /AVALON_BUILD_COMMIT:\s*\$\{\{ github\.sha \}\}/,
+    'deployment supplies the exact workflow commit to Vite');
   assert.match(deploy, /npm run build:browser[\s\S]*npm run test:built[\s\S]*npm run typecheck/);
 });
 

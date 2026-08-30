@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
 import { readDeployedCommit } from '../src/server/main.ts';
 import { STATE_VERSION } from '../src/contracts/state-version.ts';
+import { browserConfig } from '../scripts/browser-config.mjs';
 
 const script = fileURLToPath(new URL('../scripts/write-release-manifest.mjs', import.meta.url));
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -87,9 +88,11 @@ test('an invalid release identity is rejected rather than reported', async () =>
 
 test('the trusted workflow verifier checks the packaged manifest and required files', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'avalon-packaged-release-'));
-  const commit = 'd'.repeat(40);
+  const commit = process.env.AVALON_BUILD_COMMIT ?? 'd'.repeat(40);
   await mkdir(join(dir, 'build'), { recursive: true });
   await cp(join(root, 'build/public'), join(dir, 'build/public'), { recursive: true });
+  await writeFile(join(dir, 'build/public/config.js'), browserConfig('', 'test release'));
+  await writeFile(join(dir, 'build/public/version.json'), `${JSON.stringify({ version: commit })}\n`);
   await cp(join(root, 'package.json'), join(dir, 'package.json'));
   await cp(join(root, 'package-lock.json'), join(dir, 'package-lock.json'));
   for (const name of [
@@ -109,17 +112,20 @@ test('the trusted workflow verifier checks the packaged manifest and required fi
   }));
 
   const verifier = join(root, 'scripts/verify-packaged-release.mjs');
-  assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 0);
+  const initialVerification = await run(process.execPath, [verifier, dir, commit]);
+  assert.equal(initialVerification.code, 0, initialVerification.stderr);
   assert.equal((await run(process.execPath, [verifier, dir, 'e'.repeat(40)])).code, 65);
   await rm(join(dir, 'src/server/main.ts'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'a missing production entrypoint must fail before publication');
   await mkdir(join(dir, 'src/server'), { recursive: true });
   await writeFile(join(dir, 'src/server/main.ts'), 'src/server/main.ts');
-  await rm(join(dir, 'build/public/app.js'));
+  const browserManifest = JSON.parse(await readFile(join(dir, 'build/public/.vite/manifest.json'), 'utf8'));
+  const browserEntry = browserManifest['index.html'].file;
+  await rm(join(dir, 'build/public', browserEntry));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'a missing emitted module must fail before publication');
-  await cp(join(root, 'build/public/app.js'), join(dir, 'build/public/app.js'));
+  await cp(join(root, 'build/public', browserEntry), join(dir, 'build/public', browserEntry));
   await rm(join(dir, 'build/public/art/card-back.webp'));
   assert.equal((await run(process.execPath, [verifier, dir, commit])).code, 65,
     'a missing static asset must fail before publication');
@@ -157,8 +163,16 @@ test('the packaged release carries the control plane that deploys it', async (t)
     return t.skip('this tar cannot build reproducible archives; CI packages the release');
   }
 
+  const commit = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
+  const browserStage = await mkdtemp(join(tmpdir(), 'avalon-browser-stage-'));
+  const staged = await run(process.execPath, [
+    join(root, 'scripts/stage-browser-artifacts.mjs'), commit, browserStage,
+  ]);
+  assert.equal(staged.code, 0, staged.stderr);
   const dir = await mkdtemp(join(tmpdir(), 'avalon-package-'));
-  const packaged = await run('sh', [packager, 'HEAD', dir], { cwd: root });
+  const packaged = await run('sh', [
+    packager, 'HEAD', dir, join(browserStage, 'self-hosted-public'), join(root, 'node_modules'),
+  ], { cwd: root });
   assert.equal(packaged.code, 0, packaged.stderr);
   const archive = packaged.stdout.trim().split('\n').at(-1);
   assert.deepEqual(await readdir(dir), [basename(archive)],
@@ -189,7 +203,6 @@ test('the packaged release carries the control plane that deploys it', async (t)
   assert.equal(unpacked.code, 0, unpacked.stderr);
   const imported = await run(process.execPath, ['--input-type=module', '-e', "await import('zod')"], { cwd: extracted });
   assert.equal(imported.code, 0, imported.stderr);
-  const commit = (await run('git', ['rev-parse', 'HEAD'], { cwd: root })).stdout.trim();
   const verified = await run(process.execPath, [join(root, 'scripts/verify-packaged-release.mjs'), extracted, commit]);
   assert.equal(verified.code, 0, verified.stderr);
 });
