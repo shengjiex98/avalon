@@ -1,4 +1,4 @@
-import { access, readFile } from 'node:fs/promises';
+import { access, lstat, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 import { verifyBrowserArtifact } from './verify-browser-artifact.mjs';
@@ -54,6 +54,7 @@ try {
 
     for (const name of [
       'package.json', 'package-lock.json', 'src/server.js', 'src/server.ts',
+      'public/index.html',
       'deploy/updater.sh', 'deploy/avalon.service',
       'scripts/verify-browser-artifact.mjs', 'scripts/verify-packaged-release.mjs',
     ]) {
@@ -64,7 +65,13 @@ try {
       }
     }
 
-    for (const name of ['public', 'test', 'node_modules/typescript', 'node_modules/@types/node']) {
+    const legacyEntry = join(releaseDir, 'public/index.html');
+    if (!(await lstat(legacyEntry)).isSymbolicLink()
+        || await readlink(legacyEntry) !== '../build/public/index.html') {
+      reject('public/index.html must link to the emitted client entry');
+    }
+
+    for (const name of ['test', 'node_modules/typescript', 'node_modules/@types/node']) {
       if (await exists(join(releaseDir, name))) reject(`development-only path shipped in release: ${name}`);
     }
 
