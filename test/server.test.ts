@@ -4,7 +4,10 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 import { API_PROTOCOL } from '../src/contracts/api-protocol.ts';
-import { CLIENT_ORIGIN, createApp, runtimePaths } from '../src/server/main.ts';
+import {
+  CLIENT_ORIGIN, createApp, normalizedApiRoute, runtimePaths,
+} from '../src/server/main.ts';
+import type { LogFields, OperationalLogger } from '../src/server/logging.ts';
 import { Rooms } from '../src/server/rooms.ts';
 import { STATE_VERSION } from '../src/contracts/state-version.ts';
 import * as onuw from '../src/server/games/onuw/game.ts';
@@ -13,6 +16,7 @@ import type { PublicView } from '../src/contracts/views.ts';
 
 type AppOptions = NonNullable<Parameters<typeof createApp>[0]>;
 type JsonRecord = Record<string, unknown>;
+type CapturedLog = { level: 'info' | 'error'; event: string; fields: LogFields };
 const isOnuwContext = (context: GameContext): context is OnuwContext =>
   context.room.game.id === 'onuw';
 
@@ -23,8 +27,14 @@ test('runtime paths follow the selected release working directory', () => {
   });
 });
 
+test('API route labels never include resource identifiers', () => {
+  assert.equal(normalizedApiRoute('/api/rooms/SECRET/action'), '/api/rooms/:room/action');
+  assert.equal(normalizedApiRoute('/api/avatars/private-file.webp'), '/api/avatars/:avatar');
+  assert.equal(normalizedApiRoute('/api/private/SECRET'), '/api/unknown');
+});
+
 async function withServer(fn: (base: string) => Promise<void>, options: AppOptions = {}): Promise<void> {
-  const server = createServer(createApp(options));
+  const server = createServer(createApp({ logger: () => {}, ...options }));
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -359,20 +369,41 @@ test('API failures use accurate status classes and structured bodies', async () 
   });
 });
 
+test('completed API requests have sparse structured logs and request IDs', async () => {
+  const logs: CapturedLog[] = [];
+  const logger: OperationalLogger = (level, event, fields = {}) => {
+    logs.push({ level, event, fields });
+  };
+  await withServer(async (base) => {
+    const response = await fetch(base + '/api/rooms/SECRET/action');
+    await response.text();
+    const request = logs.find((entry) => entry.event === 'api.request');
+    assert.ok(request);
+    assert.equal(request.fields.requestId, response.headers.get('x-request-id'));
+    assert.equal(request.fields.method, 'GET');
+    assert.equal(request.fields.route, '/api/rooms/:room/action');
+    assert.equal(request.fields.status, 405);
+    assert.equal(typeof request.fields.durationMs, 'number');
+    assert.equal(JSON.stringify(request).includes('SECRET'), false);
+  }, { logger });
+});
+
 test('unexpected API failures stay server errors', async () => {
   const rooms = new Rooms();
   rooms.activeGameCount = () => { throw new Error('unexpected'); };
-  const original = console.error;
-  console.error = () => {};
-  try {
-    await withServer(async (base) => {
-      const response = await fetch(base + '/api/health');
-      assert.equal(response.status, 500);
-      assert.deepEqual(await response.json(), { error: 'serverError', params: {} });
-    }, { rooms });
-  } finally {
-    console.error = original;
-  }
+  const logs: CapturedLog[] = [];
+  await withServer(async (base) => {
+    const response = await fetch(base + '/api/health');
+    assert.equal(response.status, 500);
+    assert.deepEqual(await response.json(), { error: 'serverError', params: {} });
+    const failure = logs.find((entry) => entry.event === 'unexpected.failure');
+    assert.equal(failure?.level, 'error');
+    assert.equal(failure?.fields.error, 'Error');
+    assert.equal('message' in (failure?.fields ?? {}), false);
+  }, {
+    rooms,
+    logger: (level, event, fields = {}) => { logs.push({ level, event, fields }); },
+  });
 });
 
 test('an action pushes a fresh view to every subscriber', async () => {

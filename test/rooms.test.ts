@@ -9,6 +9,7 @@ import * as avalon from '../src/server/games/avalon/game.ts';
 import type {
   GameContext, OnuwContext, RuntimeRoom, RuntimeRoomFor,
 } from '../src/server/runtime.ts';
+import type { LogFields } from '../src/server/logging.ts';
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -163,6 +164,31 @@ test('the persistence hook runs only after registry mutations', () => {
   assert.equal(mutations, 3);
   rooms.sweep();
   assert.equal(mutations, 3, 'a no-op sweep does not write another snapshot');
+});
+
+test('operational lifecycle logs contain aggregates, not room or player IDs', () => {
+  const logs: Array<{ event: string; fields: LogFields }> = [];
+  let clock = 10 * 60 * 60_000;
+  const rooms = new Rooms({
+    now: () => clock,
+    logger: (_level, event, fields = {}) => { logs.push({ event, fields }); },
+  });
+  const code = rooms.create('avalon', { code: 'SECR', seed: 1 });
+  for (let i = 0; i < 5; i++) {
+    rooms.dispatch(code, `private-player-${i}`, {
+      type: 'join', id: `private-player-${i}`, name: `Player ${i}`,
+    });
+  }
+  rooms.dispatch(code, 'private-player-0', { type: 'start' });
+  rooms.get(code).touchedAt = 0;
+  clock += 24 * 60 * 60_000;
+  rooms.sweep();
+
+  assert.deepEqual(logs.map(({ event }) => event), [
+    'room.created', 'game.started', 'room.expired',
+  ]);
+  assert.equal(JSON.stringify(logs).includes(code), false);
+  assert.equal(JSON.stringify(logs).includes('private-player'), false);
 });
 
 // ---------------------------------------------------------------- identity
