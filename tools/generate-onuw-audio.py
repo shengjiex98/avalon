@@ -2,7 +2,7 @@
 """Generate the fixed One Night Werewolf narration with neural voices.
 
 Setup:  python3 -m pip install edge-tts
-Run:    python3 scripts/generate-onuw-audio.py
+Run:    python3 tools/generate-onuw-audio.py
 """
 
 import asyncio
