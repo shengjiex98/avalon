@@ -303,7 +303,7 @@ Acceptance:
 | `write-release-manifest.mjs` | Retain; it owns Avalon compatibility metadata, not compilation. |
 | `verify-packaged-release.mjs` | Retain, simplified to the minimal release contract. |
 | `test-packaged-release.mjs` | Retain; it proves the exact production entry and state lifecycle. |
-| `generate-onuw-audio.py` | Keep unchanged; it is an offline source-asset generator. |
+| `tools/generate-onuw-audio.py` | Keep unchanged; it is an offline source-asset generator. |
 
 Completion should reduce custom build/packaging code and tests materially, but
 line count is not the acceptance criterion. Every remaining script must map to

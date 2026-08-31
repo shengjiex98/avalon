@@ -17,6 +17,12 @@ packaging, or deployment. The suite is fast and needs no network or browser, so
 run it after each such change rather than once at the end. CI runs the same
 tests from the extracted release archive on Node 24.
 
+In Codex, run `npm test` with escalated sandbox permissions on the first
+attempt. The suite opens loopback listeners and exercises nested subprocesses;
+the restricted sandbox rejects the listeners with `EPERM` and can disrupt
+captured child-process output. Request the narrow reusable command prefix
+`["npm", "test"]` rather than treating those sandbox failures as test failures.
+
 For a change limited to Markdown documentation, do not run the test suite;
 `git diff --check` is sufficient. A change that also touches any non-Markdown
 file still requires the full gate.
