@@ -14,6 +14,7 @@ import type { PublicView } from '../contracts/views.ts';
 import { GameError } from './errors.ts';
 import { logEvent, record, require_ } from './lobby.ts';
 import { DEFAULT_GAME, GAMES, gameFor } from './games/index.ts';
+import type { LogFields, OperationalLogger } from './logging.ts';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 4;
@@ -22,7 +23,12 @@ const CODE_ATTEMPTS = 1000;
 const IDLE_MS = 6 * 60 * 60 * 1000;
 const OVER_GRACE_MS = 3 * 60 * 1000;
 const CODE_PATTERN = /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/;
-type RoomsOptions = { now?: () => number; onMutate?: () => void; newCode?: () => string };
+type RoomsOptions = {
+  now?: () => number;
+  onMutate?: () => void;
+  newCode?: () => string;
+  logger?: OperationalLogger;
+};
 
 const isAvalonRoom = (room: RuntimeRoom): room is RuntimeRoomFor<'avalon'> =>
   room.game.id === 'avalon';
@@ -76,6 +82,7 @@ export class Rooms {
   onMutate: (() => void) | undefined;
   newCode: () => string;
   rooms: Map<string, RuntimeRoom>;
+  logger: OperationalLogger | undefined;
 
   /**
    * @param {{
@@ -84,11 +91,17 @@ export class Rooms {
    *   newCode?: () => string,
    * }} [options]
    */
-  constructor({ now = Date.now, onMutate, newCode = randomCode }: RoomsOptions = {}) {
+  constructor({ now = Date.now, onMutate, newCode = randomCode, logger }: RoomsOptions = {}) {
     this.now = now;
     this.onMutate = onMutate;
     this.newCode = newCode;
+    this.logger = logger;
     this.rooms = new Map();
+  }
+
+  emit(event: string, fields: LogFields): void {
+    try { this.logger?.('info', event, fields); }
+    catch { /* logging must never interrupt a game */ }
   }
 
   allocateCode(): string {
@@ -116,6 +129,7 @@ export class Rooms {
       ...(seed === undefined ? {} : { seed }),
     });
     this.rooms.set(code, this.runtimeRoom(withTouchedAt(persisted, this.now())));
+    this.emit('room.created', { game: gameId, rooms: this.rooms.size });
     this.onMutate?.();
     return code;
   }
@@ -223,7 +237,9 @@ export class Rooms {
   /** @param {string} code @param {(room: RuntimeRoom) => unknown} fn */
   mutate<T>(code: string, fn: (room: RuntimeRoom) => T): T {
     const room = this.get(code);
+    const before = { game: room.game.id, phase: room.game.state.phase };
     const result = fn(room);
+    this.emitLifecycle(before, room);
     room.revision += 1;
     this.broadcast(room);
     this.scheduleTick(room.code);
@@ -243,7 +259,9 @@ export class Rooms {
     room.timer = setTimeout(() => {
       room.timer = null;
       if (!this.rooms.has(code)) return;
+      const before = { game: room.game.id, phase: room.game.state.phase };
       if (tickFor(room, this.now())) {
+        this.emitLifecycle(before, room);
         room.revision += 1;
         this.broadcast(room);
         this.onMutate?.();
@@ -267,14 +285,35 @@ export class Rooms {
   sweep(): void {
     const cutoff = this.now() - IDLE_MS;
     let deleted = false;
+    const expired = new Map<GameId, number>();
     for (const [code, room] of this.rooms) {
       if (room.touchedAt < cutoff && room.subscribers.size === 0) {
         if (room.timer) clearTimeout(room.timer);
         this.rooms.delete(code);
+        expired.set(room.game.id, (expired.get(room.game.id) ?? 0) + 1);
         deleted = true;
       }
     }
+    for (const [game, count] of expired) {
+      this.emit('room.expired', { game, count, rooms: this.rooms.size });
+    }
     if (deleted) this.onMutate?.();
+  }
+
+  emitLifecycle(
+    before: { game: GameId; phase: string },
+    room: RuntimeRoom,
+  ): void {
+    const game = room.game.id;
+    const phase = room.game.state.phase;
+    if (before.game !== game) {
+      this.emit('game.switched', { from: before.game, game });
+      return;
+    }
+    if (before.phase === phase) return;
+    if (before.phase === 'lobby') this.emit('game.started', { game });
+    else if (phase === 'over') this.emit('game.completed', { game });
+    else if (phase === 'lobby') this.emit('game.restarted', { game });
   }
 
   snapshot(): PersistedRoom[] {

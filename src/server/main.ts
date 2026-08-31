@@ -19,6 +19,10 @@ import { GAME_IDS } from './games/index.ts';
 import { STATE_VERSION } from '../contracts/state-version.ts';
 import type { GameId } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
+import {
+  errorKind, operationalLogger,
+} from './logging.ts';
+import type { OperationalLogger } from './logging.ts';
 
 export function runtimePaths(rootDir = process.cwd()): { rootDir: string; publicDir: string } {
   const root = resolve(rootDir);
@@ -89,23 +93,33 @@ const CONFLICT_ERRORS = new Set([
 ]);
 
 export function createApp({
-  rooms = new Rooms(),
+  rooms,
   avatars = new Avatars(),
   clientOrigin = CLIENT_ORIGIN,
   publicDir = RUNTIME_PATHS.publicDir,
   deployedCommit = DEPLOYED_COMMIT,
+  logger = operationalLogger,
 }: {
   rooms?: Rooms;
   avatars?: AvatarService;
   clientOrigin?: string;
   publicDir?: string;
   deployedCommit?: string | null;
+  logger?: OperationalLogger;
 } = {}) {
+  const registry = rooms ?? new Rooms({ logger });
   const staticDir = resolve(publicDir);
+  let sseConnections = 0;
+  const connectionChange = (change: 1 | -1) => {
+    sseConnections += change;
+    logger('info', 'sse.connections', { count: sseConnections });
+  };
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    let requestId: string | null = null;
     try {
       const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-      if (url.pathname.startsWith('/api/')) {
+      if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+        requestId = logApiRequest(req, res, url, logger);
         allowClient(req, res, clientOrigin);
         if (req.method === 'OPTIONS') {
           res.writeHead(204, {
@@ -116,7 +130,7 @@ export function createApp({
           res.end();
           return;
         }
-        await api(rooms, avatars, deployedCommit, req, res, url);
+        await api(registry, avatars, deployedCommit, req, res, url, logger, connectionChange);
         return;
       }
       await serveStatic(staticDir, req, res, url);
@@ -127,11 +141,56 @@ export function createApp({
         json(res, status, { error: err.key, params: err.params });
         return;
       }
-      console.error(err);
+      logger('error', 'unexpected.failure', {
+        operation: requestId ? 'api.request' : 'http.request',
+        error: errorKind(err),
+        ...(requestId ? { requestId } : {}),
+      });
       if (!res.headersSent) json(res, 500, { error: 'serverError', params: {} });
       else res.end();
     }
   };
+}
+
+export function normalizedApiRoute(pathname: string): string {
+  if (pathname === '/api/health' || pathname === '/api/health/update') return pathname;
+  const parts = pathname.split('/').filter(Boolean);
+  if (parts[0] !== 'api') return '/api/unknown';
+  if (parts[1] === 'avatars' && parts.length === 3) return '/api/avatars/:avatar';
+  if (parts[1] !== 'rooms') return '/api/unknown';
+  if (parts.length === 2) return '/api/rooms';
+  if (parts.length === 3) return '/api/rooms/:room';
+  if (parts.length === 4 && ['events', 'join', 'action'].includes(parts[3]!)) {
+    return `/api/rooms/:room/${parts[3]}`;
+  }
+  return '/api/unknown';
+}
+
+function logApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  url: URL,
+  logger: OperationalLogger,
+): string {
+  const requestId = randomUUID();
+  const started = process.hrtime.bigint();
+  let logged = false;
+  res.setHeader('x-request-id', requestId);
+  const complete = () => {
+    if (logged) return;
+    logged = true;
+    const durationMs = Number(process.hrtime.bigint() - started) / 1_000_000;
+    logger('info', 'api.request', {
+      requestId,
+      method: req.method ?? 'UNKNOWN',
+      route: normalizedApiRoute(url.pathname),
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 10) / 10,
+    });
+  };
+  res.once('finish', complete);
+  res.once('close', complete);
+  return requestId;
 }
 
 interface AvatarService {
@@ -141,7 +200,6 @@ interface AvatarService {
 }
 
 const isGameId = (value: string): value is GameId => GAME_IDS.some((id) => id === value);
-const errorMessage = (error: unknown): string => error instanceof Error ? error.message : String(error);
 
 function allowClient(req: IncomingMessage, res: ServerResponse, clientOrigin: string): void {
   const origin = String(req.headers.origin ?? '').replace(/\/$/, '');
@@ -157,6 +215,8 @@ async function api(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
+  logger: OperationalLogger,
+  connectionChange: (change: 1 | -1) => void,
 ): Promise<void> {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','rooms',CODE,...]
 
@@ -230,7 +290,7 @@ async function api(
 
   if (tail === 'events') {
     requireMethod(req, res, ['GET']);
-    stream(rooms, req, res, code, url.searchParams.get('playerId'));
+    stream(rooms, req, res, code, url.searchParams.get('playerId'), connectionChange);
     return;
   }
 
@@ -251,7 +311,9 @@ async function api(
     if (!known || !player.avatar) {
       void avatars.resolve({ name: player.name, upload: body.avatar })
         .then((avatar) => avatar && rooms.updatePlayerAvatar(code, playerId, avatar))
-        .catch((err: unknown) => console.error(`could not prepare avatar for ${code}: ${errorMessage(err)}`));
+        .catch((err: unknown) => logger('error', 'unexpected.failure', {
+          operation: 'avatar.prepare', error: errorKind(err),
+        }));
     }
     return;
   }
@@ -295,6 +357,7 @@ function stream(
   res: ServerResponse,
   code: string,
   playerId: string | null,
+  connectionChange: (change: 1 | -1) => void,
 ): void {
   if (!playerId) throw new GameError('notInGame');
   // Validate before committing the SSE headers. A stale room URL must get a
@@ -314,9 +377,17 @@ function stream(
   const unsubscribe = rooms.subscribe(code, playerId, (view: PublicView) => {
     res.write(`data: ${JSON.stringify(view)}\n\n`);
   });
+  connectionChange(1);
   // Proxies drop a silent stream; a comment every 25s keeps it open.
   const ping = setInterval(() => res.write(': ping\n\n'), 25_000);
-  const close = () => { clearInterval(ping); unsubscribe(); };
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(ping);
+    unsubscribe();
+    connectionChange(-1);
+  };
   req.on('close', close);
   req.on('error', close);
 }
@@ -410,21 +481,39 @@ export function start({
 }: { port?: number; host?: string; stateFile?: string } = {}): Server {
   let pendingSave: NodeJS.Timeout | null = null;
   let rooms: Rooms;
+  let snapshotHealthy: boolean | null = null;
+  const saveSnapshot = () => {
+    try {
+      save(rooms, stateFile);
+      if (snapshotHealthy !== true) {
+        operationalLogger('info', 'snapshot.save', { outcome: 'saved', rooms: rooms.rooms.size });
+      }
+      snapshotHealthy = true;
+    } catch (err: unknown) {
+      if (snapshotHealthy !== false) {
+        operationalLogger('error', 'snapshot.save', { outcome: 'failed', error: errorKind(err) });
+      }
+      snapshotHealthy = false;
+    }
+  };
   const saveSoon = () => {
     if (pendingSave) return;
     pendingSave = setTimeout(() => {
       pendingSave = null;
-      try { save(rooms, stateFile); }
-      catch (err: unknown) { console.error(`could not save room snapshot: ${errorMessage(err)}`); }
+      saveSnapshot();
     }, 1000);
     pendingSave.unref?.();
   };
-  rooms = new Rooms({ onMutate: saveSoon });
+  rooms = new Rooms({ onMutate: saveSoon, logger: operationalLogger });
   const avatars = new Avatars({ directory: join(dirname(stateFile), 'avatars') });
   const restored = load(rooms, stateFile);
-  console.log(restored.restored
-    ? `restored ${restored.restored} room${restored.restored === 1 ? '' : 's'} from ${stateFile}`
-    : `${restored.reason} (${stateFile})`);
+  const loadOutcome = restored.restored > 0 ? 'restored'
+    : restored.reason === 'no snapshot found' ? 'missing'
+      : restored.reason === 'snapshot contained no rooms' ? 'empty' : 'discarded';
+  operationalLogger('info', 'snapshot.load', {
+    outcome: loadOutcome,
+    rooms: restored.restored,
+  });
 
   const server = createServer(createApp({ rooms, avatars }));
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
@@ -435,15 +524,14 @@ export function start({
     stopping = true;
     clearInterval(sweeper);
     if (pendingSave) clearTimeout(pendingSave);
-    try { save(rooms, stateFile); }
-    catch (err: unknown) { console.error(`could not save room snapshot during shutdown: ${errorMessage(err)}`); }
+    saveSnapshot();
     server.close();
     process.exit(0);
   };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   server.listen(port, host, () => {
-    console.log(`Avalon listening on http://${host}:${port}`);
+    operationalLogger('info', 'server.started', { host, port });
   });
   return server;
 }
