@@ -50,7 +50,10 @@ test('admin access requires an explicitly allowed Tailscale identity', async () 
     const allowed = await fetch(base, { headers: adminHeaders });
     assert.equal(allowed.status, 200);
     assert.match(allowed.headers.get('content-security-policy') ?? '', /default-src 'none'/);
-    assert.match(await allowed.text(), /Avalon Admin/);
+    const html = await allowed.text();
+    assert.match(html, /Avalon Admin/);
+    assert.match(html, /<div class="label">Commit<\/div><div class="value"><code>a{7}<\/code><\/div>/);
+    assert.doesNotMatch(html, /<code>a{8,}<\/code>/);
   });
 });
 

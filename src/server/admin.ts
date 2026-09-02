@@ -137,7 +137,7 @@ function renderAdmin(status: {
       <td>${room.connections}</td>
       <td><time datetime="${escapeHtml(room.touchedAt)}">${escapeHtml(room.touchedAt)}</time></td>
     </tr>`).join('') : '<tr><td class="empty" colspan="6">No rooms</td></tr>';
-  const commit = status.commit ? status.commit.slice(0, 12) : 'development';
+  const commit = status.commit ? status.commit.slice(0, 7) : 'development';
   return `<!doctype html>
 <html lang="en">
 <head>
