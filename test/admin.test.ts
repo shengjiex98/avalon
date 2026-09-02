@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 
 import { createAdminApp, parseAdminUsers } from '../src/server/admin.ts';
+import { RecentLogs } from '../src/server/logging.ts';
 import { Rooms } from '../src/server/rooms.ts';
 
 async function withAdmin(
@@ -16,10 +17,21 @@ async function withAdmin(
     type: 'join', id: 'private-player-id', name: 'Private Player',
   });
   const unsubscribe = rooms.subscribe(code, 'private-player-id', () => {});
+  const logs = new RecentLogs({ now });
+  logs.append('info', 'game.started', { game: 'avalon' });
+  logs.append('info', 'api.request', {
+    requestId: 'successful-request', method: 'GET', route: '/api/health', status: 200, durationMs: 1.2,
+  });
+  logs.append('info', 'api.request', {
+    requestId: 'missing-request', method: 'GET', route: '/api/unknown', status: 404, durationMs: 2.3,
+  });
+  logs.append('info', 'snapshot.load', { outcome: 'discarded', rooms: 0 });
+  logs.append('error', 'snapshot.save', { outcome: 'failed', error: 'Error' });
   const server = createServer(createAdminApp({
     rooms,
     allowedUsers: parseAdminUsers(' Admin@Example.com '),
     metrics: { startedAt: now() - 65_000, snapshotHealthy: true, sseConnections: 3 },
+    logs,
     deployedCommit: 'a'.repeat(40),
     now,
   }));
@@ -54,6 +66,44 @@ test('admin access requires an explicitly allowed Tailscale identity', async () 
     assert.match(html, /Avalon Admin/);
     assert.match(html, /<div class="label">Commit<\/div><div class="value"><code>a{7}<\/code><\/div>/);
     assert.doesNotMatch(html, /<code>a{8,}<\/code>/);
+    assert.match(html, /game\.started/);
+    assert.doesNotMatch(html, /api\.request/);
+    assert.match(html, /aria-current="page">Activity<\/a>/);
+  });
+});
+
+test('admin logs can be filtered by purpose and use text alongside color', async () => {
+  await withAdmin(async (base) => {
+    const problems = await fetch(`${base}/?view=problems&limit=25`, { headers: adminHeaders });
+    const problemsHtml = await problems.text();
+    assert.match(problemsHtml, /class="log error"[\s\S]*?<span class="badge">ERROR<\/span>[\s\S]*?snapshot\.save/);
+    assert.match(problemsHtml, /class="log warn"[\s\S]*?<span class="badge">WARN<\/span>[\s\S]*?snapshot\.load/);
+    assert.match(problemsHtml, /api\.request/);
+    assert.match(problemsHtml, /status<\/span> 404/);
+    assert.doesNotMatch(problemsHtml, /successful-request/);
+    assert.match(problemsHtml, /aria-current="page">Problems<\/a>/);
+    assert.match(problemsHtml, /aria-current="page">25<\/a>/);
+
+    const requests = await fetch(`${base}/?view=requests`, { headers: adminHeaders });
+    const requestsHtml = await requests.text();
+    assert.match(requestsHtml, /successful-request/);
+    assert.match(requestsHtml, /missing-request/);
+    assert.doesNotMatch(requestsHtml, /game\.started|snapshot\.save/);
+  });
+});
+
+test('admin log API returns the selected bounded view', async () => {
+  await withAdmin(async (base) => {
+    const response = await fetch(`${base}/api/logs?view=problems&limit=25`, { headers: adminHeaders });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.view, 'problems');
+    assert.equal(payload.limit, 25);
+    assert.deepEqual(payload.records.map((record: { event: string }) => record.event), [
+      'snapshot.save', 'snapshot.load', 'api.request',
+    ]);
+    const body = JSON.stringify(payload);
+    assert.doesNotMatch(body, /Private Player|private-player-id|hostId|gameState|roles/);
   });
 });
 

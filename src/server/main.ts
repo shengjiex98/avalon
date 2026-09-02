@@ -26,7 +26,7 @@ import { STATE_VERSION } from '../contracts/state-version.ts';
 import type { GameId } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
 import {
-  errorKind, operationalLogger,
+  captureLogs, errorKind, operationalLogger, RecentLogs,
 } from './logging.ts';
 import type { OperationalLogger } from './logging.ts';
 
@@ -494,16 +494,18 @@ export function start({
   let pendingSave: NodeJS.Timeout | null = null;
   let rooms: Rooms;
   const metrics = createRuntimeMetrics();
+  const recentLogs = new RecentLogs();
+  const logger = captureLogs(recentLogs, operationalLogger);
   const saveSnapshot = () => {
     try {
       save(rooms, stateFile);
       if (metrics.snapshotHealthy !== true) {
-        operationalLogger('info', 'snapshot.save', { outcome: 'saved', rooms: rooms.rooms.size });
+        logger('info', 'snapshot.save', { outcome: 'saved', rooms: rooms.rooms.size });
       }
       metrics.snapshotHealthy = true;
     } catch (err: unknown) {
       if (metrics.snapshotHealthy !== false) {
-        operationalLogger('error', 'snapshot.save', { outcome: 'failed', error: errorKind(err) });
+        logger('error', 'snapshot.save', { outcome: 'failed', error: errorKind(err) });
       }
       metrics.snapshotHealthy = false;
     }
@@ -516,18 +518,18 @@ export function start({
     }, 1000);
     pendingSave.unref?.();
   };
-  rooms = new Rooms({ onMutate: saveSoon, logger: operationalLogger });
+  rooms = new Rooms({ onMutate: saveSoon, logger });
   const avatars = new Avatars({ directory: join(dirname(stateFile), 'avatars') });
   const restored = load(rooms, stateFile);
   const loadOutcome = restored.restored > 0 ? 'restored'
     : restored.reason === 'no snapshot found' ? 'missing'
       : restored.reason === 'snapshot contained no rooms' ? 'empty' : 'discarded';
-  operationalLogger('info', 'snapshot.load', {
+  logger('info', 'snapshot.load', {
     outcome: loadOutcome,
     rooms: restored.restored,
   });
 
-  const server = createServer(createApp({ rooms, avatars, metrics }));
+  const server = createServer(createApp({ rooms, avatars, metrics, logger }));
   const adminUsers = parseAdminUsers(process.env.ADMIN_USERS);
   const configuredAdminSocket = process.env.ADMIN_SOCKET?.trim();
   const adminSocket = configuredAdminSocket
@@ -537,8 +539,9 @@ export function start({
       rooms,
       allowedUsers: adminUsers,
       metrics,
+      logs: recentLogs,
       deployedCommit: DEPLOYED_COMMIT,
-    }))
+    }), logger)
     : null;
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
   sweeper.unref();
@@ -556,7 +559,7 @@ export function start({
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   server.listen(port, host, () => {
-    operationalLogger('info', 'server.started', { host, port });
+    logger('info', 'server.started', { host, port });
   });
   return server;
 }
@@ -564,6 +567,7 @@ export function start({
 function listenAdmin(
   socketPath: string,
   handler: ReturnType<typeof createAdminApp>,
+  logger: OperationalLogger,
 ): Server {
   const directory = dirname(socketPath);
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -582,7 +586,7 @@ function listenAdmin(
   const server = createServer(handler);
   server.listen(socketPath, () => {
     chmodSync(socketPath, 0o600);
-    operationalLogger('info', 'admin.started', { transport: 'unix' });
+    logger('info', 'admin.started', { transport: 'unix' });
   });
   return server;
 }
