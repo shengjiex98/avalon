@@ -5,6 +5,12 @@ code grants access to a room, and an unguessable browser-held player ID
 represents a seat. There are no accounts or server-side authentication; add
 network or reverse-proxy access control when that model is insufficient.
 
+The optional operator console is a separate trust boundary. It listens only on
+a Unix socket, requires a `Tailscale-User-Login` explicitly listed by the host,
+and exposes a projection without player identities or engine state. The socket
+and identity checks live in [`src/server/admin.ts`](../src/server/admin.ts);
+[`src/server/rooms.ts`](../src/server/rooms.ts) owns the safe projection.
+
 The server—not the browser—enforces legal actions and derives filtered views,
 so modifying a client does not grant another player's hidden information or an
 illegal move. The authoritative boundaries are the action and view functions

@@ -30,6 +30,15 @@ type RoomsOptions = {
   logger?: OperationalLogger;
 };
 
+export type AdminRoomSummary = {
+  code: string;
+  game: GameId;
+  phase: string;
+  players: number;
+  connections: number;
+  touchedAt: string;
+};
+
 const isAvalonRoom = (room: RuntimeRoom): room is RuntimeRoomFor<'avalon'> =>
   room.game.id === 'avalon';
 const isAvalonPersistedRoom = (
@@ -217,6 +226,20 @@ export class Rooms {
       count += 1;
     }
     return count;
+  }
+
+  /** Deliberately omits player identities and engine state from operator views. */
+  adminSummary(): AdminRoomSummary[] {
+    return [...this.rooms.values()]
+      .sort((left, right) => right.touchedAt - left.touchedAt)
+      .map((room) => ({
+        code: room.code,
+        game: room.game.id,
+        phase: room.game.state.phase,
+        players: room.players.length,
+        connections: room.subscribers.size,
+        touchedAt: new Date(room.touchedAt).toISOString(),
+      }));
   }
 
   /** @param {string} code @param {string} playerId @param {(view: PublicView) => void} send */
