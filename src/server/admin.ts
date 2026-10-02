@@ -23,6 +23,7 @@ type AdminOptions = {
   metrics: RuntimeMetrics;
   logs: RecentLogs;
   uiSettings: UiSettings;
+  trustProxyOrigin?: boolean;
   logger?: OperationalLogger;
   deployedCommit?: string | null;
   now?: () => number;
@@ -40,6 +41,7 @@ export function createAdminApp({
   metrics,
   logs,
   uiSettings,
+  trustProxyOrigin = false,
   logger = operationalLogger,
   deployedCommit = null,
   now = Date.now,
@@ -61,7 +63,7 @@ export function createAdminApp({
         plain(res, 405, 'Method not allowed', req.method === 'HEAD');
         return;
       }
-      if (!sameOrigin(req)) {
+      if (!sameOrigin(req, trustProxyOrigin)) {
         plain(res, 403, 'Forbidden');
         return;
       }
@@ -146,14 +148,23 @@ export function createAdminApp({
   };
 }
 
-function sameOrigin(req: IncomingMessage): boolean {
+function sameOrigin(req: IncomingMessage, trustProxyOrigin: boolean): boolean {
   const site = req.headers['sec-fetch-site'];
   if (site && site !== 'same-origin' && site !== 'none') return false;
   const origin = req.headers.origin;
   if (origin === undefined) return true; // The unguessable form token also protects older browsers.
+  if (typeof origin !== 'string') return false;
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const forwardedProtocol = req.headers['x-forwarded-proto'];
+  const forwarded = trustProxyOrigin && (forwardedHost !== undefined || forwardedProtocol !== undefined);
+  const host = forwarded ? forwardedHost : req.headers.host;
+  const protocol = forwarded ? forwardedProtocol
+    : 'encrypted' in req.socket && req.socket.encrypted ? 'https' : 'http';
+  if (typeof host !== 'string' || !host || /[\s,\/\\@?#]/.test(host)
+      || (protocol !== 'https' && protocol !== 'http')) return false;
   try {
     const url = new URL(String(origin));
-    return (url.protocol === 'https:' || url.protocol === 'http:') && url.host === req.headers.host;
+    return url.origin === origin && url.origin === new URL(`${protocol}://${host}`).origin;
   } catch {
     return false;
   }

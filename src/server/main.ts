@@ -556,6 +556,8 @@ export function start({
       logs: recentLogs,
       deployedCommit: DEPLOYED_COMMIT,
       uiSettings,
+      // Tailscale rewrites the Unix-socket Host; only this private proxy supplies the browser origin.
+      trustProxyOrigin: true,
       logger,
     }), logger)
     : null;

@@ -11,7 +11,8 @@ and exposes a projection without player identities or engine state. The socket
 and identity checks live in [`src/server/admin.ts`](../src/server/admin.ts);
 [`src/server/rooms.ts`](../src/server/rooms.ts) owns the safe projection.
 Theme changes use the same identity boundary plus a form token and same-origin
-checks. Only published theme identifiers are accepted; the public application
+checks. Only the private admin proxy is trusted to supply the browser's origin.
+Only published theme identifiers are accepted; the public application
 exposes appearance as read-only data. Validation lives in
 [`src/server/admin.ts`](../src/server/admin.ts) and
 [`src/contracts/ui-settings.ts`](../src/contracts/ui-settings.ts).
