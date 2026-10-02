@@ -9,6 +9,10 @@ import {
 } from '../src/server/main.ts';
 import type { LogFields, OperationalLogger } from '../src/server/logging.ts';
 import { Rooms } from '../src/server/rooms.ts';
+import { UiSettings } from '../src/server/ui-settings.ts';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { STATE_VERSION } from '../src/contracts/state-version.ts';
 import * as onuw from '../src/server/games/onuw/game.ts';
 import type { GameContext, OnuwContext } from '../src/server/runtime.ts';
@@ -118,6 +122,23 @@ test('advertises one API protocol to the supported Pages client', async () => {
     assert.equal(stranger.headers.get('access-control-allow-origin'), null);
     assert.match(stranger.headers.get('vary') ?? '', /origin/);
   });
+});
+
+test('public appearance follows server settings but exposes no write endpoint', async () => {
+  const uiSettings = new UiSettings({
+    file: join(await mkdtemp(join(tmpdir(), 'avalon-public-ui-')), 'ui-settings.json'), logger: () => {},
+  });
+  await withServer(async (base) => {
+    const initial = await fetch(`${base}/api/ui-settings`, { headers: { origin: CLIENT_ORIGIN } });
+    assert.equal(initial.headers.get('cache-control'), 'no-store');
+    assert.equal(initial.headers.get('access-control-allow-origin'), CLIENT_ORIGIN);
+    assert.deepEqual(await initial.json(), { theme: 'crystal' });
+    await uiSettings.setTheme('classic');
+    assert.deepEqual(await (await fetch(`${base}/api/ui-settings`)).json(), { theme: 'classic' });
+    assert.equal((await post(base, '/api/ui-settings', { theme: 'crystal' })).status, 405);
+    assert.equal((await post(base, '/settings/theme', { theme: 'crystal' })).status, 405);
+    assert.equal(uiSettings.current().theme, 'classic');
+  }, { uiSettings });
 });
 
 test('the update health check permits lobbies but blocks active games', async () => {

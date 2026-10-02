@@ -3,6 +3,7 @@ import { API_PROTOCOL as AUTHORED_API_PROTOCOL } from '../contracts/api-protocol
 import { el, h, playerAvatar, toast } from './ui.ts';
 import { DEFAULT_GAME, GAME_IDS, gameFor, knownGame } from './games/index.ts';
 import { createStore } from './storage.ts';
+import { createThemeController } from './theme.ts';
 import { ApiError, createTransport } from './transport.ts';
 import { createSharedRendering } from './rendering.ts';
 import { createTestSeats } from './test-seats.ts';
@@ -140,6 +141,7 @@ function normaliseServer(raw: unknown): string | null {
 }
 
 async function probeServer() {
+  void themes.refresh();
   if (probeTimer) clearTimeout(probeTimer);
   probeTimer = null;
   app.serverStatus = 'checking';
@@ -188,6 +190,7 @@ function watchServer() {
 // ---------------------------------------------------------------- transport
 
 const transport = createTransport({ app });
+const themes = createThemeController({ app, store, load: transport.uiSettings });
 let session: ReturnType<typeof createRoomSession>;
 const send = (action: ClientAction) => session.send(action);
 const connect = () => session.connect();
@@ -702,6 +705,7 @@ export async function main() {
   startUpdateChecks();
 
   app.server = resolveServer();
+  themes.start();
   render();
   await probeServer();
   watchServer();
@@ -714,5 +718,6 @@ export async function main() {
 }
 
 export { app, render };
+export const checkUiSettings = themes.refresh;
 
 export const ready = main();

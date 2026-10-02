@@ -1,0 +1,211 @@
+/* Crystal Chronicle appearance. Layout belongs to components.css. */
+
+
+:root[data-theme="crystal"] {
+  --bg: #080d1c;
+  --panel: #111a35;
+  --panel-2: #19264a;
+  --line: #705d36;
+  --text: #fff4d6;
+  --muted: #b9b9c8;
+  --good: #4eb6d8;
+  --evil: #d65566;
+  --gold: #f0c96b;
+  --ok: #68cf9a;
+  --radius: 6px;
+  --shadow: #030712;
+}
+
+:where(html[data-theme="crystal"]) body {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(78, 182, 216, .14) 0 1px, transparent 2px),
+    radial-gradient(circle at 82% 23%, rgba(240, 201, 107, .16) 0 1px, transparent 2px),
+    radial-gradient(circle at 50% -10%, #223363 0, #0b1228 38%, var(--bg) 76%);
+  background-size: 83px 83px, 127px 127px, auto;
+  color: var(--text);
+  font-family: ui-rounded, "Avenir Next", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+:where(html[data-theme="crystal"]) body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: .16;
+  background-image: linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px);
+  background-size: 4px 4px;
+  mix-blend-mode: screen;
+}
+
+:where(html[data-theme="crystal"]) .chrome {
+  background: linear-gradient(180deg, rgba(16, 25, 51, .98), rgba(6, 11, 26, .96));
+  border-bottom: 2px solid #8f7138;
+  box-shadow: 0 3px 0 #030610, 0 8px 22px rgba(0,0,0,.35);
+}
+:where(html[data-theme="crystal"]) .brand-gem {
+  color: #dff7ff; transform: rotate(45deg);
+  border: 1px solid var(--gold); background: #176085;
+  box-shadow: inset 0 0 0 3px #0c2949, 0 0 10px rgba(78,182,216,.45);
+}
+:where(html[data-theme="crystal"]) .brand-gem::first-letter { transform: rotate(-45deg); }
+:where(html[data-theme="crystal"]) .topbar h1 {
+  font-family: Georgia, "Songti SC", serif;
+  color: var(--text); text-shadow: 0 2px 0 #000, 0 0 12px rgba(240,201,107,.28);
+}
+:where(html[data-theme="crystal"]) .lang { border-radius: 4px;
+  background: #0e1831; border-color: #756039; color: var(--gold);
+}
+
+:where(html[data-theme="crystal"]) .seg { border-radius: 4px; border-color: #756039;
+  background: #080f24; box-shadow: inset 0 0 0 1px #030610;
+}
+:where(html[data-theme="crystal"]) .seg-btn { border-radius: 2px; }
+:where(html[data-theme="crystal"]) .seg-btn.on {
+  color: #10172a; background: linear-gradient(#ffe39a, #c89a45);
+  box-shadow: inset 0 0 0 1px #fff0b8;
+}
+
+:where(html[data-theme="crystal"]) .card {
+  border: 1px solid #8b713d;
+  border-radius: var(--radius);
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.055), transparent 22%),
+    linear-gradient(180deg, rgba(27, 42, 79, .98), rgba(12, 22, 47, .98));
+  box-shadow: inset 0 0 0 2px #080f22, inset 0 0 0 3px rgba(240,201,107,.13),
+              0 4px 0 #030711, 0 8px 18px rgba(0,0,0,.24);
+}
+:where(html[data-theme="crystal"]) .card h2, :where(html[data-theme="crystal"]) .card h3, :where(html[data-theme="crystal"]) .rules h2 {
+  font-family: Georgia, "Songti SC", serif;
+  color: var(--gold); text-shadow: 0 1px 0 #000;
+}
+:where(html[data-theme="crystal"]) .muted { color: var(--muted); }
+
+:where(html[data-theme="crystal"]) .btn { border-radius: 4px;
+  border-color: #866f43; color: var(--text);
+  background: linear-gradient(180deg, #243867, #14254d);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.055), 0 3px 0 #070b18;
+}
+:where(html[data-theme="crystal"]) .btn:hover:not(:disabled) { border-color: #ffe298; filter: brightness(1.1); }
+:where(html[data-theme="crystal"]) .btn:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 1px rgba(255,255,255,.055), 0 1px 0 #070b18; }
+:where(html[data-theme="crystal"]) .btn.primary {
+  color: #071327; border-color: #ffdc83;
+  background: linear-gradient(180deg, #ffe6a0, #c99a42);
+  text-shadow: 0 1px rgba(255,255,255,.45);
+}
+:where(html[data-theme="crystal"]) .btn.danger {
+  color: #fff0e5; border-color: #e67a79;
+  background: linear-gradient(180deg, #a94253, #642637);
+}
+:where(html[data-theme="crystal"]) .btn.ghost { color: var(--muted); background: rgba(6,12,28,.55); box-shadow: none; }
+
+:where(html[data-theme="crystal"]) label { color: var(--gold); }
+:where(html[data-theme="crystal"]) input[type=text] { border-radius: 4px; border-color: #7d673c;
+  background: #071029; color: var(--text); box-shadow: inset 0 2px 7px rgba(0,0,0,.6);
+}
+
+:where(html[data-theme="crystal"]) .code-pill { border-radius: 4px; font-family: Georgia, serif;
+  color: #fff2b7; background: #071029; border: 1px solid #a88640;
+  text-shadow: 0 0 12px rgba(240,201,107,.55); box-shadow: inset 0 0 15px rgba(78,182,216,.1);
+}
+:where(html[data-theme="crystal"]) .role-option {
+  border-radius: 4px; background: rgba(5, 12, 30, .68); border-color: #5e533c;
+}
+:where(html[data-theme="crystal"]) .role-option.selected {
+  border-color: var(--gold); background: linear-gradient(90deg, rgba(240,201,107,.15), rgba(20,37,77,.8));
+  box-shadow: inset 3px 0 0 var(--gold), 0 0 10px rgba(240,201,107,.09);
+}
+:where(html[data-theme="crystal"]) .role-option input, :where(html[data-theme="crystal"]) .house-rule input { accent-color: var(--gold);
+}
+:where(html[data-theme="crystal"]) .role-option-description { display: none; }
+:where(html[data-theme="crystal"]) .house-rule {
+  border-radius: 4px; background: rgba(5, 12, 30, .68); border-color: #5e533c;
+}
+:where(html[data-theme="crystal"]) .house-rule.selected {
+  border-color: var(--gold); background: linear-gradient(90deg, rgba(240,201,107,.15), rgba(20,37,77,.8));
+  box-shadow: inset 3px 0 0 var(--gold), 0 0 10px rgba(240,201,107,.09);
+}
+:where(html[data-theme="crystal"]) .player { border-radius: 4px;
+  border-color: #544c3a; background: rgba(7, 16, 41, .78);
+}
+:where(html[data-theme="crystal"]) .player-avatar { background: #132b4c; }
+:where(html[data-theme="crystal"]) .player.selected { border-color: var(--gold); background: #293457; box-shadow: inset 3px 0 0 var(--gold); }
+
+:where(html[data-theme="crystal"]) .tag { border-radius: 3px; background: rgba(4,9,22,.55);
+}
+:where(html[data-theme="crystal"]) .tag.leader, :where(html[data-theme="crystal"]) .tag.gold { color: var(--gold); border-color: var(--gold); }
+:where(html[data-theme="crystal"]) .tag.team, :where(html[data-theme="crystal"]) .tag.good { color: #7ce2ff; border-color: #4eb6d8; }
+:where(html[data-theme="crystal"]) .tag.evil { color: #ff9aa5; border-color: #d65566; }
+:where(html[data-theme="crystal"]) .tag.ok { color: #8ff0b7; border-color: #68cf9a; }
+:where(html[data-theme="crystal"]) .info-btn::before { content: "✦"; color: var(--gold); font-size: 19px; line-height: 1; text-shadow: 0 0 8px rgba(240,201,107,.4); }
+:where(html[data-theme="crystal"]) .info-btn:nth-child(2)::before { content: "▤"; }
+:where(html[data-theme="crystal"]) .quest { border-radius: 50% 50% 44% 44%; background: radial-gradient(circle at 50% 38%, #263d70, #0d1937 72%);
+  box-shadow: inset 0 0 0 2px #0b142b, 0 2px 0 #02040b;
+}
+:where(html[data-theme="crystal"]) .quest .size { font-family: Georgia, serif; }
+:where(html[data-theme="crystal"]) .quest.current { border-color: #ffe093; box-shadow: inset 0 0 0 2px #0b142b, 0 0 10px rgba(240,201,107,.45); }
+:where(html[data-theme="crystal"]) .quest.success { background: radial-gradient(circle, #217a66, #0d3732); color: #adffd0; border-color: #68cf9a; }
+:where(html[data-theme="crystal"]) .quest.fail { background: radial-gradient(circle, #873543, #3b1624); color: #ffb0b8; border-color: #d65566; }
+:where(html[data-theme="crystal"]) .evil-count { color: #ff9aa5; border: 1px solid #7c3544; border-radius: 3px; }
+:where(html[data-theme="crystal"]) .pip { border-radius: 1px; transform: rotate(45deg); }
+:where(html[data-theme="crystal"]) .banner { border-radius: 4px; }
+:where(html[data-theme="crystal"]) .journal summary {
+  color: var(--gold); font: 700 12px Georgia, serif;
+}
+:where(html[data-theme="crystal"]) .journal-count {
+  color: var(--muted); border: 1px solid #61553e; font: 10px ui-monospace, monospace; }
+:where(html[data-theme="crystal"]) .journal[open] {
+  box-shadow: 0 -12px 40px rgba(0,0,0,.72), inset 0 0 0 2px #080f22;
+}
+:where(html[data-theme="crystal"]) .journal[open] summary { border-bottom: 1px solid #675637; }
+:where(html[data-theme="crystal"]) .game-result { border-bottom: 1px solid rgba(103,86,55,.45); }
+:where(html[data-theme="crystal"]) .report-player.good { color: #7ce2ff; }
+:where(html[data-theme="crystal"]) .report-player.evil { color: #ff9aa5; }
+:where(html[data-theme="crystal"]) .report-player.tanner { color: var(--gold); }
+
+:where(html[data-theme="crystal"]) .reveal-card { border-radius: 5px; border-color: #b89142;
+  background: radial-gradient(circle at 25% 22%, rgba(78,182,216,.16), transparent 26%),
+              linear-gradient(155deg, #202c59, #100f2c 72%);
+  box-shadow: inset 0 0 0 3px #0b1127, inset 0 0 0 4px rgba(240,201,107,.22);
+}
+:where(html[data-theme="crystal"]) .reveal-card .role-name { color: #fff0ba; font-family: Georgia, "Songti SC", serif; }
+:where(html[data-theme="crystal"]) .faction-sigil.good { color: #8ce9ff; border-color: #4eb6d8; box-shadow: 0 0 10px rgba(78,182,216,.32); }
+:where(html[data-theme="crystal"]) .faction-sigil.evil { color: #ff9aa5; border-color: #d65566; box-shadow: 0 0 10px rgba(214,85,102,.3); }
+
+:where(html[data-theme="crystal"]) .info-popup-backdrop { background: rgba(1,4,13,.82); }
+:where(html[data-theme="crystal"]) .popup-close { color: var(--gold); }
+:where(html[data-theme="crystal"]) .rules { border-radius: 5px; border: 1px solid #a78743; background: #101a35; box-shadow: inset 0 0 0 3px #080f22; }
+
+:where(html[data-theme="crystal"]) .centre-card { border-radius: 7px; border-color: #9d7b39;
+  box-shadow: inset 0 0 0 2px #070d1d;
+}
+:where(html[data-theme="crystal"]) .centre-card.card-back {
+  background: #071126 url('/art/card-back.webp') center / cover no-repeat;
+}
+:where(html[data-theme="crystal"]) .centre-card.card-back::after {
+  content: ""; position: absolute; inset: 3px; border: 1px solid rgba(255,226,142,.34);
+  border-radius: 4px; pointer-events: none;
+}
+:where(html[data-theme="crystal"]) .centre-card.selected {
+  border-color: #fff0ad; box-shadow: inset 0 0 0 2px #070d1d, 0 0 0 2px var(--gold),
+              0 0 18px rgba(240,201,107,.48);
+}
+:where(html[data-theme="crystal"]) .centre-n { border-radius: 50%; color: #fff0b8; background: rgba(3,8,20,.82);
+  border: 1px solid #b89142; font: 700 10px Georgia, serif;
+}
+:where(html[data-theme="crystal"]) .role-card-front {
+  border: 1px solid #d5ad55; border-radius: 7px; color: #fff0ba;
+  background: radial-gradient(circle at 50% 35%, #263c70, #101938 68%, #080e22);
+  box-shadow: inset 0 0 0 2px #070d1d, inset 0 0 0 3px rgba(240,201,107,.2),
+              0 4px 10px rgba(0,0,0,.35);
+}
+:where(html[data-theme="crystal"]) .role-card-name {
+  font: 700 12px/1.1 Georgia, "Songti SC", serif;
+}
+:where(html[data-theme="crystal"]) .night .announce { color: #fff0bd; font-family: Georgia, "Songti SC", serif; }
+:where(html[data-theme="crystal"]) .clock-num { color: #fff2b0; font-family: Georgia, serif; text-shadow: 0 0 18px rgba(240,201,107,.45); }
+:where(html[data-theme="crystal"]) .bar { background: #050a19; border: 1px solid #574c36; }
+:where(html[data-theme="crystal"]) .bar-fill { background: linear-gradient(90deg, #3d8db6, #ffe28e); }
+:where(html[data-theme="crystal"]) .yourturn { color: #91e9ff; }
+:where(html[data-theme="crystal"]) .finding { background: rgba(5,11,28,.72); }
+:where(html[data-theme="crystal"]) .option-room { border-radius: 3px; background: rgba(240,201,107,.07); }

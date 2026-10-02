@@ -5,6 +5,7 @@ import type {
   ClientAction, CreateRoomCommand, JoinCommand, ValidatedAction,
 } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
+import { parseUiSettings } from '../contracts/ui-settings.ts';
 
 type CreateRoomResult = { code: string };
 type JoinRoomResult = { code: string; playerId: string };
@@ -99,7 +100,7 @@ export function createTransport({ app, onMessage, onError }: { app: TransportApp
   async function request<T>(
     path: string,
     parse: (value: unknown) => T,
-    options: { body?: RequestBody } = {},
+    options: { body?: RequestBody; signal?: AbortSignal } = {},
   ): Promise<T> {
     let response;
     try {
@@ -111,6 +112,7 @@ export function createTransport({ app, onMessage, onError }: { app: TransportApp
             body: JSON.stringify(options.body),
           }
         : { method: 'GET', cache: 'no-store' };
+      if (options.signal) init.signal = options.signal;
       response = await fetch((app.server ?? '') + path, init);
     } catch {
       throw new ApiError('network', {});
@@ -136,6 +138,11 @@ export function createTransport({ app, onMessage, onError }: { app: TransportApp
     request(`/api/rooms/${code}/action`, actionResult, {
     body: { ...action, playerId },
   });
+  const uiSettings = () => request('/api/ui-settings', (value) => {
+    const settings = parseUiSettings(value);
+    if (!settings) throw new ApiError('invalidResponse', {});
+    return settings;
+  }, { signal: AbortSignal.timeout(5_000) });
 
   async function probeProtocol(expected: number): Promise<ProtocolResult> {
     const result = await request('/api/health', (value) => {
@@ -201,7 +208,7 @@ export function createTransport({ app, onMessage, onError }: { app: TransportApp
   }
 
   return {
-    createRoom, joinRoom, roomStatus, action, probeProtocol, latestVersion,
+    createRoom, joinRoom, roomStatus, action, probeProtocol, latestVersion, uiSettings,
     open, close, setHandlers,
   };
 }
