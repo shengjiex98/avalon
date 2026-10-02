@@ -1,0 +1,13 @@
+:root[data-theme="classic"] {
+  --bg: #12141c;
+  --panel: #1b1e2b;
+  --panel-2: #232739;
+  --line: #333852;
+  --text: #e8e9f0;
+  --muted: #9aa0b8;
+  --good: #4f8cff;
+  --evil: #e0575f;
+  --gold: #d9b169;
+  --ok: #3fbf7f;
+  --radius: 14px;
+}

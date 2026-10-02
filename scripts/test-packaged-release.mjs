@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdtemp, readFile, symlink } from 'node:fs/promises';
 import { createServer } from 'node:net';
+import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -20,6 +21,8 @@ if (typeof browserEntry !== 'string') {
 }
 const stateDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-state-'));
 const stateFile = join(stateDirectory, 'rooms.json');
+const uiSettingsFile = join(stateDirectory, 'ui-settings.json');
+const adminSocket = join(stateDirectory, 'admin', 'server.sock');
 const installDirectory = await mkdtemp(join(tmpdir(), 'avalon-artifact-install-'));
 const current = join(installDirectory, 'current');
 await symlink(release, current, 'dir');
@@ -30,6 +33,14 @@ try {
   const firstHealth = await json(running.base, '/api/health');
   assert(firstHealth.commit === expectedCommit, 'packaged health reports the wrong commit');
   assert(firstHealth.rooms === 0, 'fresh packaged server did not start empty');
+  assert((await json(running.base, '/api/ui-settings')).theme === 'crystal', 'packaged appearance has no default');
+  const admin = await adminRequest('/');
+  assert(admin.status === 200, 'packaged admin console did not load');
+  const csrf = /name="csrf" value="([a-f0-9]{64})"/.exec(admin.body)?.[1];
+  assert(csrf, 'packaged admin console did not issue a form token');
+  const changed = await adminRequest('/settings/theme', new URLSearchParams({ theme: 'classic', csrf }).toString());
+  assert(changed.status === 303, 'packaged admin could not save a theme');
+  assert((await json(running.base, '/api/ui-settings')).theme === 'classic', 'packaged player settings did not follow admin');
 
   const index = await fetch(running.base + '/');
   assert(index.ok && (await index.text()).includes('<title>Avalon</title>'), 'packaged static entry did not load');
@@ -55,12 +66,13 @@ try {
   running = await startRelease();
   const restoredHealth = await json(running.base, '/api/health');
   assert(restoredHealth.rooms === 1, 'packaged server did not restore its snapshot');
+  assert((await json(running.base, '/api/ui-settings')).theme === 'classic', 'packaged restart lost the selected theme');
   const probe = await json(running.base, `/api/rooms/${created.code}?playerId=${joined.playerId}`);
   assert(probe.exists === true && probe.seated === true, 'restored packaged room lost its seat');
   const restored = await nextView(running.base, created.code, joined.playerId);
   assert(restored.options?.percival === true, 'restored packaged view lost its action state');
 
-  process.stdout.write('packaged release startup, HTTP, view, and snapshot checks passed\n');
+  process.stdout.write('packaged release startup, HTTP, view, snapshot, and appearance checks passed\n');
 } catch (error) {
   console.error(`packaged release behavior failed: ${error.message}`);
   if (running?.logs) console.error(running.logs());
@@ -80,6 +92,9 @@ async function startRelease() {
       HOST: '127.0.0.1',
       PORT: String(port),
       AVALON_STATE_FILE: stateFile,
+      AVALON_UI_SETTINGS_FILE: uiSettingsFile,
+      ADMIN_USERS: 'artifact@example.com',
+      ADMIN_SOCKET: adminSocket,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -97,6 +112,26 @@ async function startRelease() {
   }
   child.kill('SIGKILL');
   throw new Error('server did not become healthy');
+}
+
+function adminRequest(path, body) {
+  return new Promise((resolveRequest, rejectRequest) => {
+    const request = httpRequest({
+      socketPath: adminSocket, path, method: body ? 'POST' : 'GET',
+      headers: {
+        'tailscale-user-login': 'artifact@example.com',
+        ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+      },
+    }, (response) => {
+      let text = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { text += chunk; });
+      response.on('end', () => resolveRequest({ status: response.statusCode, body: text }));
+      response.on('error', rejectRequest);
+    });
+    request.on('error', rejectRequest);
+    request.end(body);
+  });
 }
 
 async function stopRelease(instance) {

@@ -19,6 +19,11 @@ buffer `/api/rooms/*/events`. Server configuration defaults and optional avatar
 settings live in [`src/server/main.ts`](../src/server/main.ts),
 [`src/server/persistence.ts`](../src/server/persistence.ts), and
 [`src/server/avatars.ts`](../src/server/avatars.ts).
+The admin console's **Player UI theme** controls the appearance for both
+self-hosted and Pages clients. Appearance is saved separately beside the room
+snapshot and survives releases and restarts; path configuration and storage
+behavior live in [`src/server/main.ts`](../src/server/main.ts) and
+[`src/server/ui-settings.ts`](../src/server/ui-settings.ts).
 
 ## Static host control plane
 
@@ -63,7 +68,7 @@ repository in `~/.config/avalon.env`; consult the unit files and
 [`deploy/updater.sh`](../deploy/updater.sh) for accepted values.
 
 Setting `ADMIN_USERS` there to a comma-separated list of Tailscale logins
-enables the read-only admin listener. It uses a private Unix socket beside the
+enables the admin listener. It uses a private Unix socket beside the
 room snapshot unless `ADMIN_SOCKET` selects another path. Put a Tailscale Serve
 proxy in front of that socket; do not expose it through the public listener.
 The authentication and response rules are implemented in

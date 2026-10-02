@@ -1,10 +1,27 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="crystal">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#080d1c">
+<meta id="themeColor" name="theme-color" content="#080d1c">
 <script src="./config.js" vite-ignore></script>
+<script>
+// Use the last confirmed server theme before the first paint.
+try {
+  const cached = JSON.parse(localStorage.getItem('avalon.ui-theme') || 'null');
+  let server = location.origin;
+  if (server === 'https://shengjiex98.github.io') {
+    const selected = new URL(location.href).searchParams.get('server')
+      ?? localStorage.getItem('avalon.server') ?? globalThis.AVALON_CONFIG?.apiBase;
+    const remote = new URL(selected);
+    if (remote.protocol === 'https:') server = remote.origin;
+  }
+  if (cached?.server === server && (cached.theme === 'classic' || cached.theme === 'crystal')) {
+    document.documentElement.dataset.theme = cached.theme;
+    document.getElementById('themeColor').content = cached.theme === 'classic' ? '#12141c' : '#080d1c';
+  }
+} catch { /* Storage may be unavailable; the built-in theme stays usable. */ }
+</script>
 <title>Avalon</title>
 <link rel="stylesheet" href="./src/client/styles.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🗡️</text></svg>">

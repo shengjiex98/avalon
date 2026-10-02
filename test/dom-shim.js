@@ -99,6 +99,7 @@ export function installDom({ hash = '', href = 'http://localhost:8420/', lang = 
   const make = (tag, id) => { const e = new Element(tag); e.id = id; root.append(e); return e; };
 
   const fixtures = {
+    themeColor: make('meta', 'themeColor'),
     langToggle: make('button', 'langToggle'),
     conn: make('span', 'conn'),
     update: make('div', 'update'),

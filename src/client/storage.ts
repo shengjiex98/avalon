@@ -41,6 +41,15 @@ export function createStore(storage: Storage = localStorage) {
       if (id) storage.setItem('avalon.game', id);
       else storage.removeItem('avalon.game');
     },
+    themeFor(server: string): unknown {
+      try {
+        const value = JSON.parse(storage.getItem('avalon.ui-theme') ?? 'null');
+        return value && value.server === server ? value.theme : null;
+      } catch { return null; }
+    },
+    setTheme(server: string, theme: string): void {
+      storage.setItem('avalon.ui-theme', JSON.stringify({ server, theme }));
+    },
     get muted() { return Boolean(storage.getItem('avalon.muted')); },
     set muted(value) { storage.setItem('avalon.muted', value ? '1' : ''); },
     get testMode() { return Boolean(storage.getItem('avalon.test')); },

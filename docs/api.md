@@ -14,6 +14,7 @@ in [`test/server.test.ts`](../test/server.test.ts).
 - `/api/rooms` creates rooms; `/api/rooms/:code` handles membership, actions,
   and filtered SSE views.
 - `/api/avatars` serves immutable player images.
+- `/api/ui-settings` exposes the site appearance selected by the operator.
 
 Exact methods, status codes, and limits belong in
 [`src/server/main.ts`](../src/server/main.ts). Request bodies are treated as unknown

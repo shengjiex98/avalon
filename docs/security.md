@@ -10,6 +10,11 @@ a Unix socket, requires a `Tailscale-User-Login` explicitly listed by the host,
 and exposes a projection without player identities or engine state. The socket
 and identity checks live in [`src/server/admin.ts`](../src/server/admin.ts);
 [`src/server/rooms.ts`](../src/server/rooms.ts) owns the safe projection.
+Theme changes use the same identity boundary plus a form token and same-origin
+checks. Only published theme identifiers are accepted; the public application
+exposes appearance as read-only data. Validation lives in
+[`src/server/admin.ts`](../src/server/admin.ts) and
+[`src/contracts/ui-settings.ts`](../src/contracts/ui-settings.ts).
 
 The server—not the browser—enforces legal actions and derives filtered views,
 so modifying a client does not grant another player's hidden information or an

@@ -23,6 +23,7 @@ import { defaultStateFile, load, save } from './persistence.ts';
 import { Rooms } from './rooms.ts';
 import { GAME_IDS } from './games/index.ts';
 import { STATE_VERSION } from '../contracts/state-version.ts';
+import { UiSettings } from './ui-settings.ts';
 import type { GameId } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
 import {
@@ -110,6 +111,7 @@ export function createApp({
   deployedCommit = DEPLOYED_COMMIT,
   logger = operationalLogger,
   metrics,
+  uiSettings = new UiSettings(),
 }: {
   rooms?: Rooms;
   avatars?: AvatarService;
@@ -118,6 +120,7 @@ export function createApp({
   deployedCommit?: string | null;
   logger?: OperationalLogger;
   metrics?: RuntimeMetrics;
+  uiSettings?: UiSettings;
 } = {}) {
   const registry = rooms ?? new Rooms({ logger });
   const staticDir = resolve(publicDir);
@@ -142,7 +145,7 @@ export function createApp({
           res.end();
           return;
         }
-        await api(registry, avatars, deployedCommit, req, res, url, logger, connectionChange);
+        await api(registry, avatars, uiSettings, deployedCommit, req, res, url, logger, connectionChange);
         return;
       }
       await serveStatic(staticDir, req, res, url);
@@ -165,6 +168,7 @@ export function createApp({
 }
 
 export function normalizedApiRoute(pathname: string): string {
+  if (pathname === '/api/ui-settings') return pathname;
   if (pathname === '/api/health' || pathname === '/api/health/update') return pathname;
   const parts = pathname.split('/').filter(Boolean);
   if (parts[0] !== 'api') return '/api/unknown';
@@ -223,6 +227,7 @@ function allowClient(req: IncomingMessage, res: ServerResponse, clientOrigin: st
 async function api(
   rooms: Rooms,
   avatars: AvatarService,
+  uiSettings: UiSettings,
   deployedCommit: string | null,
   req: IncomingMessage,
   res: ServerResponse,
@@ -231,6 +236,13 @@ async function api(
   connectionChange: (change: 1 | -1) => void,
 ): Promise<void> {
   const parts = url.pathname.split('/').filter(Boolean); // ['api','rooms',CODE,...]
+
+  if (url.pathname === '/api/ui-settings') {
+    requireMethod(req, res, ['GET']);
+    res.setHeader('cache-control', 'no-store');
+    json(res, 200, uiSettings.current());
+    return;
+  }
 
   // Liveness always stays healthy. Updaters use /update to avoid interrupting
   // any room whose game has left the lobby.
@@ -490,12 +502,14 @@ export function start({
   port = Number(process.env.PORT ?? 8420),
   host = process.env.HOST ?? '0.0.0.0',
   stateFile = defaultStateFile(),
-}: { port?: number; host?: string; stateFile?: string } = {}): Server {
+  uiSettingsFile = process.env.AVALON_UI_SETTINGS_FILE?.trim() || join(dirname(stateFile), 'ui-settings.json'),
+}: { port?: number; host?: string; stateFile?: string; uiSettingsFile?: string } = {}): Server {
   let pendingSave: NodeJS.Timeout | null = null;
   let rooms: Rooms;
   const metrics = createRuntimeMetrics();
   const recentLogs = new RecentLogs();
   const logger = captureLogs(recentLogs, operationalLogger);
+  const uiSettings = new UiSettings({ file: uiSettingsFile, logger });
   const saveSnapshot = () => {
     try {
       save(rooms, stateFile);
@@ -529,7 +543,7 @@ export function start({
     rooms: restored.restored,
   });
 
-  const server = createServer(createApp({ rooms, avatars, metrics, logger }));
+  const server = createServer(createApp({ rooms, avatars, metrics, logger, uiSettings }));
   const adminUsers = parseAdminUsers(process.env.ADMIN_USERS);
   const configuredAdminSocket = process.env.ADMIN_SOCKET?.trim();
   const adminSocket = configuredAdminSocket
@@ -541,6 +555,8 @@ export function start({
       metrics,
       logs: recentLogs,
       deployedCommit: DEPLOYED_COMMIT,
+      uiSettings,
+      logger,
     }), logger)
     : null;
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);

@@ -60,3 +60,20 @@ test('the stream admits checked views and distinguishes invalid data from reconn
   reopened.onerror();
   assert.deepEqual(failures.at(-1), { kind: 'reconnect' });
 });
+
+test('appearance transport checks the theme and uses an uncached bounded request', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const transport = createTransport({ app: { server: 'https://games.example', source: null } });
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, 'https://games.example/api/ui-settings');
+    assert.equal(options.cache, 'no-store');
+    assert.ok(options.signal instanceof AbortSignal);
+    return response({ theme: 'classic', futureField: true });
+  };
+  assert.deepEqual(await transport.uiSettings(), { theme: 'classic' });
+  for (const value of [{ theme: 'unknown' }, { theme: '__proto__' }, {}, null]) {
+    globalThis.fetch = async () => response(value);
+    await assert.rejects(transport.uiSettings(), (error) => error.key === 'invalidResponse');
+  }
+});

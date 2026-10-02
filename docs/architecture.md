@@ -6,7 +6,7 @@ events. Runtime request and persistence contracts live under
 [`src/contracts/`](../src/contracts/) and use the production schema package;
 the browser remains dependency-free output.
 
-When configured, that process also serves a read-only operator view on a Unix
+When configured, that process also serves an operator console on a Unix
 socket. The projection in [`src/server/rooms.ts`](../src/server/rooms.ts) omits
 player identities and engine state before [`src/server/admin.ts`](../src/server/admin.ts)
 renders it; the public listener has no admin route.
@@ -53,6 +53,12 @@ committed. `npm run build:server` emits the Node 24 ESM bundle under
 `build/server/`, including application packages and leaving Node built-ins to
 the runtime. `npm run build` produces both outputs without either build
 deleting the other.
+
+Site appearance is owned by [`src/server/ui-settings.ts`](../src/server/ui-settings.ts),
+outside room state and immutable releases. The admin console selects a published
+theme; [`src/client/theme.ts`](../src/client/theme.ts) synchronizes it without
+replacing the game DOM. Shared component layout and scoped theme styles are
+composed by [`src/client/styles.css`](../src/client/styles.css).
 
 ## State and secrecy
 

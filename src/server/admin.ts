@@ -1,10 +1,15 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 import { API_PROTOCOL } from '../contracts/api-protocol.ts';
 import { STATE_VERSION } from '../contracts/state-version.ts';
-import { logTone } from './logging.ts';
+import { isThemeId, THEMES } from '../contracts/ui-settings.ts';
+import type { ThemeId } from '../contracts/ui-settings.ts';
+import { errorKind, logTone, operationalLogger } from './logging.ts';
+import type { OperationalLogger } from './logging.ts';
 import type { LogView, OperationalLogRecord, RecentLogs } from './logging.ts';
 import type { Rooms } from './rooms.ts';
+import type { UiSettings } from './ui-settings.ts';
 
 export type RuntimeMetrics = {
   startedAt: number;
@@ -17,6 +22,8 @@ type AdminOptions = {
   allowedUsers: ReadonlySet<string>;
   metrics: RuntimeMetrics;
   logs: RecentLogs;
+  uiSettings: UiSettings;
+  logger?: OperationalLogger;
   deployedCommit?: string | null;
   now?: () => number;
 };
@@ -32,10 +39,13 @@ export function createAdminApp({
   allowedUsers,
   metrics,
   logs,
+  uiSettings,
+  logger = operationalLogger,
   deployedCommit = null,
   now = Date.now,
 }: AdminOptions) {
-  return function handleAdmin(req: IncomingMessage, res: ServerResponse): void {
+  const csrfToken = randomBytes(32).toString('hex');
+  return async function handleAdmin(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const login = req.headers['tailscale-user-login'];
     const normalizedLogin = typeof login === 'string' ? login.trim().toLowerCase() : '';
     securityHeaders(res);
@@ -45,6 +55,41 @@ export function createAdminApp({
     }
 
     const url = new URL(req.url ?? '/', 'http://admin.local');
+    if (url.pathname === '/settings/theme') {
+      if (req.method !== 'POST') {
+        res.setHeader('allow', 'POST');
+        plain(res, 405, 'Method not allowed', req.method === 'HEAD');
+        return;
+      }
+      if (!sameOrigin(req)) {
+        plain(res, 403, 'Forbidden');
+        return;
+      }
+      const form = await readThemeForm(req, res);
+      if (!form) return;
+      const token = Buffer.from(form.get('csrf') ?? '');
+      const expected = Buffer.from(csrfToken);
+      if (form.getAll('csrf').length !== 1 || token.length !== expected.length
+          || !timingSafeEqual(token, expected)) {
+        plain(res, 403, 'Forbidden');
+        return;
+      }
+      const theme = form.get('theme');
+      if (form.getAll('theme').length !== 1 || !isThemeId(theme)) {
+        plain(res, 400, 'Unknown theme');
+        return;
+      }
+      try {
+        await uiSettings.setTheme(theme);
+      } catch (error) {
+        logger('error', 'ui.settings.save', { outcome: 'failed', error: errorKind(error) });
+        plain(res, 503, 'Theme could not be saved. The previous theme is still active.');
+        return;
+      }
+      res.writeHead(303, { location: '/?theme=saved#appearance' });
+      res.end();
+      return;
+    }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       res.setHeader('allow', 'GET, HEAD');
       plain(res, 405, 'Method not allowed', req.method === 'HEAD');
@@ -62,6 +107,7 @@ export function createAdminApp({
       sseConnections: metrics.sseConnections,
       activeGames: rooms.activeGameCount(),
       rooms: rooms.adminSummary(),
+      theme: uiSettings.current().theme,
     };
     const logView = parseLogView(url.searchParams.get('view'));
     const logLimit = parseLogLimit(url.searchParams.get('limit'));
@@ -89,6 +135,8 @@ export function createAdminApp({
       logs.recent(logView, logLimit),
       logView,
       logLimit,
+      csrfToken,
+      url.searchParams.get('theme') === 'saved',
     );
     res.writeHead(200, {
       'content-type': 'text/html; charset=utf-8',
@@ -96,6 +144,44 @@ export function createAdminApp({
     });
     res.end(req.method === 'HEAD' ? undefined : body);
   };
+}
+
+function sameOrigin(req: IncomingMessage): boolean {
+  const site = req.headers['sec-fetch-site'];
+  if (site && site !== 'same-origin' && site !== 'none') return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true; // The unguessable form token also protects older browsers.
+  try {
+    const url = new URL(String(origin));
+    return (url.protocol === 'https:' || url.protocol === 'http:') && url.host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+
+async function readThemeForm(req: IncomingMessage, res: ServerResponse): Promise<URLSearchParams | null> {
+  const type = String(req.headers['content-type'] ?? '').split(';', 1)[0]?.trim().toLowerCase();
+  if (type !== 'application/x-www-form-urlencoded') {
+    plain(res, 415, 'Expected a form submission');
+    return null;
+  }
+  try {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > 1024) {
+        plain(res, 413, 'Form is too large');
+        return null;
+      }
+      chunks.push(bytes);
+    }
+    return new URLSearchParams(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    if (!res.headersSent) plain(res, 400, 'Invalid form');
+    return null;
+  }
 }
 
 function parseLogView(input: string | null): LogView {
@@ -109,8 +195,9 @@ function parseLogLimit(input: string | null): number {
 
 function securityHeaders(res: ServerResponse): void {
   res.setHeader('cache-control', 'no-store');
-  res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
-  res.setHeader('referrer-policy', 'no-referrer');
+  res.setHeader('content-security-policy', "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+  // Native form POSTs need their origin; cross-origin requests still disclose no referrer.
+  res.setHeader('referrer-policy', 'same-origin');
   res.setHeader('x-content-type-options', 'nosniff');
   res.setHeader('x-frame-options', 'DENY');
 }
@@ -180,7 +267,9 @@ function renderAdmin(status: {
   sseConnections: number;
   activeGames: number;
   rooms: ReturnType<Rooms['adminSummary']>;
-}, login: string, logs: OperationalLogRecord[], logView: LogView, logLimit: number): string {
+  theme: ThemeId;
+}, login: string, logs: OperationalLogRecord[], logView: LogView, logLimit: number,
+csrfToken: string, saved: boolean): string {
   const rows = status.rooms.length ? status.rooms.map((room) => `<tr>
       <td><code>${escapeHtml(room.code)}</code></td>
       <td>${escapeHtml(room.game)}</td>
@@ -199,6 +288,10 @@ function renderAdmin(status: {
     `<a class="filter${limit === logLimit ? ' active' : ''}" href="${logHref(logView, limit)}"${limit === logLimit ? ' aria-current="page"' : ''}>${limit}</a>`
   )).join('');
   const commit = status.commit ? status.commit.slice(0, 7) : 'development';
+  const themeButtons = Object.entries(THEMES).map(([id, theme]) => `<button type="submit" name="theme" value="${id}" class="theme-choice${status.theme === id ? ' selected' : ''}"${status.theme === id ? ' disabled' : ''}>
+    <strong>${theme.label}${status.theme === id ? ' · Current' : ''}</strong>
+    <span>${theme.description}</span>
+  </button>`).join('');
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -221,6 +314,12 @@ function renderAdmin(status: {
     .card { padding: 16px; }
     .label { color: #98a2b8; font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; }
     .value { margin-top: 7px; font-size: 1.4rem; font-weight: 650; }
+    .theme-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .theme-choice { display: grid; gap: 7px; padding: 16px; border: 1px solid #343d51; border-radius: 12px; background: #171c26; color: #edf0f7; font: inherit; text-align: left; cursor: pointer; }
+    .theme-choice span { color: #98a2b8; font-size: .85rem; }
+    .theme-choice:hover, .theme-choice:focus-visible { border-color: #6aaee8; }
+    .theme-choice.selected { border-color: #4f9bd7; background: #183651; cursor: default; }
+    .saved { color: #65d69e; }
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 13px 15px; border-bottom: 1px solid #2b3242; text-align: left; white-space: nowrap; }
@@ -257,7 +356,7 @@ function renderAdmin(status: {
 </head>
 <body>
 <main>
-  <header><div><h1>Avalon Admin</h1><div class="muted">Read-only runtime console</div></div><div class="identity">${escapeHtml(login)}</div></header>
+  <header><div><h1>Avalon Admin</h1><div class="muted">Runtime console</div></div><div class="identity">${escapeHtml(login)}</div></header>
   <section class="cards" aria-label="Runtime summary">
     <div class="card"><div class="label">Rooms</div><div class="value">${status.rooms.length}</div></div>
     <div class="card"><div class="label">Active games</div><div class="value">${status.activeGames}</div></div>
@@ -265,6 +364,14 @@ function renderAdmin(status: {
     <div class="card"><div class="label">Snapshot</div><div class="value">${escapeHtml(status.snapshot)}</div></div>
     <div class="card"><div class="label">Uptime</div><div class="value">${formatAge(status.uptimeSeconds)}</div></div>
     <div class="card"><div class="label">Commit</div><div class="value"><code>${escapeHtml(commit)}</code></div></div>
+  </section>
+  <section id="appearance" aria-labelledby="appearance-heading">
+    <div class="section-head"><h2 id="appearance-heading">Player UI theme</h2>${saved ? '<span class="saved" role="status">Theme saved</span>' : ''}</div>
+    <p class="muted">Choose a theme for all players. Open pages update automatically.</p>
+    <form class="theme-choices" method="post" action="/settings/theme">
+      <input type="hidden" name="csrf" value="${csrfToken}">
+      ${themeButtons}
+    </form>
   </section>
   <div class="section-head"><h2>Rooms</h2></div>
   <div class="table-wrap"><table>
