@@ -13,6 +13,14 @@ successful snapshot writes are suppressed. Browser interaction telemetry stays
 out of scope; successful game commands already live in the private room
 journal.
 
+The admin console also keeps a bounded, in-process view of these same records.
+Lifecycle and failure records have a separate capacity from API requests, so
+request traffic cannot evict the more useful operational trail. The console can
+show activity, problems, requests, or the combined stream; the selection and
+severity rules live in [`src/server/logging.ts`](../src/server/logging.ts).
+This view starts empty after every process restart and is not a replacement for
+the system journal.
+
 Operational logs must not contain request bodies, credentials, uploaded
 avatars, hidden game state, or raw room and player identifiers. Do not record
 client IP addresses by default. Emit through standard output and error so

@@ -62,6 +62,13 @@ Production requires Node 24. Host configuration and secrets live outside the
 repository in `~/.config/avalon.env`; consult the unit files and
 [`deploy/updater.sh`](../deploy/updater.sh) for accepted values.
 
+Setting `ADMIN_USERS` there to a comma-separated list of Tailscale logins
+enables the read-only admin listener. It uses a private Unix socket beside the
+room snapshot unless `ADMIN_SOCKET` selects another path. Put a Tailscale Serve
+proxy in front of that socket; do not expose it through the public listener.
+The authentication and response rules are implemented in
+[`src/server/admin.ts`](../src/server/admin.ts).
+
 ## Release flow
 
 ```text

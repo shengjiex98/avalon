@@ -4,12 +4,18 @@
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import {
+  chmodSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync,
+} from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { API_PROTOCOL } from '../contracts/api-protocol.ts';
+import {
+  createAdminApp, parseAdminUsers,
+} from './admin.ts';
+import type { RuntimeMetrics } from './admin.ts';
 import { Avatars } from './avatars.ts';
 import { parseAction, parseCreateRoom, parseJoin, parseRoomCode } from './commands.ts';
 import { GameError } from './errors.ts';
@@ -20,7 +26,7 @@ import { STATE_VERSION } from '../contracts/state-version.ts';
 import type { GameId } from '../contracts/actions.ts';
 import type { PublicView } from '../contracts/views.ts';
 import {
-  errorKind, operationalLogger,
+  captureLogs, errorKind, operationalLogger, RecentLogs,
 } from './logging.ts';
 import type { OperationalLogger } from './logging.ts';
 
@@ -70,6 +76,10 @@ export const DEPLOYED_COMMIT = readDeployedCommit();
 // The one supported remote client. Same-origin clients need no CORS headers.
 export const CLIENT_ORIGIN = 'https://shengjiex98.github.io';
 
+export function createRuntimeMetrics(now = Date.now): RuntimeMetrics {
+  return { startedAt: now(), snapshotHealthy: null, sseConnections: 0 };
+}
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -99,6 +109,7 @@ export function createApp({
   publicDir = RUNTIME_PATHS.publicDir,
   deployedCommit = DEPLOYED_COMMIT,
   logger = operationalLogger,
+  metrics,
 }: {
   rooms?: Rooms;
   avatars?: AvatarService;
@@ -106,13 +117,14 @@ export function createApp({
   publicDir?: string;
   deployedCommit?: string | null;
   logger?: OperationalLogger;
+  metrics?: RuntimeMetrics;
 } = {}) {
   const registry = rooms ?? new Rooms({ logger });
   const staticDir = resolve(publicDir);
-  let sseConnections = 0;
+  const runtimeMetrics = metrics ?? createRuntimeMetrics();
   const connectionChange = (change: 1 | -1) => {
-    sseConnections += change;
-    logger('info', 'sse.connections', { count: sseConnections });
+    runtimeMetrics.sseConnections += change;
+    logger('info', 'sse.connections', { count: runtimeMetrics.sseConnections });
   };
   return async function handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
     let requestId: string | null = null;
@@ -481,19 +493,21 @@ export function start({
 }: { port?: number; host?: string; stateFile?: string } = {}): Server {
   let pendingSave: NodeJS.Timeout | null = null;
   let rooms: Rooms;
-  let snapshotHealthy: boolean | null = null;
+  const metrics = createRuntimeMetrics();
+  const recentLogs = new RecentLogs();
+  const logger = captureLogs(recentLogs, operationalLogger);
   const saveSnapshot = () => {
     try {
       save(rooms, stateFile);
-      if (snapshotHealthy !== true) {
-        operationalLogger('info', 'snapshot.save', { outcome: 'saved', rooms: rooms.rooms.size });
+      if (metrics.snapshotHealthy !== true) {
+        logger('info', 'snapshot.save', { outcome: 'saved', rooms: rooms.rooms.size });
       }
-      snapshotHealthy = true;
+      metrics.snapshotHealthy = true;
     } catch (err: unknown) {
-      if (snapshotHealthy !== false) {
-        operationalLogger('error', 'snapshot.save', { outcome: 'failed', error: errorKind(err) });
+      if (metrics.snapshotHealthy !== false) {
+        logger('error', 'snapshot.save', { outcome: 'failed', error: errorKind(err) });
       }
-      snapshotHealthy = false;
+      metrics.snapshotHealthy = false;
     }
   };
   const saveSoon = () => {
@@ -504,18 +518,31 @@ export function start({
     }, 1000);
     pendingSave.unref?.();
   };
-  rooms = new Rooms({ onMutate: saveSoon, logger: operationalLogger });
+  rooms = new Rooms({ onMutate: saveSoon, logger });
   const avatars = new Avatars({ directory: join(dirname(stateFile), 'avatars') });
   const restored = load(rooms, stateFile);
   const loadOutcome = restored.restored > 0 ? 'restored'
     : restored.reason === 'no snapshot found' ? 'missing'
       : restored.reason === 'snapshot contained no rooms' ? 'empty' : 'discarded';
-  operationalLogger('info', 'snapshot.load', {
+  logger('info', 'snapshot.load', {
     outcome: loadOutcome,
     rooms: restored.restored,
   });
 
-  const server = createServer(createApp({ rooms, avatars }));
+  const server = createServer(createApp({ rooms, avatars, metrics, logger }));
+  const adminUsers = parseAdminUsers(process.env.ADMIN_USERS);
+  const configuredAdminSocket = process.env.ADMIN_SOCKET?.trim();
+  const adminSocket = configuredAdminSocket
+    || join(dirname(stateFile), 'admin-socket', 'server.sock');
+  const adminServer = adminUsers.size > 0
+    ? listenAdmin(adminSocket, createAdminApp({
+      rooms,
+      allowedUsers: adminUsers,
+      metrics,
+      logs: recentLogs,
+      deployedCommit: DEPLOYED_COMMIT,
+    }), logger)
+    : null;
   const sweeper = setInterval(() => rooms.sweep(), 10 * 60 * 1000);
   sweeper.unref();
   let stopping = false;
@@ -525,13 +552,41 @@ export function start({
     clearInterval(sweeper);
     if (pendingSave) clearTimeout(pendingSave);
     saveSnapshot();
+    adminServer?.close();
     server.close();
     process.exit(0);
   };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
   server.listen(port, host, () => {
-    operationalLogger('info', 'server.started', { host, port });
+    logger('info', 'server.started', { host, port });
+  });
+  return server;
+}
+
+function listenAdmin(
+  socketPath: string,
+  handler: ReturnType<typeof createAdminApp>,
+  logger: OperationalLogger,
+): Server {
+  const directory = dirname(socketPath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (!lstatSync(directory).isDirectory()) {
+    throw new Error(`admin socket parent is not a directory: ${directory}`);
+  }
+  chmodSync(directory, 0o700);
+  try {
+    const existing = lstatSync(socketPath);
+    if (!existing.isSocket()) throw new Error(`refusing to replace non-socket admin path: ${socketPath}`);
+    unlinkSync(socketPath);
+  } catch (err: unknown) {
+    if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
+
+  const server = createServer(handler);
+  server.listen(socketPath, () => {
+    chmodSync(socketPath, 0o600);
+    logger('info', 'admin.started', { transport: 'unix' });
   });
   return server;
 }

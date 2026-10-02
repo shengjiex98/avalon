@@ -6,6 +6,11 @@ events. Runtime request and persistence contracts live under
 [`src/contracts/`](../src/contracts/) and use the production schema package;
 the browser remains dependency-free output.
 
+When configured, that process also serves a read-only operator view on a Unix
+socket. The projection in [`src/server/rooms.ts`](../src/server/rooms.ts) omits
+player identities and engine state before [`src/server/admin.ts`](../src/server/admin.ts)
+renders it; the public listener has no admin route.
+
 ## Boundaries
 
 The shared room layer owns identity, membership, hosting, revisions, replay
