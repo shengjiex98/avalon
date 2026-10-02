@@ -13,7 +13,9 @@ import { UiSettings } from '../src/server/ui-settings.ts';
 
 async function withAdmin(
   fn: (base: string, settings: UiSettings) => Promise<void>,
-  { now = Date.now, uiSettings }: { now?: () => number; uiSettings?: UiSettings } = {},
+  { now = Date.now, uiSettings, trustProxyOrigin = false }: {
+    now?: () => number; uiSettings?: UiSettings; trustProxyOrigin?: boolean;
+  } = {},
 ): Promise<void> {
   const rooms = new Rooms({ now });
   const code = rooms.create('avalon', { code: 'ABCD' });
@@ -41,6 +43,7 @@ async function withAdmin(
     metrics: { startedAt: now() - 65_000, snapshotHealthy: true, sseConnections: 3 },
     logs,
     uiSettings: settings,
+    trustProxyOrigin,
     logger: () => {},
     deployedCommit: 'a'.repeat(40),
     now,
@@ -176,6 +179,61 @@ test('an authenticated theme form saves, redirects, and survives a restart', asy
     assert.match(html, /Classic · Current/);
     assert.match(html, /role="status">Theme saved/);
   }, { uiSettings });
+});
+
+test('a trusted Unix-socket proxy preserves the browser origin when Host becomes localhost', async () => {
+  await withAdmin(async (base, settings) => {
+    const form = await themeForm(base);
+    const send = (headers: Record<string, string>) => fetch(`${base}/settings/theme`, {
+      method: 'POST', body: form, redirect: 'manual',
+      headers: {
+        ...adminHeaders, host: 'localhost', origin: 'https://admin.example.ts.net:9443',
+        'sec-fetch-site': 'same-origin', 'x-forwarded-host': 'admin.example.ts.net:9443',
+        'x-forwarded-proto': 'https', ...headers,
+      },
+    });
+    for (const headers of [
+      { origin: 'https://attacker.example' },
+      { origin: 'http://admin.example.ts.net:9443' },
+      { origin: 'https://admin.example.ts.net' },
+      { origin: 'null' },
+      { origin: 'https://admin.example.ts.net:9443/path' },
+      { 'sec-fetch-site': 'same-site' },
+      { 'sec-fetch-site': 'cross-site' },
+      { 'x-forwarded-host': '' },
+      { 'x-forwarded-host': 'admin.example.ts.net:9443, attacker.example' },
+      { 'x-forwarded-host': 'admin.example.ts.net:9443/path' },
+      { 'x-forwarded-host': 'user@admin.example.ts.net:9443' },
+      { 'x-forwarded-proto': '' },
+      { 'x-forwarded-proto': 'https, http' },
+    ]) {
+      assert.equal((await send(headers)).status, 403, JSON.stringify(headers));
+    }
+    assert.equal(settings.current().theme, 'crystal');
+    const forged = new URLSearchParams(form);
+    forged.set('csrf', 'forged');
+    assert.equal((await fetch(`${base}/settings/theme`, {
+      method: 'POST', body: forged, headers: {
+        ...adminHeaders, host: 'localhost', origin: 'https://admin.example.ts.net:9443',
+        'x-forwarded-host': 'admin.example.ts.net:9443', 'x-forwarded-proto': 'https',
+      },
+    })).status, 403);
+    assert.equal((await send({})).status, 303);
+    assert.equal(settings.current().theme, 'classic');
+  }, { trustProxyOrigin: true });
+});
+
+test('untrusted forwarding headers cannot bypass direct admin origin checks', async () => {
+  await withAdmin(async (base, settings) => {
+    const response = await fetch(`${base}/settings/theme`, {
+      method: 'POST', body: await themeForm(base), headers: {
+        ...adminHeaders, origin: 'https://attacker.example',
+        'x-forwarded-host': 'attacker.example', 'x-forwarded-proto': 'https',
+      },
+    });
+    assert.equal(response.status, 403);
+    assert.equal(settings.current().theme, 'crystal');
+  });
 });
 
 test('theme writes reject unauthenticated, cross-site, forged, and malformed forms', async () => {

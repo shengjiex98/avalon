@@ -120,7 +120,14 @@ function adminRequest(path, body) {
       socketPath: adminSocket, path, method: body ? 'POST' : 'GET',
       headers: {
         'tailscale-user-login': 'artifact@example.com',
-        ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}),
+        host: 'localhost',
+        'x-forwarded-host': 'admin.example.ts.net:9443',
+        'x-forwarded-proto': 'https',
+        ...(body ? {
+          'content-type': 'application/x-www-form-urlencoded',
+          origin: 'https://admin.example.ts.net:9443',
+          'sec-fetch-site': 'same-origin',
+        } : {}),
       },
     }, (response) => {
       let text = '';
