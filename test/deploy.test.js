@@ -283,7 +283,8 @@ test('the deployment listener cannot be talked into running anything', async () 
   assert.match(listener, /\^deploy\$/);
   assert.doesNotMatch(listener, /deploy \[0-9a-f\]|deploy \<sha\>/,
     'a message never supplies a commit');
-  assert.match(listener, /spawn\('systemctl', \['--user', 'start', 'avalon-update\.service'\]/);
+  assert.match(listener, /spawn\('systemctl', \['--user', 'start', updateUnit\]/);
+  assert.match(listener, /const updateUnit = process\.env\.AVALON_UPDATE_UNIT \|\| 'avalon-update\.service';/);
   assert.doesNotMatch(listener, /avalon-update@|startUpdate\(trigger\[1\]\)/,
     'the untrusted message cannot select a unit instance');
   assert.match(listener, /import \{ spawn \} from 'node:child_process'/);
@@ -299,10 +300,10 @@ test('the deployment listener cannot be talked into running anything', async () 
 test('the installed updater owns compatibility, activation, and rollback ordering', async () => {
   const updater = await read('../deploy/updater.sh');
   const gated = updater.indexOf('running_protocol" = "$target_protocol');
-  const stopped = updater.indexOf('"$systemctl_bin" --user stop avalon');
+  const stopped = updater.indexOf('"$systemctl_bin" --user stop "$unit"');
   const backedUp = updater.indexOf('cp -p "$state_file" "$backup_dir/rooms.json"');
   const selected = updater.indexOf('select_release "$commit"');
-  const started = updater.indexOf('"$systemctl_bin" --user start avalon', selected);
+  const started = updater.indexOf('"$systemctl_bin" --user start "$unit"', selected);
   assert.ok(gated !== -1 && stopped !== -1 && backedUp !== -1 && selected !== -1 && started !== -1);
   assert.ok(gated < stopped && stopped < backedUp && backedUp < selected && selected < started);
   assert.match(updater, /409\) log .*; exit 75/);
@@ -310,23 +311,32 @@ test('the installed updater owns compatibility, activation, and rollback orderin
 });
 
 test('the server and the updater snapshot the same file', async () => {
-  const unit = await read('../deploy/avalon.service');
+  const server = await read('../homelab/tasks/avalon/task.toml');
+  const update = await read('../homelab/tasks/avalon-update/task.toml');
+  const listen = await read('../homelab/tasks/avalon-listen/task.toml');
+  const setting = (text, key) => text.match(new RegExp(`^${key} = "(.+)"$`, 'm'))?.[1];
+  // The updater backs up the file the server writes, and checks health on the
+  // socket the server listens on.
+  for (const key of ['AVALON_STATE_FILE', 'LISTEN_SOCKET']) {
+    assert.ok(setting(server, key), `server task sets ${key}`);
+    assert.equal(setting(update, key), setting(server, key), key);
+  }
+  // Each unit name points at the task that really runs it.
+  assert.equal(setting(update, 'AVALON_UNIT'), 'homelab-task-avalon.service');
+  assert.equal(setting(listen, 'AVALON_UPDATE_UNIT'), 'homelab-task-avalon-update.service');
+
+  // Run by hand, the server and the updater fall back to the same XDG file.
   const updater = await read('../deploy/updater.sh');
-  const installer = await read('../deploy/install-updater.sh');
-  // StateDirectory= resolved under $XDG_CONFIG_HOME for user units before
-  // systemd 256, so the updater backed up a file the server never wrote.
-  assert.doesNotMatch(unit, /^StateDirectory/m);
-  assert.match(unit, /Environment=AVALON_STATE_FILE=%h\/srv\/avalon\/rooms\.json$/m);
-  assert.match(unit, /ReadWritePaths=%h\/srv\/avalon$/m);
-  assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$HOME\/srv\/avalon\/rooms\.json\}/);
-  assert.match(installer, /AVALON_STATE_FILE:-\$HOME\/srv\/avalon\/rooms\.json/);
-  assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
+  const persistence = await read('../src/server/persistence.ts');
+  assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$\{XDG_STATE_HOME:-\$HOME\/\.local\/state\}\/avalon\/rooms\.json\}/);
+  assert.match(persistence, /process\.env\.XDG_STATE_HOME \?\? join\(homedir\(\), '\.local', 'state'\), 'avalon'\)/);
 });
 
-test('the installed service prefers the bundle and preserves one legacy rollback', async () => {
-  const unit = await read('../deploy/avalon.service');
+test('the server task prefers the bundle and preserves one legacy rollback', async () => {
+  const launcher = await read('../homelab/tasks/avalon/run.sh');
   const start = await read('../deploy/start.mjs');
-  assert.match(unit, /ExecStart=%h\/\.local\/bin\/node %h\/\.local\/libexec\/avalon-deploy\/start\.mjs/);
+  assert.match(launcher, /cd "\$\{AVALON_RELEASE_ROOT:-\$HOME\/\.local\/lib\/avalon\}\/current"/);
+  assert.match(launcher, /"\$APP_DIR\/deploy\/start\.mjs"/);
   assert.ok(start.indexOf("build/server/main.mjs") < start.indexOf("src/server/main.ts"));
   assert.match(start, /application\.start\(\)/);
 

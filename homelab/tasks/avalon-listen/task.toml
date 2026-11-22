@@ -1,0 +1,16 @@
+description = "Wait for Avalon deployment triggers"
+secrets = ["AVALON_NTFY_TOPIC"]
+
+[schedule]
+daemon = true
+
+[run]
+exec = ["bash", "run.sh"]
+
+[env]
+# The trigger topic lives on ntfy.sh. These replace the stack's own ntfy
+# settings in this process only; the unit's failure alerts still use them.
+NTFY_SERVER = "https://ntfy.sh"
+NTFY_TOPIC = "${AVALON_NTFY_TOPIC}"
+NTFY_TOKEN = ""
+AVALON_UPDATE_UNIT = "homelab-task-avalon-update.service"

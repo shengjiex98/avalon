@@ -19,13 +19,15 @@ const RETRY_MIN_MS = 5_000;
 const RETRY_MAX_MS = 60_000;
 
 const TRIGGER = /^deploy$/;
+// Fixed by the host's configuration, never by a message.
+const updateUnit = process.env.AVALON_UPDATE_UNIT || 'avalon-update.service';
 
 let running = false;
 
 function startUpdate() {
   if (running) return console.log('update already running; ignoring trigger');
   running = true;
-  const child = spawn('systemctl', ['--user', 'start', 'avalon-update.service'], {
+  const child = spawn('systemctl', ['--user', 'start', updateUnit], {
     stdio: 'inherit',
   });
   child.on('exit', (code) => {

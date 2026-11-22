@@ -376,29 +376,10 @@ test('target health failure restores the old code and snapshot', async () => {
 
 test('snapshot backup happens after stop and the pointer switch is atomic by construction', async () => {
   const source = await readFile(updater, 'utf8');
-  const stop = source.indexOf('"$systemctl_bin" --user stop avalon');
+  const stop = source.indexOf('"$systemctl_bin" --user stop "$unit"');
   const copy = source.indexOf('cp -p "$state_file" "$backup_dir/rooms.json"');
   const select = source.indexOf('select_release "$commit"');
   assert.ok(stop !== -1 && stop < copy && copy < select);
   assert.match(source, /fs\.renameSync\(process\.argv\[1\], process\.argv\[2\]\)/);
   assert.doesNotMatch(source, /"\$release\/deploy\//, 'candidate deployment scripts are never executed');
-});
-
-test('the installer atomically installs only static files and never starts a deployment', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'avalon-updater-install-'));
-  const root = join(dir, 'controller');
-  const units = join(dir, 'units');
-  const env = { AVALON_CONTROLLER_ROOT: root, AVALON_SYSTEMD_USER_DIR: units, HOME: dir };
-  for (let i = 0; i < 2; i += 1) {
-    const result = await run('sh', [join(deployDir, 'install-updater.sh')], env);
-    assert.equal(result.code, 0, result.stderr);
-  }
-  assert.equal((await readFile(join(root, 'updater.sh'), 'utf8')), await readFile(updater, 'utf8'));
-  assert.equal((await readFile(join(root, 'verify-pointer.mjs'), 'utf8')), await readFile(join(deployDir, 'verify-pointer.mjs'), 'utf8'));
-  assert.equal((await readFile(join(root, 'listen.mjs'), 'utf8')), await readFile(join(deployDir, 'listen.mjs'), 'utf8'));
-  assert.equal((await readFile(join(root, 'start.mjs'), 'utf8')), await readFile(join(deployDir, 'start.mjs'), 'utf8'));
-  for (const unit of ['avalon.service', 'avalon-listen.service', 'avalon-update.service', 'avalon-update.timer']) {
-    assert.equal(await readFile(join(units, unit), 'utf8'), await readFile(join(deployDir, unit), 'utf8'));
-  }
-  await assert.rejects(access(join(units, 'avalon-update@.service')));
 });
