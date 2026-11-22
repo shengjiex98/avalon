@@ -576,10 +576,37 @@ export function start({
   };
   process.once('SIGTERM', stop);
   process.once('SIGINT', stop);
-  server.listen(port, host, () => {
-    logger('info', 'server.started', { host, port });
-  });
+  // A Unix socket when the host's proxy reaches the server that way; TCP
+  // otherwise. The socket replaces the TCP listener rather than joining it.
+  const listenSocket = process.env.LISTEN_SOCKET?.trim();
+  if (listenSocket) {
+    prepareSocket(listenSocket, 'server');
+    server.listen(listenSocket, () => {
+      chmodSync(listenSocket, 0o600);
+      logger('info', 'server.started', { transport: 'unix' });
+    });
+  } else {
+    server.listen(port, host, () => {
+      logger('info', 'server.started', { host, port });
+    });
+  }
   return server;
+}
+
+function prepareSocket(socketPath: string, role: string): void {
+  const directory = dirname(socketPath);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (!lstatSync(directory).isDirectory()) {
+    throw new Error(`${role} socket parent is not a directory: ${directory}`);
+  }
+  chmodSync(directory, 0o700);
+  try {
+    const existing = lstatSync(socketPath);
+    if (!existing.isSocket()) throw new Error(`refusing to replace non-socket ${role} path: ${socketPath}`);
+    unlinkSync(socketPath);
+  } catch (err: unknown) {
+    if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
 }
 
 function listenAdmin(
@@ -587,20 +614,7 @@ function listenAdmin(
   handler: ReturnType<typeof createAdminApp>,
   logger: OperationalLogger,
 ): Server {
-  const directory = dirname(socketPath);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (!lstatSync(directory).isDirectory()) {
-    throw new Error(`admin socket parent is not a directory: ${directory}`);
-  }
-  chmodSync(directory, 0o700);
-  try {
-    const existing = lstatSync(socketPath);
-    if (!existing.isSocket()) throw new Error(`refusing to replace non-socket admin path: ${socketPath}`);
-    unlinkSync(socketPath);
-  } catch (err: unknown) {
-    if (!(err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT')) throw err;
-  }
-
+  prepareSocket(socketPath, 'admin');
   const server = createServer(handler);
   server.listen(socketPath, () => {
     chmodSync(socketPath, 0o600);

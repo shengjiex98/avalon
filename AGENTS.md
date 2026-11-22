@@ -85,17 +85,16 @@ with `gh api -X DELETE repos/<owner>/<repo>/git/refs/heads/<branch>`.
 ## The checkout on the game server is not the live deployment
 
 No running service reads `~/avalon`. The application runs from an immutable
-release chosen by a symlink, and the deployment control plane is installed
-outside every checkout — see
-[Static host control plane](docs/deployment.md#static-host-control-plane). So
-`~/avalon` is an ordinary development clone with no special status: nothing
-resets it, and editing it directly is fine. A worktree is still convenient when
-a branch deserves its own directory.
+release chosen by a symlink. But `~/avalon` on the game server is the
+deployment control plane: homelab runs `deploy/` and `homelab/tasks/` from it
+(see [Host control plane](docs/deployment.md#host-control-plane)). Keep that
+clone on `main` with no local edits, and do all work in a worktree.
 
-Changes under `deploy/` do not install themselves. They go through CI and the
-normal release rollout like any other change, but a human must then run
-`deploy/install-updater.sh` from the host clone and reload systemd. Application
-releases never execute or overwrite deployment code.
+Changes under `deploy/` and `homelab/` do not install themselves. They go
+through CI and the normal release rollout like any other change, but a human
+must then pull the host clone and run `./homelab apply` in homelab, whose app
+list never pulls this clone on its own. Application releases never execute or
+overwrite deployment code.
 
 **Updater schema changes require host verification.** After every
 `deployerSchema` bump, install the merged control plane on the host, trigger

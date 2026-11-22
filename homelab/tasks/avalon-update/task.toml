@@ -1,0 +1,20 @@
+description = "Reconcile Avalon with its published release pointer"
+secrets = ["AVALON_NTFY_TOPIC"]
+
+# Hourly, and on every trigger the listener receives. The updater runs from
+# this checkout, which homelab never pulls for Avalon (update = false in its
+# app list): a change to deploy/ goes live only when someone pulls it.
+[schedule]
+every = "1h"
+
+[run]
+exec = ["bash", "run.sh"]
+
+[env]
+AVALON_STATE_FILE = "${SRV_DIR}/avalon/rooms.json"
+LISTEN_SOCKET = "${SOCKET_DIR}/avalon.sock"
+AVALON_UNIT = "homelab-task-avalon.service"
+# Status messages go to the same ntfy.sh topic the deploy workflow watches.
+NTFY_SERVER = "https://ntfy.sh"
+NTFY_TOPIC = "${AVALON_NTFY_TOPIC}"
+NTFY_TOKEN = ""

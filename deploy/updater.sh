@@ -1,7 +1,7 @@
 #!/bin/sh
-# Reconcile an Avalon host with the release selected by the installed
-# latest.json pointer. This file is installed outside release directories and
-# never executes deployment code from a candidate archive.
+# Reconcile an Avalon host with the release selected by the published
+# latest.json pointer. This file runs from a trusted clone outside the release
+# directories and never executes deployment code from a candidate archive.
 set -eu
 umask 077
 
@@ -24,10 +24,12 @@ esac
 [ -n "${XDG_RUNTIME_DIR:-}" ] || XDG_RUNTIME_DIR="/run/user/$(id -u)"
 export XDG_RUNTIME_DIR
 
-# Host configuration is operator-owned and lives outside every release.
+# Host configuration is operator-owned and lives outside every release: the
+# environment this runs with, plus an optional env file.
 requested_port=${PORT:-}
-if [ -f "$HOME/srv/avalon/avalon.env" ]; then
-  . "$HOME/srv/avalon/avalon.env"
+env_file=${AVALON_ENV_FILE:-"$HOME/.config/avalon.env"}
+if [ -f "$env_file" ]; then
+  . "$env_file"
 fi
 PORT=${requested_port:-${PORT:-8420}}
 export PORT
@@ -38,13 +40,29 @@ rollbacks="$release_root/rollback"
 artifact_base=${AVALON_ARTIFACT_BASE:-"https://github.com/shengjiex98/avalon/releases/download/deployment-artifacts"}
 node_bin=${AVALON_NODE:-"$HOME/.local/bin/node"}
 systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
-state_file=${AVALON_STATE_FILE:-$HOME/srv/avalon/rooms.json}
+state_file=${AVALON_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/avalon/rooms.json}
+# The server's systemd unit, which this stops and starts around a switch.
+unit=${AVALON_UNIT:-avalon}
 health_timeout=${AVALON_HEALTH_TIMEOUT_SECONDS:-30}
 keep_releases=${AVALON_KEEP_RELEASES:-2}
 terminal_status=
 
 log() {
   printf '%s\n' "avalon-updater: $*" >&2
+}
+
+# The server listens on LISTEN_SOCKET when it is set, and on PORT otherwise.
+if [ -n "${LISTEN_SOCKET:-}" ]; then
+  server_base=http://localhost
+else
+  server_base="http://127.0.0.1:$PORT"
+fi
+server_curl() {
+  if [ -n "${LISTEN_SOCKET:-}" ]; then
+    curl --unix-socket "$LISTEN_SOCKET" "$@"
+  else
+    curl "$@"
+  fi
 }
 
 valid_commit() {
@@ -239,8 +257,8 @@ select_release() {
 # but malformed/unexpected, which must fail closed.
 read_health() {
   output="$work/health.json"
-  if ! code=$(curl -sS --connect-timeout 2 --max-time 5 -o "$output" -w '%{http_code}' \
-    "http://127.0.0.1:$PORT/api/health"); then
+  if ! code=$(server_curl -sS --connect-timeout 2 --max-time 5 -o "$output" -w '%{http_code}' \
+    "$server_base/api/health"); then
     return 2
   fi
   [ "$code" = 200 ] || { log "health endpoint returned $code"; return 1; }
@@ -335,8 +353,8 @@ elif [ -n "$running_state" ] && [ -n "$running_protocol" ] && \
 else
   update_body="$work/update-health.json"
   set +e
-  update_code=$(curl -sS --connect-timeout 2 --max-time 5 -o "$update_body" -w '%{http_code}' \
-    "http://127.0.0.1:$PORT/api/health/update")
+  update_code=$(server_curl -sS --connect-timeout 2 --max-time 5 -o "$update_body" -w '%{http_code}' \
+    "$server_base/api/health/update")
   update_status=$?
   set -e
   [ "$update_status" -eq 0 ] || { log 'update gate became unreachable after health succeeded'; exit 1; }
@@ -364,8 +382,8 @@ wait_for_commit() {
   while [ "$i" -lt "$attempts" ]; do
     body="$work/wait-health.json"
     set +e
-    code=$(curl -sS --connect-timeout 1 --max-time 2 -o "$body" -w '%{http_code}' \
-      "http://127.0.0.1:$PORT/api/health")
+    code=$(server_curl -sS --connect-timeout 1 --max-time 2 -o "$body" -w '%{http_code}' \
+      "$server_base/api/health")
     status=$?
     set -e
     if [ "$status" -eq 0 ] && [ "$code" = 200 ] && \
@@ -395,7 +413,7 @@ restore_snapshot() {
 
 restart_unchanged() {
   if valid_commit "$rollback" && [ -d "$releases/$rollback" ]; then
-    "$systemctl_bin" --user start avalon || true
+    "$systemctl_bin" --user start "$unit" || true
     if ! wait_for_commit "$rollback"; then
       log "critical: unchanged release $rollback did not become healthy"
     fi
@@ -406,7 +424,7 @@ backup_dir="$rollbacks/$commit"
 rm -rf -- "$backup_dir"
 mkdir -p "$backup_dir"
 
-"$systemctl_bin" --user stop avalon
+"$systemctl_bin" --user stop "$unit"
 # The stop above lets the old server make its final atomic snapshot before the
 # transaction copies it. If backup or selection fails, restart the untouched
 # release rather than leaving a healthy old service stopped.
@@ -431,12 +449,12 @@ if ! select_release "$commit"; then
   exit 1
 fi
 
-if "$systemctl_bin" --user start avalon && wait_for_commit "$commit"; then
+if "$systemctl_bin" --user start "$unit" && wait_for_commit "$commit"; then
   log "deployed $commit"
   publish_status deployed
 else
   log "release $commit failed health; rolling back to ${rollback:-no previous release}"
-  "$systemctl_bin" --user stop avalon || true
+  "$systemctl_bin" --user stop "$unit" || true
   if valid_commit "$rollback" && [ -d "$releases/$rollback" ]; then
     if ! select_release "$rollback"; then
       log "critical: cannot restore rollback pointer $rollback"
@@ -448,7 +466,7 @@ else
   fi
   restore_snapshot
   if valid_commit "$rollback" && [ -d "$releases/$rollback" ]; then
-    "$systemctl_bin" --user start avalon || true
+    "$systemctl_bin" --user start "$unit" || true
     if ! wait_for_commit "$rollback"; then
       log "critical: rollback $rollback did not become healthy"
     fi

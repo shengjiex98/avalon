@@ -1,0 +1,36 @@
+description = "Avalon game server"
+secrets = ["AVALON_ADMIN_USERS", "AVALON_CLOUDFLARE_ACCOUNT_ID", "AVALON_CLOUDFLARE_API_TOKEN"]
+
+# This folder is Avalon's adapter to the homelab stack
+# (github.com/shengjiex98/homelab), which runs these tasks when a host lists
+# avalon in APPS. Everything here is a setting the server or deploy/ already
+# takes from its environment.
+[schedule]
+daemon = true
+
+[run]
+exec = ["bash", "run.sh"]
+
+# The public game API, through Funnel on the gateway node's name.
+[[expose]]
+funnel = 443
+socket = "avalon.sock"
+
+# The operator console, on the tailnet only. ADMIN_USERS gates it as well.
+[[expose]]
+service = "avalon-admin"
+socket = "avalon-admin.sock"
+
+# Public-facing, so it runs with the filesystem read-only except its state.
+[sandbox]
+writable = ["${SRV_DIR}/avalon", "${SOCKET_DIR}"]
+
+[env]
+# The updater task backs up the same file around every switch.
+AVALON_STATE_FILE = "${SRV_DIR}/avalon/rooms.json"
+LISTEN_SOCKET = "${SOCKET_DIR}/avalon.sock"
+ADMIN_SOCKET = "${SOCKET_DIR}/avalon-admin.sock"
+ALLOW_ORIGIN = "https://shengjiex98.github.io"
+ADMIN_USERS = "${AVALON_ADMIN_USERS}"
+CLOUDFLARE_ACCOUNT_ID = "${AVALON_CLOUDFLARE_ACCOUNT_ID}"
+CLOUDFLARE_API_TOKEN = "${AVALON_CLOUDFLARE_API_TOKEN}"

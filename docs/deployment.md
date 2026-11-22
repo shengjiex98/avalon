@@ -25,54 +25,55 @@ snapshot and survives releases and restarts; path configuration and storage
 behavior live in [`src/server/main.ts`](../src/server/main.ts) and
 [`src/server/ui-settings.ts`](../src/server/ui-settings.ts).
 
-## Static host control plane
+## Host control plane
 
 The running application and deployment authority are separate:
 
 ```text
-~/.local/lib/avalon/
+~/.local/lib/avalon/          releases the updater downloads
 ├── current -> releases/<commit>
 ├── releases/<commit>/
 └── rollback/<target-commit>/
 
-~/.local/libexec/avalon-deploy/
-├── updater.sh
-├── verify-pointer.mjs
-├── listen.mjs
-└── start.mjs
-
-~/.config/systemd/user/
-├── avalon.service
-├── avalon-listen.service
-├── avalon-update.service
-└── avalon-update.timer
+~/avalon/                     a trusted clone on main: the control plane
+├── deploy/                   updater.sh, verify-pointer.mjs, listen.mjs, start.mjs
+└── homelab/tasks/            the server, listener and updater, as tasks
 ```
 
-Install or refresh the static files from a trusted clone:
+On the game host, the [homelab](https://github.com/shengjiex98/homelab) stack
+runs the three tasks in [`homelab/tasks/`](../homelab/tasks/) from this clone:
+the server, the trigger listener, and an hourly updater. Their manifests set
+every path, socket and unit name below. Homelab's app list does not
+auto-update this clone, so a change under `deploy/` or `homelab/` goes live
+only when someone pulls the clone on the host and runs `./homelab apply` in the
+homelab checkout. Application releases never execute or overwrite this code.
 
-```bash
-~/avalon/deploy/install-updater.sh
-systemctl --user daemon-reload
-systemctl --user enable --now avalon avalon-listen avalon-update.timer
-```
+On a new host, run the updater once (`./homelab tasks run avalon-update`)
+before the server starts, so a release is selected.
 
-On a new host, start `avalon-update.service` once before enabling Avalon so a
-release is selected. The installer is idempotent and does not deploy or restart
-the application. Changes under [`deploy/`](../deploy/) therefore require this
-manual installation step after merge. Exact installed paths and modes are
-defined by [`deploy/install-updater.sh`](../deploy/install-updater.sh); service
-behavior belongs to the adjacent unit files.
+### Running by hand
+
+Nothing above is required. Each piece takes its settings from the environment:
+
+| Piece | Command | Settings |
+|---|---|---|
+| Server | `node ~/avalon/deploy/start.mjs`, from the release directory | `PORT` and `HOST`, or `LISTEN_SOCKET`; `AVALON_STATE_FILE` (default `$XDG_STATE_HOME/avalon/rooms.json`); `ALLOW_ORIGIN`; `ADMIN_USERS`, `ADMIN_SOCKET`; `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` |
+| Updater | `deploy/updater.sh reconcile` | `AVALON_UNIT` (default `avalon`), `AVALON_ENV_FILE` (default `~/.config/avalon.env`), `AVALON_RELEASE_ROOT`, `AVALON_STATE_FILE`, `LISTEN_SOCKET` or `PORT`, `NTFY_SERVER`, `NTFY_TOPIC` |
+| Listener | `node deploy/listen.mjs` | `NTFY_SERVER`, `NTFY_TOPIC`, `AVALON_UPDATE_UNIT` (default `avalon-update.service`) |
+
+The updater stops and starts the server's systemd unit around a switch, so a
+hand-run server needs a unit of its own with that name.
 
 Production requires Node 24. Host configuration and secrets live outside the
-repository in `~/srv/avalon/avalon.env`, beside the room snapshot in the
-host's backed-up `~/srv`; consult the unit files and
+repository: on the game host homelab supplies them to the tasks, and run by
+hand they come from the environment or `AVALON_ENV_FILE`. Consult
 [`deploy/updater.sh`](../deploy/updater.sh) for accepted values.
 
-Setting `ADMIN_USERS` there to a comma-separated list of Tailscale logins
-enables the admin listener. It uses a private Unix socket beside the
-room snapshot unless `ADMIN_SOCKET` selects another path. Put a Tailscale Serve
-proxy in front of that socket; do not expose it through the public listener.
-The authentication and response rules are implemented in
+Setting `ADMIN_USERS` to a comma-separated list of Tailscale logins enables
+the admin listener. It uses a private Unix socket beside the room snapshot
+unless `ADMIN_SOCKET` selects another path. Put a Tailscale Serve proxy in
+front of that socket; do not expose it through the public listener. The
+authentication and response rules are implemented in
 [`src/server/admin.ts`](../src/server/admin.ts).
 
 ## Release flow
