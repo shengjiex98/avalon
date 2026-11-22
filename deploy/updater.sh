@@ -26,8 +26,8 @@ export XDG_RUNTIME_DIR
 
 # Host configuration is operator-owned and lives outside every release.
 requested_port=${PORT:-}
-if [ -f "$HOME/.config/avalon.env" ]; then
-  . "$HOME/.config/avalon.env"
+if [ -f "$HOME/srv/avalon/avalon.env" ]; then
+  . "$HOME/srv/avalon/avalon.env"
 fi
 PORT=${requested_port:-${PORT:-8420}}
 export PORT
@@ -38,7 +38,7 @@ rollbacks="$release_root/rollback"
 artifact_base=${AVALON_ARTIFACT_BASE:-"https://github.com/shengjiex98/avalon/releases/download/deployment-artifacts"}
 node_bin=${AVALON_NODE:-"$HOME/.local/bin/node"}
 systemctl_bin=${AVALON_SYSTEMCTL:-systemctl}
-state_file=${AVALON_STATE_FILE:-${XDG_STATE_HOME:-$HOME/.local/state}/avalon/rooms.json}
+state_file=${AVALON_STATE_FILE:-$HOME/srv/avalon/rooms.json}
 health_timeout=${AVALON_HEALTH_TIMEOUT_SECONDS:-30}
 keep_releases=${AVALON_KEEP_RELEASES:-2}
 terminal_status=
