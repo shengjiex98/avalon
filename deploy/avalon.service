@@ -8,16 +8,17 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=%h/.local/lib/avalon/current
-EnvironmentFile=-%h/.config/avalon.env
+EnvironmentFile=-%h/srv/avalon/avalon.env
 Environment=PORT=8420
 ExecStart=%h/.local/bin/node %h/.local/libexec/avalon-deploy/start.mjs
 Restart=on-failure
 RestartSec=3
 # Pinned rather than left to StateDirectory=, whose user-unit path moved
-# between systemd versions. deploy/updater.sh derives the same location for the
-# snapshot it backs up, and test/deploy.test.js holds the two together.
-Environment=XDG_STATE_HOME=%h/.local/state
-ReadWritePaths=%h/.local/state/avalon
+# between systemd versions. Under ~/srv because the host's restic backs up that
+# tree and nothing under ~/.local. deploy/updater.sh defaults to the same file
+# for the snapshot it backs up, and test/deploy.test.js holds the two together.
+Environment=AVALON_STATE_FILE=%h/srv/avalon/rooms.json
+ReadWritePaths=%h/srv/avalon
 UMask=0077
 ProtectSystem=strict
 ProtectHome=read-only

@@ -316,9 +316,10 @@ test('the server and the updater snapshot the same file', async () => {
   // StateDirectory= resolved under $XDG_CONFIG_HOME for user units before
   // systemd 256, so the updater backed up a file the server never wrote.
   assert.doesNotMatch(unit, /^StateDirectory/m);
-  assert.match(unit, /Environment=XDG_STATE_HOME=%h\/\.local\/state$/m);
-  assert.match(unit, /ReadWritePaths=%h\/\.local\/state\/avalon$/m);
-  assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$\{XDG_STATE_HOME:-\$HOME\/\.local\/state\}\/avalon\/rooms\.json\}/);
+  assert.match(unit, /Environment=AVALON_STATE_FILE=%h\/srv\/avalon\/rooms\.json$/m);
+  assert.match(unit, /ReadWritePaths=%h\/srv\/avalon$/m);
+  assert.match(updater, /state_file=\$\{AVALON_STATE_FILE:-\$HOME\/srv\/avalon\/rooms\.json\}/);
+  assert.match(installer, /AVALON_STATE_FILE:-\$HOME\/srv\/avalon\/rooms\.json/);
   assert.match(installer, /mkdir -p "\$state_dir"\n *chmod 700 "\$state_dir"/);
 });
 

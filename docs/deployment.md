@@ -64,7 +64,8 @@ defined by [`deploy/install-updater.sh`](../deploy/install-updater.sh); service
 behavior belongs to the adjacent unit files.
 
 Production requires Node 24. Host configuration and secrets live outside the
-repository in `~/.config/avalon.env`; consult the unit files and
+repository in `~/srv/avalon/avalon.env`, beside the room snapshot in the
+host's backed-up `~/srv`; consult the unit files and
 [`deploy/updater.sh`](../deploy/updater.sh) for accepted values.
 
 Setting `ADMIN_USERS` there to a comma-separated list of Tailscale logins

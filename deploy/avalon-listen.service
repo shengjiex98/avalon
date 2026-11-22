@@ -6,7 +6,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-EnvironmentFile=%h/.config/avalon.env
+EnvironmentFile=%h/srv/avalon/avalon.env
 ExecStart=%h/.local/bin/node %h/.local/libexec/avalon-deploy/listen.mjs
 Restart=always
 RestartSec=5
